@@ -35,7 +35,7 @@ class Periodo(BaseModel):
         ordering = ["-fecha_inicio"]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(fecha_termino__gte=models.F("fecha_inicio")),
+                condition=models.Q(fecha_termino__gte=models.F("fecha_inicio")),
                 name="periodo_fecha_termino_gte_inicio",
             )
         ]

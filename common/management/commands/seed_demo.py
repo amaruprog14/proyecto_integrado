@@ -49,6 +49,11 @@ class Command(BaseCommand):
                 ),
             )
             funcionarios.append(func)
+        # ---------- Evidencia de borrado lógico (deleted_at) ----------
+        ultimo = funcionarios[4]
+        if ultimo.deleted_at is None:
+            ultimo.deleted_at = timezone.now()
+            ultimo.save(update_fields=["deleted_at", "updated_at"])
 
         # ---------- 5 Ítems ----------
         nombres_items = ["Atención ciudadana", "Terreno", "Reunión de coordinación",
