@@ -46,7 +46,8 @@ INSTALLED_APPS = [
     'activities',
     'agenda',
     'analytics',
-    'configuration'
+    'configuration',
+    'common',
 ]
 
 
