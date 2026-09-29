@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from common.mixins import BaseModel
@@ -42,6 +43,23 @@ class Periodo(BaseModel):
 
     def __str__(self):
         return f"{self.fecha_inicio} - {self.fecha_termino}"
+
+    def clean(self):
+        super().clean()
+        if not self.fecha_inicio or not self.fecha_termino:
+            return
+
+        if self.fecha_termino < self.fecha_inicio:
+            raise ValidationError({"fecha_termino": "La fecha de término debe ser igual o posterior a la fecha de inicio."})
+
+        periodos_solapados = type(self).objects.filter(
+            fecha_inicio__lte=self.fecha_termino,
+            fecha_termino__gte=self.fecha_inicio,
+        )
+        if self.pk:
+            periodos_solapados = periodos_solapados.exclude(pk=self.pk)
+        if periodos_solapados.exists():
+            raise ValidationError({"fecha_inicio": "El período se solapa con otro período existente."})
 
     def cerrar_periodo(self):
         self.estado = self.Estado.CERRADO
