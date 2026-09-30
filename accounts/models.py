@@ -3,67 +3,74 @@ from django.db import models
 from common.mixins import BaseModel
 
 
-class Cargo(BaseModel):
+class Position(BaseModel):
     """Tabla maestra: cargos formales dentro de la organización."""
 
-    nombre_cargo = models.CharField(max_length=150, unique=True, verbose_name="Nombre del cargo")
-    descripcion = models.TextField(blank=True)
-    vigente = models.BooleanField(default=True)
+    position_name = models.CharField(max_length=150, unique=True, verbose_name="Nombre del cargo")
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
     class Meta:
         verbose_name = "Cargo"
         verbose_name_plural = "Cargos"
-        ordering = ["nombre_cargo"]
+        ordering = ["position_name"]
 
     def __str__(self):
-        return self.nombre_cargo
+        return self.position_name
 
-    def activar_cargo(self):
-        self.vigente = True
-        self.save(update_fields=["vigente", "updated_at"])
+    def activate_position(self):
+        self.is_active = True
+        self.save(update_fields=["is_active", "updated_at"])
 
-    def desactivar_cargo(self):
-        self.vigente = False
-        self.save(update_fields=["vigente", "updated_at"])
+    def deactivate_position(self):
+        self.is_active = False
+        self.save(update_fields=["is_active", "updated_at"])
 
 
 class Area(BaseModel):
     """Tabla maestra: áreas/unidades organizacionales."""
 
-    nombre_area = models.CharField(max_length=150, unique=True, verbose_name="Nombre del área")
-    vigente = models.BooleanField(default=True)
+    area_name = models.CharField(max_length=150, unique=True, verbose_name="Nombre del área")
+    is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
     class Meta:
         verbose_name = "Área"
         verbose_name_plural = "Áreas"
-        ordering = ["nombre_area"]
+        ordering = ["area_name"]
 
     def __str__(self):
-        return self.nombre_area
+        return self.area_name
 
 
-class Funcionario(BaseModel):
+class Official(BaseModel):
     """Tabla operativa: funcionarios/as del organismo (usuarios del sistema)."""
 
-    class Estado(models.TextChoices):
-        ACTIVO = "ACTIVO", "Activo"
-        INACTIVO = "INACTIVO", "Inactivo"
-        SUSPENDIDO = "SUSPENDIDO", "Suspendido"
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE", "Activo"
+        INACTIVE = "INACTIVE", "Inactivo"
+        SUSPENDED = "SUSPENDED", "Suspendido"
 
-    cargo = models.ForeignKey(
-        Cargo, on_delete=models.PROTECT, related_name="funcionarios", null=True, blank=True
+    position = models.ForeignKey(
+        Position,
+        on_delete=models.PROTECT,
+        related_name="officials",
+        null=True,
+        blank=True,
+        verbose_name="Cargo",
     )
 
-    nombre_completo = models.CharField(max_length=200)
-    rut_identificador = models.CharField(max_length=20, unique=True, verbose_name="RUT / identificador")
-    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
-    email = models.EmailField(unique=True, max_length=191)
-    telefono = models.CharField(max_length=30, blank=True)
+    full_name = models.CharField(max_length=200, verbose_name="Nombre completo")
+    national_id = models.CharField(max_length=20, unique=True, verbose_name="RUT / identificador")
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Estado"
+    )
+    email = models.EmailField(unique=True, max_length=191, verbose_name="Correo electrónico")
+    phone = models.CharField(max_length=30, blank=True, verbose_name="Teléfono")
 
     class Meta:
         verbose_name = "Funcionario"
         verbose_name_plural = "Funcionarios"
-        ordering = ["nombre_completo"]
+        ordering = ["full_name"]
 
     def __str__(self):
-        return self.nombre_completo
+        return self.full_name

@@ -1,13 +1,13 @@
 from django.contrib import admin
 
-from .models import Actividad
+from .models import Activity
 
 
-@admin.register(Actividad)
-class ActividadAdmin(admin.ModelAdmin):
-    list_display = ("id", "funcionario", "item", "fecha", "tipo_registro", "created_at", "deleted_at")
-    list_filter = ("item", "fecha", "tipo_registro")
-    search_fields = ("descripcion_accion", "funcionario__nombre_completo", "item__nombre_item")
-    ordering = ("-fecha",)
-    list_select_related = ("funcionario", "item")
-    autocomplete_fields = ("funcionario", "item")
+@admin.register(Activity)
+class ActivityAdmin(admin.ModelAdmin):
+    list_display = ("id", "official", "item", "date", "record_type", "created_at", "deleted_at")
+    list_filter = ("item", "date", "record_type")
+    search_fields = ("action_description", "official__full_name", "item__item_name")
+    ordering = ("-date",)
+    list_select_related = ("official", "item")
+    autocomplete_fields = ("official", "item")
