@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from common.mixins import BaseModel
@@ -50,6 +51,22 @@ class Official(BaseModel):
         INACTIVE = "INACTIVE", "Inactivo"
         SUSPENDED = "SUSPENDED", "Suspendido"
 
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="official",
+        null=True,
+        blank=True,
+        verbose_name="Usuario del sistema",
+    )
+    area = models.ForeignKey(
+        Area,
+        on_delete=models.PROTECT,
+        related_name="officials",
+        null=True,
+        blank=True,
+        verbose_name="Área",
+    )
     position = models.ForeignKey(
         Position,
         on_delete=models.PROTECT,
