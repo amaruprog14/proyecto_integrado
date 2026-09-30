@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import Group, Permission, User
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -10,13 +10,23 @@ from configuration.models import Item, Period
 
 
 class Command(BaseCommand):
-    help = "Carga 5 registros de prueba por modelo para probar Admin (versión sin area/user en Funcionario)."
+    help = "Carga datos de prueba: 5 registros por modelo, con funcionarios repartidos en áreas para demostrar el scoping."
 
     def handle(self, *args, **options):
         today = timezone.now().date()
         officials_group, _ = Group.objects.get_or_create(name="Funcionarios")
+        # Permisos del usuario limitado: sin eliminar. El scoping (área) se aplica en el Admin.
+        officials_group.permissions.set(Permission.objects.filter(codename__in=[
+            "view_activity", "add_activity", "change_activity", "view_official", "view_item",
+        ]))
 
-        # ---------- 5 Áreas (aún no conectadas a Official) ----------
+        # Grupo de solo lectura (usuario de consulta): ve su ámbito pero no modifica
+        consulta_group, _ = Group.objects.get_or_create(name="Consulta")
+        consulta_group.permissions.set(Permission.objects.filter(codename__in=[
+            "view_activity", "view_official", "view_item",
+        ]))
+
+        # ---------- 5 Áreas ----------
         area_names = ["Área Norte", "Área Sur", "Área Centro", "Área Cordillera", "Área Costa"]
         areas = [Area.objects.get_or_create(area_name=n)[0] for n in area_names]
 
@@ -28,7 +38,8 @@ class Command(BaseCommand):
         if not User.objects.filter(username="admin_demo").exists():
             User.objects.create_superuser("admin_demo", "admin@demo.cl", "demo1234")
 
-        # ---------- 5 Usuarios de Django (sin vincular a Official todavía) ----------
+        # ---------- 5 Usuarios de Django (funcionario1-4 se vinculan a un Official; funcionario5 queda SIN contexto) ----------
+        users = []
         for i in range(5):
             username = f"funcionario{i+1}"
             user, created = User.objects.get_or_create(username=username, defaults={"is_staff": True})
@@ -36,8 +47,9 @@ class Command(BaseCommand):
                 user.set_password("demo1234")
                 user.save()
             user.groups.add(officials_group)
+            users.append(user)
 
-        # ---------- 5 Funcionarios (solo con cargo, como está tu modelo hoy) ----------
+        # ---------- 5 Funcionarios: 1-2 en Norte, 3-4 en Sur, 5 en Centro (archivado) ----------
         officials = []
         for i in range(5):
             official, _ = Official.objects.get_or_create(
@@ -48,7 +60,26 @@ class Command(BaseCommand):
                     position=positions[i],
                 ),
             )
+            # Vincular área y usuario (solo guarda si cambió, para no alterar updated_at en cada seed)
+            wanted_area = areas[[0, 0, 1, 1, 2][i]]
+            wanted_user = users[i] if i < 4 else None
+            if official.area_id != wanted_area.id or official.user_id != (wanted_user.id if wanted_user else None):
+                official.area = wanted_area
+                official.user = wanted_user
+                official.save(update_fields=["area", "user", "updated_at"])
             officials.append(official)
+
+        # ---------- Usuario de consulta (solo lectura) en Área Norte ----------
+        consulta_user, created = User.objects.get_or_create(username="consulta_norte", defaults={"is_staff": True})
+        if created:
+            consulta_user.set_password("demo1234")
+            consulta_user.save()
+        consulta_user.groups.add(consulta_group)
+        consulta_official, _ = Official.objects.get_or_create(
+            national_id="10000099-9",
+            defaults=dict(full_name="Consulta Demo Norte", email="consulta_norte@demo.cl",
+                          position=positions[0], area=areas[0], user=consulta_user),
+        )
 
         # ---------- Evidencia de borrado lógico (deleted_at) ----------
         last_official = officials[4]
@@ -72,16 +103,17 @@ class Command(BaseCommand):
             )
             periods.append(period)
 
-        # ---------- 5 Actividades ----------
-        for i in range(5):
-            Activity.objects.get_or_create(
-                official=officials[i],
-                item=items[i],
-                date=today,
-                record_type="Registro",
-                defaults={"action_description": f"Actividad de prueba #{i+1} - {areas[i].area_name}"},
-            )
+        # ---------- 10 Actividades (2 por funcionario, para ver datos en ambas áreas) ----------
+        for i, official in enumerate(officials):
+            for j in range(2):
+                Activity.objects.get_or_create(
+                    official=official,
+                    item=items[(i + j) % 5],
+                    date=today,
+                    record_type="Registro",
+                    defaults={"action_description": f"Actividad de prueba - {official.full_name} - {official.area.area_name}"},
+                )
 
         self.stdout.write(self.style.SUCCESS(
-            "Seed cargado: 5 áreas, 5 cargos, 5 usuarios Django, 5 funcionarios, 5 ítems, 5 períodos, 5 actividades."
+            "Seed cargado: 5 áreas, 5 cargos, 6 usuarios Django, 6 funcionarios (Norte, Sur y Centro), usuario de consulta, 5 ítems, 5 períodos, 10 actividades."
         ))
