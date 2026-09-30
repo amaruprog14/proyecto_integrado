@@ -18,3 +18,9 @@ class PeriodoAdmin(admin.ModelAdmin):
     search_fields = ("estado",)
     ordering = ("-fecha_inicio",)
     date_hierarchy = "fecha_inicio"
+    actions = ("cerrar_periodos",)
+
+    @admin.action(description="Cerrar períodos seleccionados")
+    def cerrar_periodos(self, request, queryset):
+        for periodo in queryset.iterator():
+            periodo.cerrar_periodo()
