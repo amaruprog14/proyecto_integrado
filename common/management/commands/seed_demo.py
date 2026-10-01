@@ -115,5 +115,5 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write(self.style.SUCCESS(
-            "Seed cargado: 5 áreas, 5 cargos, 6 usuarios Django, 6 funcionarios (Norte, Sur y Centro), usuario de consulta, 5 ítems, 5 períodos, 10 actividades."
+            "Seed cargado: 5 áreas, 5 cargos, 7 usuarios Django, 6 funcionarios (Norte, Sur y Centro), 5 ítems, 5 períodos y 10 actividades."
         ))

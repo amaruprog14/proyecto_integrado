@@ -26,7 +26,18 @@ cd proyecto_integrado/
 
 ```bash
 python -m venv .venv
-source .venv/Scripts/activate      # Windows (Git Bash)
+```
+
+En macOS/Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+En Windows con Git Bash:
+
+```bash
+source .venv/Scripts/activate
 ```
 
 ### 3. Instalar dependencias
@@ -89,20 +100,20 @@ Abrir el Admin en: <http://127.0.0.1:8000/admin/>
 
 Creadas por el comando `seed_demo` (solo para demostración). Todas usan la contraseña `demo1234`.
 
-| Usuario | Rol | Área | Alcance |
-|---|---|---|---|
-| `admin_demo` | Superusuario | Todas | Acceso completo (incluye eliminar y ver registros archivados) |
-| `funcionario1`, `funcionario2` | Staff, grupo `Funcionarios` | Área Norte | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems |
-| `funcionario3`, `funcionario4` | Staff, grupo `Funcionarios` | Área Sur | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems |
-| `funcionario5` | Staff, grupo `Funcionarios` | Sin contexto | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
-| `consulta_norte` | Staff, grupo `Consulta` | Área Norte | Solo lectura sobre actividades, funcionarios e ítems de su área |
+| Usuario                        | Rol                         | Área         | Alcance                                                                                                                                         |
+| ------------------------------ | --------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin_demo`                   | Superusuario                | Todas        | Acceso completo (incluye eliminar y ver registros archivados)                                                                                   |
+| `funcionario1`, `funcionario2` | Staff, grupo `Funcionarios` | Área Norte   | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
+| `funcionario3`, `funcionario4` | Staff, grupo `Funcionarios` | Área Sur     | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
+| `funcionario5`                 | Staff, grupo `Funcionarios` | Sin contexto | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
+| `consulta_norte`               | Staff, grupo `Consulta`     | Área Norte   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
 
 Grupos y permisos (definidos en `seed_demo`):
 
-| Grupo | Permisos |
-|---|---|
+| Grupo          | Permisos                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------- |
 | `Funcionarios` | `view`, `add` y `change` sobre Actividad; `view` sobre Funcionario e Ítem. Sin permiso de eliminar |
-| `Consulta` | Solo `view` sobre Actividad, Funcionario e Ítem |
+| `Consulta`     | Solo `view` sobre Actividad, Funcionario e Ítem                                                    |
 
 ## Datos cargados por `seed_demo`
 
@@ -116,14 +127,14 @@ Grupos y permisos (definidos en `seed_demo`):
 
 ### Apps
 
-| App | Responsabilidad | Estado |
-|---|---|---|
-| `accounts` | Cargos, áreas y funcionarios | Implementada |
-| `configuration` | Ítems y períodos (tablas maestras) | Implementada |
-| `activities` | Registro de actividades | Implementada |
-| `common` | `BaseModel` (auditoría), `get_user_area` (scoping) y comando `seed_demo` | Implementada |
-| `agenda` | Planificación de actividades | Reservada para la siguiente etapa |
-| `analytics` | Reportes e indicadores | Reservada para la siguiente etapa |
+| App             | Responsabilidad                                                          | Estado                            |
+| --------------- | ------------------------------------------------------------------------ | --------------------------------- |
+| `accounts`      | Cargos, áreas y funcionarios                                             | Implementada                      |
+| `configuration` | Ítems y períodos (tablas maestras)                                       | Implementada                      |
+| `activities`    | Registro de actividades                                                  | Implementada                      |
+| `common`        | `BaseModel` (auditoría), `get_user_area` (scoping) y comando `seed_demo` | Implementada                      |
+| `agenda`        | Planificación de actividades                                             | Reservada para la siguiente etapa |
+| `analytics`     | Reportes e indicadores                                                   | Reservada para la siguiente etapa |
 
 ### Estructura de carpetas
 
@@ -133,26 +144,26 @@ proyecto_integrado/
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
-├── config/                   
+├── config/
 ├── common/
-│   ├── mixins.py             
-│   ├── admin_utils.py          
+│   ├── mixins.py
+│   ├── admin_utils.py
 │   └── management/commands/
-│       └── seed_demo.py        
-├── accounts/                   
+│       └── seed_demo.py
+├── accounts/
 │   ├── models.py
 │   ├── admin.py
 │   └── migrations/
-├── configuration/              
+├── configuration/
 │   ├── models.py
 │   ├── admin.py
 │   └── migrations/
-├── activities/                 
+├── activities/
 │   ├── models.py
 │   ├── admin.py
 │   └── migrations/
-├── agenda/                    
-└── analytics/                  
+├── agenda/
+└── analytics/
 ```
 
 ## Modelado y auditoría
@@ -163,14 +174,14 @@ auditoría `created_at`, `updated_at` y `deleted_at`.
 Los modelos y atributos del dominio usan nomenclatura en inglés; las etiquetas visibles
 en el Admin están en español mediante `verbose_name`.
 
-| Modelo | App | Tipo | Descripción |
-|---|---|---|---|
-| `Position` | `accounts` | Maestra | Cargos formales de la organización (`position_name` único, `is_active`). Métodos `activate_position()` y `deactivate_position()` |
-| `Area` | `accounts` | Maestra | Áreas u unidades organizacionales (`area_name` único, `is_active`) |
-| `Official` | `accounts` | Operativa | Funcionario/a del organismo. Se vincula 1 a 1 con un `User` de Django y pertenece a un `Area` y un `Position`. Incluye `full_name`, `national_id` (único), `email` (único), `phone` y `status` (Activo / Inactivo / Suspendido) |
-| `Item` | `configuration` | Maestra | Ítems medibles del sistema, usados por `Activity` (`item_name` único, `is_active`) |
-| `Period` | `configuration` | Maestra | Período de gestión con `start_date`, `end_date` y `status` (Abierto / Cerrado). Valida que no se solape con otros períodos y que la fecha de término no sea anterior a la de inicio (también como `CheckConstraint` en BD). Método `close_period()` |
-| `Activity` | `activities` | Operativa | Actividad realizada por un `Official` sobre un `Item`, con `date`, `record_type` y `action_description` |
+| Modelo     | App             | Tipo      | Descripción                                                                                                                                                                                                                                         |
+| ---------- | --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Position` | `accounts`      | Maestra   | Cargos formales de la organización (`position_name` único, `is_active`). Métodos `activate_position()` y `deactivate_position()`                                                                                                                    |
+| `Area`     | `accounts`      | Maestra   | Áreas u unidades organizacionales (`area_name` único, `is_active`)                                                                                                                                                                                  |
+| `Official` | `accounts`      | Operativa | Funcionario/a del organismo. Se vincula 1 a 1 con un `User` de Django y pertenece a un `Area` y un `Position`. Incluye `full_name`, `national_id` (único), `email` (único), `phone` y `status` (Activo / Inactivo / Suspendido)                     |
+| `Item`     | `configuration` | Maestra   | Ítems medibles del sistema, usados por `Activity` (`item_name` único, `is_active`)                                                                                                                                                                  |
+| `Period`   | `configuration` | Maestra   | Período de gestión con `start_date`, `end_date` y `status` (Abierto / Cerrado). Valida que no se solape con otros períodos y que la fecha de término no sea anterior a la de inicio (también como `CheckConstraint` en BD). Método `close_period()` |
+| `Activity` | `activities`    | Operativa | Actividad realizada por un `Official` sobre un `Item`, con `date`, `record_type` y `action_description`                                                                                                                                             |
 
 Relaciones principales (todas con `on_delete=PROTECT`, salvo `Official.user` que usa `SET_NULL`):
 
@@ -179,7 +190,6 @@ Relaciones principales (todas con `on_delete=PROTECT`, salvo `Official.user` que
 - `User` 1 — 1 `Official`
 - `Official` 1 — N `Activity`
 - `Item` 1 — N `Activity`
-
 
 ## Funcionalidades del Admin
 
@@ -191,12 +201,12 @@ Todos los modelos están registrados en el Admin con `list_display`, `list_filte
 
 ### Admin Pro
 
-| Modelo | Funcionalidades |
-|---|---|
-| `Position` | Acciones masivas «Activar cargos seleccionados» y «Desactivar cargos seleccionados» |
+| Modelo     | Funcionalidades                                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Position` | Acciones masivas «Activar cargos seleccionados» y «Desactivar cargos seleccionados»                                                                                                   |
 | `Official` | `list_select_related` (evita consultas N+1), filtros por estado, área, cargo y `deleted_at`, búsqueda por nombre, RUT, correo, cargo y área. Inline de actividades (`ActivityInline`) |
-| `Period` | Acción masiva «Cerrar períodos seleccionados» y navegación por fecha (`date_hierarchy`) |
-| `Activity` | Acción masiva «Archivar actividades seleccionadas» (borrado lógico), `autocomplete_fields` para funcionario e ítem, y `list_select_related` |
+| `Period`   | Acción masiva «Cerrar períodos seleccionados» y navegación por fecha (`date_hierarchy`)                                                                                               |
+| `Activity` | Acción masiva «Archivar actividades seleccionadas» (borrado lógico), `autocomplete_fields` para funcionario e ítem, y `list_select_related`                                           |
 
 ### Borrado lógico
 
@@ -232,13 +242,13 @@ Reglas adicionales:
 
 - **Rama principal:** `main` (solo commit inicial directo; el resto se integra por Pull Request).
 - **Ramas de trabajo**:
-  - `configuration/base-configuraciones`: clase base y configuración
-  - `Modelos-iniciales`: modelos del dominio
-  - `configuration/seeds`: comando `seed_demo`
-  - `feature/admin-basico`: Admin básico
-  - `feature/admin-pro`: Admin pro
-  - `configuration/models`: renombrado de modelos y campos a inglés
-  - `configuration/scoping`: seguridad y scoping por área
+    - `configuration/base-configuraciones`: clase base y configuración
+    - `Modelos-iniciales`: modelos del dominio
+    - `configuration/seeds`: comando `seed_demo`
+    - `feature/admin-basico`: Admin básico
+    - `feature/admin-pro`: Admin pro
+    - `configuration/models`: renombrado de modelos y campos a inglés
+    - `configuration/scoping`: seguridad y scoping por área
 - **Integración:** Pull Request hacia `main` (8 PR integrados a la fecha).
 - **Commits:** prefijados con el número de historia de Scrum, p. ej. `Scrum 15: Seguridad Scoping`.
 
