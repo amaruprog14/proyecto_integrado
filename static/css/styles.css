@@ -1,0 +1,116 @@
+:root {
+    --muni-base: #ad0000;
+    --bg-muni-a1: #f9dcdc;
+    --bg-muni-a2: #f2b5b5;
+    --bg-muni-a3: #e08080;
+    --bg-muni-a4: #cc6666;
+    --bg-muni-a5: #b33d3d;
+    --bg-muni-b1: #7a0000;
+    --bg-muni-b2: #660000;
+    --bg-muni-b3: #4d0000;
+    --bg-muni-b4: #330000;
+    --bg-muni-b5: #1a0000;
+    --bg-muni-v1: #b33d00;
+    --bg-muni-v2: #cc6600;
+    --bg-muni-v3: #e08000;
+    --bg-muni-v4: #f2b500;
+    --gris-0: #fff;
+    --gris-10: #e6e6e6;
+    --gris-20: #cccccc;
+    --gris-30: #b3b3b3;
+    --gris-40: #999999;
+    --gris-50: #808080;
+    --gris-60: #666666;
+    --gris-70: #4d4d4d;
+    --gris-80: #333333;
+    --gris-90: #1a1a1a;
+    --gris-100: #000;
+    --tx-1: 0.7em;
+    --tx-2: 0.8em;
+    --tx-3: 0.9em;
+    --tx-4: 1em;
+    --tx-5: 1.1em;
+    --tx-6: 1.2em;
+    --tx-7: 1.3em;
+    --tx-8: 1.5em;
+    --tx-9: 1.75em;
+    --tx-10: 2em;
+    --tx-11: 2.5em;
+}
+
+html,
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    color: var(--gris-80);
+    background-color: #f5f6f7;
+}
+
+.municipal-topbar {
+    background-color: var(--bg-muni-b4);
+    color: var(--gris-0);
+    font-size: var(--tx-2);
+}
+
+.municipal-brand-mark {
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--muni-base);
+    border-radius: 50%;
+    color: var(--muni-base);
+    font-size: var(--tx-8);
+    font-weight: 700;
+}
+
+.municipal-brand {
+    color: var(--gris-80);
+    text-decoration: none;
+}
+
+.municipal-brand:hover,
+.municipal-brand:focus {
+    color: var(--muni-base);
+}
+
+.municipal-nav {
+    background-color: var(--bg-muni-b4);
+    border-top: 1px solid var(--gris-10);
+    border-bottom: 3px solid var(--muni-base);
+}
+
+.municipal-nav .nav-link {
+    color: var(--gris-0);
+    font-weight: 500;
+}
+
+.municipal-nav .nav-link:hover,
+.municipal-nav .nav-link:focus {
+    color: var(--bg-muni-a1);
+}
+
+.municipal-nav .navbar-toggler {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.municipal-nav .navbar-toggler-icon {
+    filter: invert(1);
+}
+
+.page-content {
+    min-height: 55vh;
+}
+
+.municipal-footer {
+    border-top: 4px solid var(--muni-base);
+    background-color: var(--bg-muni-b4);
+    color: var(--gris-0);
+}
+
+.municipal-footer a {
+    color: var(--gris-0);
+}

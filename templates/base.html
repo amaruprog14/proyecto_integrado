@@ -1,56 +1,68 @@
-{% load django_bootstrap5 %}
+{% load django_bootstrap5 %} {% load static %}
 <!doctype html>
 <html lang="es">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{% block title %}EcoEnergy{% endblock %}</title>
+        <meta name="description" content="Plataforma de gestión energética municipal de EcoEnergy." />
+        <title>{% block title %}EcoEnergy · Gestión municipal{% endblock %}</title>
         {% bootstrap_css %}
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
     </head>
-    <body class="bg-light d-flex flex-column min-vh-100">
-        <nav
-            class="navbar navbar-expand-lg bg-white border-bottom shadow-sm sticky-top"
-            aria-label="Navegación principal"
-        >
-            <div class="container">
-                <a
-                    class="navbar-brand d-flex align-items-center gap-2 fw-bold text-success"
-                    href="{% url 'dispositivos:inicio' %}"
-                >
-                    <span
-                        class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success text-white"
-                        style="width: 2rem; height: 2rem"
-                        aria-hidden="true"
-                    >
-                        E
-                    </span>
-                    EcoEnergy
-                </a>
-                <button
-                    class="navbar-toggler"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#navegacionPrincipal"
-                    aria-controls="navegacionPrincipal"
-                    aria-expanded="false"
-                    aria-label="Mostrar navegación"
-                >
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="collapse navbar-collapse" id="navegacionPrincipal">
-                    <div class="navbar-nav ms-auto">
-                        <!--<a class="nav-link px-lg-3" href="{% url 'dispositivos:inicio' %}">Inicio</a>-->
-                        <!--<a class="nav-link px-lg-3" href="{% url 'dispositivos:zonas' %}">Zonas</a>-->
-                        <!--<a class="nav-link px-lg-3" href="{% url 'dispositivos:catalogo' %}">Dispositivos</a>-->
-                    </div>
+    <body class="d-flex min-vh-100 flex-column">
+        <header>
+            <div class="municipal-topbar py-2">
+                <div class="container d-flex flex-wrap justify-content-between gap-2">
+                    <span>Ilustre Municipalidad de La Serena</span>
+                    <span>Plataforma de gestión energética</span>
                 </div>
             </div>
-        </nav>
 
-        <main class="container py-4 py-md-5 flex-grow-1">{% block content %}{% endblock %}</main>
+            <div class="bg-white py-3">
+                <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <a class="municipal-brand d-flex align-items-center gap-3" href="#">
+                        <span class="municipal-brand-mark" aria-hidden="true">E</span>
+                        <span>
+                            <span class="d-block fs-4 fw-bold">EcoEnergy</span>
+                            <span class="d-block small text-secondary">Gestión energética municipal</span>
+                        </span>
+                    </a>
+                    <span class="small text-secondary">Herramienta de apoyo a la gestión municipal</span>
+                </div>
+            </div>
 
-        <footer class="border-top bg-white py-4">
-            <div class="container small text-body-secondary text-center">EcoEnergy · Gestión energética</div>
+            <nav class="municipal-nav navbar navbar-expand-lg" aria-label="Navegación principal">
+                <div class="container">
+                    <button
+                        class="navbar-toggler ms-auto"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#navegacionPrincipal"
+                        aria-controls="navegacionPrincipal"
+                        aria-expanded="false"
+                        aria-label="Mostrar navegación"
+                    >
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navegacionPrincipal">
+                        <ul class="navbar-nav gap-lg-3">
+                            <li class="nav-item"><a class="nav-link" href="#">Inicio</a></li>
+                            <li class="nav-item"><a class="nav-link" href="#">Actividades</a></li>
+                            <li class="nav-item"><a class="nav-link" href="#">Agenda</a></li>
+                            <li class="nav-item"><a class="nav-link" href="#">Indicadores</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+        </header>
+
+        <main class="container page-content flex-grow-1 py-4 py-md-5">{% block content %}{% endblock %}</main>
+
+        <footer class="municipal-footer py-4">
+            <div class="container d-flex flex-wrap justify-content-between gap-2">
+                <span class="fw-semibold">EcoEnergy</span>
+                <span class="small">Plataforma de gestión energética municipal</span>
+            </div>
         </footer>
         {% bootstrap_javascript %}
     </body>
