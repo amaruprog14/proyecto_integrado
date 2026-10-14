@@ -2,13 +2,17 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from common.codes import AutoCodeMixin
 from common.mixins import BaseModel
 
 
-class Item(BaseModel):
+class Item(AutoCodeMixin, BaseModel):
     """Tabla maestra: ítems medibles del sistema, usado luego por Actividad."""
 
+    code_prefix = "ITM"
+
     item_name = models.CharField(max_length=150, unique=True, verbose_name="Nombre del ítem")
+    description = models.TextField(blank=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
     class Meta:
@@ -128,16 +132,21 @@ class ServiceType(BaseModel):
         self.save(update_fields=["is_active", "updated_at"])
 
 
-class AttentionType(BaseModel):
-    """Tabla maestra: tipo de atención, dependiente de un tipo de servicio."""
+class AttentionType(AutoCodeMixin, BaseModel):
+    """Tabla maestra: tipo de atención. El tipo de servicio es opcional."""
+
+    code_prefix = "TAT"
 
     service_type = models.ForeignKey(
         ServiceType,
         on_delete=models.PROTECT,
         related_name="attention_types",
+        null=True,
+        blank=True,
         verbose_name="Tipo de servicio",
     )
     name = models.CharField(max_length=150, verbose_name="Nombre")
+    description = models.TextField(blank=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
     class Meta:
@@ -158,8 +167,10 @@ class AttentionType(BaseModel):
         self.save(update_fields=["is_active", "updated_at"])
 
 
-class SubattentionType(BaseModel):
+class SubattentionType(AutoCodeMixin, BaseModel):
     """Tabla maestra: tipo de subatención, dependiente de un tipo de atención."""
+
+    code_prefix = "SAT"
 
     attention_type = models.ForeignKey(
         AttentionType,
@@ -168,6 +179,7 @@ class SubattentionType(BaseModel):
         verbose_name="Tipo de atención",
     )
     name = models.CharField(max_length=150, verbose_name="Nombre")
+    description = models.TextField(blank=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
     class Meta:

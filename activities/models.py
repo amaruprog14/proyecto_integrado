@@ -2,9 +2,9 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from accounts.models import Official, ServiceRecipient
+from accounts.models import Delegation, Official, ServiceRecipient
 from common.mixins import BaseModel
-from configuration.models import Item
+from configuration.models import AttentionType, Item, SubattentionType
 
 
 class Activity(BaseModel):
@@ -41,15 +41,43 @@ class SocialAttention(BaseModel):
         Activity,
         on_delete=models.PROTECT,
         related_name="social_attentions",
+        null=True,
+        blank=True,
         verbose_name="Actividad",
     )
     recipient = models.ForeignKey(
         ServiceRecipient,
         on_delete=models.PROTECT,
         related_name="social_attentions",
-        verbose_name="Persona usuaria",
+        verbose_name="Solicitante (persona usuaria)",
     )
-    date = models.DateField(verbose_name="Fecha")
+    attention_type = models.ForeignKey(
+        AttentionType,
+        on_delete=models.PROTECT,
+        related_name="social_attentions",
+        verbose_name="Tipo de atención",
+    )
+    subattention_type = models.ForeignKey(
+        SubattentionType,
+        on_delete=models.PROTECT,
+        related_name="social_attentions",
+        verbose_name="Sub atención",
+    )
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    delegation = models.ForeignKey(
+        Delegation,
+        on_delete=models.PROTECT,
+        related_name="social_attentions",
+        verbose_name="Delegación",
+    )
+    responsible = models.ForeignKey(
+        Official,
+        on_delete=models.PROTECT,
+        related_name="social_attentions",
+        verbose_name="Usuario responsable",
+    )
+    date = models.DateField(default=timezone.localdate, verbose_name="Fecha")
+    registered_at = models.DateTimeField(default=timezone.now, verbose_name="Fecha y hora de registro")
 
     class Meta:
         verbose_name = "Atención social"
@@ -67,12 +95,34 @@ class SocialAttention(BaseModel):
             qs = qs.exclude(pk=exclude_pk)
         return qs.count() < cls.MAX_ATTENTIONS_PER_RECIPIENT
 
+    @property
+    def identifier(self):
+        """Identificador de atención que se muestra al confirmar el registro."""
+        return f"AS-{self.pk:06d}" if self.pk else ""
+
     def clean(self):
         super().clean()
+        errors = {}
+
         if self.recipient_id and not self.validate_attention_limit(self.recipient_id, self.pk):
-            raise ValidationError(
+            errors["recipient"] = (
                 f"La persona usuaria ya tiene {self.MAX_ATTENTIONS_PER_RECIPIENT} gestiones registradas."
             )
+
+        if self.attention_type_id and self.subattention_type_id:
+            if self.subattention_type.attention_type_id != self.attention_type_id:
+                errors["subattention_type"] = "La sub atención no pertenece al tipo de atención elegido."
+            elif not self.subattention_type.is_active:
+                errors["subattention_type"] = "La sub atención seleccionada no está vigente."
+        if self.attention_type_id and not self.attention_type.is_active:
+            errors["attention_type"] = "El tipo de atención seleccionado no está vigente."
+
+        if self.delegation_id and self.responsible_id:
+            if not self.responsible.get_authorized_delegations().filter(pk=self.delegation_id).exists():
+                errors["delegation"] = "El responsable no tiene autorizada esta delegación."
+
+        if errors:
+            raise ValidationError(errors)
 
 
 class Evidence(BaseModel):
