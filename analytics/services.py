@@ -54,9 +54,7 @@ class CalculadorDesempenoService:
             .first()
         )
         weighting = Weighting.objects.filter(
-            item=item, position=official.position, period=period, deleted_at__isnull=True
-        ).first() or Weighting.objects.filter(
-            item=item, position=official.position, period__isnull=True, deleted_at__isnull=True
+            item=item, position=official.position, deleted_at__isnull=True
         ).first()
 
         snapshot = IndicatorSnapshot(
@@ -80,15 +78,10 @@ class CalculadorDesempenoService:
     @classmethod
     def generate_snapshots(cls, official, period, on_date=None):
         """Genera un snapshot por cada ítem ponderado para el cargo del funcionario en el período."""
-        items = {
+        items = [
             w.item
             for w in Weighting.objects.filter(
                 position=official.position, deleted_at__isnull=True
-            ).filter(period=period).select_related("item")
-        } or {
-            w.item
-            for w in Weighting.objects.filter(
-                position=official.position, period__isnull=True, deleted_at__isnull=True
             ).select_related("item")
-        }
+        ]
         return [cls.generate_snapshot(official, period, item, on_date) for item in items]

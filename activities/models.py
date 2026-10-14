@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from accounts.models import Official, ServiceRecipient
 from common.mixins import BaseModel
-from configuration.models import Item, SubattentionType
+from configuration.models import Item
 
 
 class Activity(BaseModel):
@@ -49,14 +49,6 @@ class SocialAttention(BaseModel):
         related_name="social_attentions",
         verbose_name="Persona usuaria",
     )
-    subattention_type = models.ForeignKey(
-        SubattentionType,
-        on_delete=models.PROTECT,
-        related_name="social_attentions",
-        null=True,
-        blank=True,
-        verbose_name="Tipo de subatención",
-    )
     date = models.DateField(verbose_name="Fecha")
 
     class Meta:
@@ -84,7 +76,7 @@ class SocialAttention(BaseModel):
 
 
 class Evidence(BaseModel):
-    """Tabla operativa: archivo de respaldo asociado a una actividad. Fecha de carga = created_at."""
+    """Tabla operativa: archivo de respaldo asociado a una actividad."""
 
     ALLOWED_FORMATS = ("jpg", "jpeg", "png", "pdf")
     MAX_SIZE_KB = 5120
@@ -95,14 +87,15 @@ class Evidence(BaseModel):
         related_name="evidences",
         verbose_name="Actividad",
     )
-    file = models.FileField(upload_to="evidences/%Y/%m/", verbose_name="Archivo")
+    file_url = models.CharField(max_length=500, verbose_name="URL del archivo")
     file_format = models.CharField(max_length=10, blank=True, verbose_name="Formato")
     size_kb = models.PositiveIntegerField(default=0, verbose_name="Tamaño (KB)")
+    upload_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de carga")
 
     class Meta:
         verbose_name = "Evidencia"
         verbose_name_plural = "Evidencias"
-        ordering = ["-created_at"]
+        ordering = ["-upload_date"]
 
     def __str__(self):
         return f"Evidencia {self.pk} - Actividad {self.activity_id}"

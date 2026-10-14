@@ -8,7 +8,7 @@ from common.mixins import BaseModel
 
 
 class Commitment(BaseModel):
-    """Tabla operativa: compromiso de la agenda colectiva. Fecha de creación = created_at."""
+    """Tabla operativa: compromiso de la agenda colectiva."""
 
     class Status(models.TextChoices):
         ENTERED = "ENTERED", "Ingresado"
@@ -26,6 +26,7 @@ class Commitment(BaseModel):
     territory = models.CharField(max_length=200, verbose_name="Territorio")
     support_area = models.CharField(max_length=150, blank=True, verbose_name="Área de apoyo")
     committed_date = models.DateField(verbose_name="Fecha comprometida")
+    creation_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de creación")
     current_status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ENTERED, verbose_name="Estado actual"
     )
@@ -66,7 +67,7 @@ class Commitment(BaseModel):
 
 
 class CommitmentStatusHistory(BaseModel):
-    """Tabla operativa: historial de cambios de estado. Fecha del cambio = created_at."""
+    """Tabla operativa: historial de cambios de estado de un compromiso."""
 
     commitment = models.ForeignKey(
         Commitment,
@@ -86,12 +87,13 @@ class CommitmentStatusHistory(BaseModel):
     new_status = models.CharField(
         max_length=20, choices=Commitment.Status.choices, verbose_name="Estado nuevo"
     )
+    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha")
     observation = models.TextField(blank=True, verbose_name="Observación")
 
     class Meta:
         verbose_name = "Historial de estado de compromiso"
         verbose_name_plural = "Historial de estados de compromisos"
-        ordering = ["-created_at"]
+        ordering = ["-date"]
 
     def __str__(self):
         return f"{self.previous_status} -> {self.new_status}"
@@ -122,12 +124,13 @@ class Comment(BaseModel):
         blank=True,
         verbose_name="Compromiso",
     )
+    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha")
     text = models.TextField(verbose_name="Texto")
 
     class Meta:
         verbose_name = "Comentario"
         verbose_name_plural = "Comentarios"
-        ordering = ["created_at"]
+        ordering = ["date"]
         constraints = [
             models.CheckConstraint(
                 condition=(
@@ -152,7 +155,7 @@ class Comment(BaseModel):
 
 
 class Alert(BaseModel):
-    """Tabla operativa: alerta dirigida a un funcionario. Fecha = created_at."""
+    """Tabla operativa: alerta dirigida a un funcionario."""
 
     class AlertType(models.TextChoices):
         DUE_DATE = "DUE_DATE", "Vencimiento"
@@ -172,6 +175,7 @@ class Alert(BaseModel):
     )
     alert_type = models.CharField(max_length=30, choices=AlertType.choices, verbose_name="Tipo de alerta")
     reason = models.CharField(max_length=255, verbose_name="Motivo")
+    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha")
     reference_link = models.CharField(max_length=500, blank=True, verbose_name="Enlace de referencia")
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING, verbose_name="Estado"
@@ -180,7 +184,7 @@ class Alert(BaseModel):
     class Meta:
         verbose_name = "Alerta"
         verbose_name_plural = "Alertas"
-        ordering = ["-created_at"]
+        ordering = ["-date"]
 
     def __str__(self):
         return f"{self.get_alert_type_display()} - {self.official}"

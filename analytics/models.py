@@ -83,24 +83,13 @@ class GoalThreshold(BaseModel):
 
 
 class Weighting(BaseModel):
-    """
-    Tabla maestra: ponderación (%) de un ítem para un cargo (Ponderacion).
-    El período es opcional: la regla RN-001 exige 100 % por cargo y período.
-    """
+    """Tabla maestra: ponderación (%) de un ítem para un cargo (Ponderacion)."""
 
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="weightings", verbose_name="Ítem"
     )
     position = models.ForeignKey(
         Position, on_delete=models.PROTECT, related_name="weightings", verbose_name="Cargo"
-    )
-    period = models.ForeignKey(
-        Period,
-        on_delete=models.PROTECT,
-        related_name="weightings",
-        null=True,
-        blank=True,
-        verbose_name="Período",
     )
     percentage = models.DecimalField(max_digits=5, decimal_places=2, verbose_name="Porcentaje")
 
@@ -109,9 +98,7 @@ class Weighting(BaseModel):
         verbose_name_plural = "Ponderaciones"
         ordering = ["position", "item"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["item", "position", "period"], name="uniq_weighting_item_position_period"
-            ),
+            models.UniqueConstraint(fields=["item", "position"], name="uniq_weighting_item_position"),
             models.CheckConstraint(
                 condition=models.Q(percentage__gte=0) & models.Q(percentage__lte=100),
                 name="weighting_percentage_between_0_and_100",

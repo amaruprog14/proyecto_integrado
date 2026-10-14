@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from common.mixins import BaseModel
 
@@ -188,10 +189,7 @@ class SubattentionType(BaseModel):
 
 
 class AuditLog(BaseModel):
-    """
-    Tabla operativa: registro de auditoría (LogAuditoria).
-    La fecha del evento es `created_at`. Los registros no se editan ni se eliminan.
-    """
+    """Tabla operativa: registro de auditoría de eventos del sistema (LogAuditoria)."""
 
     official = models.ForeignKey(
         "accounts.Official",
@@ -201,6 +199,7 @@ class AuditLog(BaseModel):
         related_name="audit_logs",
         verbose_name="Funcionario",
     )
+    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha")
     origin_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP de origen")
     action = models.CharField(max_length=100, verbose_name="Acción")
     affected_table = models.CharField(max_length=100, verbose_name="Tabla afectada")
@@ -213,19 +212,11 @@ class AuditLog(BaseModel):
     class Meta:
         verbose_name = "Log de auditoría"
         verbose_name_plural = "Logs de auditoría"
-        ordering = ["-created_at"]
+        ordering = ["-date"]
         indexes = [models.Index(fields=["affected_table", "affected_record_id"])]
 
     def __str__(self):
-        return f"{self.action} en {self.affected_table} ({self.created_at:%Y-%m-%d %H:%M})"
-
-    def save(self, *args, **kwargs):
-        if self.pk is not None:
-            raise ValidationError("Los registros de auditoría no pueden modificarse.")
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        raise ValidationError("Los registros de auditoría no pueden eliminarse.")
+        return f"{self.action} en {self.affected_table} ({self.date:%Y-%m-%d %H:%M})"
 
     @classmethod
     def register_event(
