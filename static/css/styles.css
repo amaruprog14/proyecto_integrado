@@ -1,96 +1,132 @@
 :root {
-    --muni-base: #ad0000;
-    --bg-muni-a1: #f9dcdc;
-    --bg-muni-a2: #f2b5b5;
-    --bg-muni-a3: #e08080;
-    --bg-muni-a4: #cc6666;
-    --bg-muni-a5: #b33d3d;
-    --bg-muni-b1: #7a0000;
-    --bg-muni-b2: #660000;
-    --bg-muni-b3: #4d0000;
-    --bg-muni-b4: #330000;
-    --bg-muni-b5: #1a0000;
-    --bg-muni-v1: #b33d00;
-    --bg-muni-v2: #cc6600;
-    --bg-muni-v3: #e08000;
-    --bg-muni-v4: #f2b500;
-    --gris-0: #fff;
-    --gris-10: #e6e6e6;
-    --gris-20: #cccccc;
-    --gris-30: #b3b3b3;
-    --gris-40: #999999;
-    --gris-50: #808080;
-    --gris-60: #666666;
-    --gris-70: #4d4d4d;
-    --gris-80: #333333;
-    --gris-90: #1a1a1a;
-    --gris-100: #000;
-    --tx-1: 0.7em;
-    --tx-2: 0.8em;
-    --tx-3: 0.9em;
-    --tx-4: 1em;
-    --tx-5: 1.1em;
-    --tx-6: 1.2em;
-    --tx-7: 1.3em;
-    --tx-8: 1.5em;
-    --tx-9: 1.75em;
-    --tx-10: 2em;
-    --tx-11: 2.5em;
+    --color-primary: #ad0000;
+    --color-primary-lightest: #f9dcdc;
+    --color-primary-lighter: #f2b5b5;
+    --color-primary-light: #e08080;
+    --color-primary-soft: #cc6666;
+    --color-primary-muted: #b33d3d;
+    --color-primary-dark: #7a0000;
+    --color-primary-darker: #660000;
+    --color-primary-darkest: #5b0000;
+    --color-primary-deepest: #1a0000;
+    --color-accent-dark: #b33d00;
+    --color-accent: #cc6600;
+    --color-accent-light: #e08000;
+    --color-accent-lighter: #f2b500;
+
+    --color-white: #fff;
+    --color-neutral-10: #e6e6e6;
+    --color-neutral-20: #cccccc;
+    --color-neutral-30: #b3b3b3;
+    --color-neutral-40: #999999;
+    --color-neutral-50: #808080;
+    --color-neutral-60: #666666;
+    --color-neutral-70: #4d4d4d;
+    --color-neutral-80: #333333;
+    --color-neutral-90: #1a1a1a;
+    --color-black: #000;
+
+    --color-page-background: #f5f6f7;
+    --color-surface: var(--color-white);
+    --color-text: var(--color-neutral-80);
+    --color-text-muted: var(--color-neutral-60);
+    --color-border: var(--color-neutral-10);
+
+    --font-family-base: Arial, Helvetica, sans-serif;
+    --font-size-xs: 0.7rem;
+    --font-size-sm: 0.8rem;
+    --font-size-md: 0.9rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.1rem;
+    --font-size-xl: 1.2rem;
+    --font-size-2xl: 1.3rem;
+    --font-size-3xl: 1.5rem;
+    --font-size-4xl: 1.75rem;
+    --font-size-5xl: 2rem;
+    --font-size-6xl: 2.5rem;
 }
 
 html,
 body {
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--font-family-base);
 }
 
 body {
-    color: var(--gris-80);
-    background-color: #f5f6f7;
+    color: var(--color-text);
+    background-color: var(--color-page-background);
 }
 
 .municipal-topbar {
-    background-color: var(--bg-muni-b4);
-    color: var(--gris-0);
-    font-size: var(--tx-2);
+    background-color: var(--color-neutral-90);
+    color: var(--color-white);
+    font-size: var(--font-size-sm);
 }
 
-.municipal-brand-mark {
-    display: inline-flex;
-    width: 2.75rem;
-    height: 2.75rem;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid var(--muni-base);
-    border-radius: 50%;
-    color: var(--muni-base);
-    font-size: var(--tx-8);
-    font-weight: 700;
+.municipal-topbar a {
+    color: var(--color-white);
+    text-decoration: none;
+}
+
+.municipal-topbar a:hover,
+.municipal-topbar a:focus {
+    text-decoration: underline;
+}
+
+.municipal-masthead {
+    background-color: var(--color-primary-darkest);
+    color: var(--color-white);
 }
 
 .municipal-brand {
-    color: var(--gris-80);
+    color: var(--color-white);
     text-decoration: none;
+}
+
+.municipal-brand-logo {
+    display: block;
+    width: min(250px, 42vw);
+    height: 3.75rem;
+    object-fit: contain;
+    object-position: left center;
+}
+
+.municipal-brand-divider {
+    width: 1px;
+    height: 3rem;
+    background-color: rgba(255, 255, 255, 0.55);
 }
 
 .municipal-brand:hover,
 .municipal-brand:focus {
-    color: var(--muni-base);
+    color: var(--color-white);
+}
+
+.municipal-project-label {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 0.25rem;
+    font-size: var(--font-size-sm);
 }
 
 .municipal-nav {
-    background-color: var(--bg-muni-b4);
-    border-top: 1px solid var(--gris-10);
-    border-bottom: 3px solid var(--muni-base);
+    background-color: var(--color-primary);
+    border-bottom: 3px solid var(--color-primary-darkest);
 }
 
 .municipal-nav .nav-link {
-    color: var(--gris-0);
+    color: var(--color-white);
     font-weight: 500;
 }
 
 .municipal-nav .nav-link:hover,
 .municipal-nav .nav-link:focus {
-    color: var(--bg-muni-a1);
+    color: var(--color-primary-lightest);
+}
+
+.municipal-nav .nav-link[aria-current="page"] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.35rem;
 }
 
 .municipal-nav .navbar-toggler {
@@ -101,16 +137,106 @@ body {
     filter: invert(1);
 }
 
+.municipal-context {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+}
+
+.municipal-context-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.municipal-context-icon {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: var(--color-primary-lightest);
+    color: var(--color-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+}
+
+.municipal-context-label,
+.municipal-context-detail {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.municipal-context strong {
+    display: block;
+}
+
 .page-content {
     min-height: 55vh;
 }
 
+.page-intro {
+    padding: clamp(1.5rem, 4vw, 3rem);
+    border-left: 5px solid var(--color-primary);
+    border-radius: 0.35rem;
+    background-color: var(--color-surface);
+    box-shadow: 0 0.25rem 1rem rgba(26, 26, 26, 0.06);
+}
+
+.page-intro-kicker {
+    margin-bottom: 0.5rem;
+    color: var(--color-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.page-intro h1 {
+    margin-bottom: 1rem;
+    color: var(--color-neutral-90);
+    font-size: clamp(var(--font-size-3xl), 4vw, var(--font-size-5xl));
+}
+
+.page-intro p {
+    max-width: 48rem;
+    margin-bottom: 0.75rem;
+}
+
+.page-intro-note {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
 .municipal-footer {
-    border-top: 4px solid var(--muni-base);
-    background-color: var(--bg-muni-b4);
-    color: var(--gris-0);
+    border-top: 4px solid var(--color-primary);
+    background-color: var(--color-neutral-90);
+    color: var(--color-white);
 }
 
 .municipal-footer a {
-    color: var(--gris-0);
+    color: var(--color-white);
+}
+
+.municipal-footer-note {
+    color: var(--color-neutral-20);
+    font-size: var(--font-size-sm);
+}
+
+@media (max-width: 575.98px) {
+    .municipal-brand-logo {
+        width: 42vw;
+        height: 2.75rem;
+    }
+
+    .municipal-brand-divider {
+        height: 2.5rem;
+    }
+
+    .municipal-project-label {
+        display: none;
+    }
 }
