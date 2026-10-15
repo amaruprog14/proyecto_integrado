@@ -1,33 +1,48 @@
-{% load django_bootstrap5 %} {% load static %}
+{% load django_bootstrap5 %}
+{% load static %}
 <!doctype html>
 <html lang="es">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="description" content="Plataforma de gestión energética municipal de EcoEnergy." />
-        <title>{% block title %}EcoEnergy · Gestión municipal{% endblock %}</title>
+        <meta
+            name="description"
+            content="Prototipo académico del Sistema de Gestión de Resultados de la Municipalidad de La Serena."
+        />
+        <meta name="theme-color" content="#920000" />
+        <title>{% block title %}SGR · Gestión de Resultados · Municipalidad de La Serena{% endblock %}</title>
         {% bootstrap_css %}
         <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
+        {% block extra_head %}{% endblock %}
     </head>
     <body class="d-flex min-vh-100 flex-column">
         <header>
             <div class="municipal-topbar py-2">
                 <div class="container d-flex flex-wrap justify-content-between gap-2">
-                    <span>Ilustre Municipalidad de La Serena</span>
-                    <span>Plataforma de gestión energética</span>
+                    <span>Proyecto académico · Municipalidad de La Serena</span>
+                    <a href="https://laserena.cl/" target="_blank" rel="noopener noreferrer">
+                        Portal municipal oficial
+                    </a>
                 </div>
             </div>
 
-            <div class="bg-white py-3">
+            <div class="municipal-masthead py-3">
                 <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
-                    <a class="municipal-brand d-flex align-items-center gap-3" href="#">
-                        <span class="municipal-brand-mark" aria-hidden="true">E</span>
+                    <a class="municipal-brand d-flex align-items-center gap-3" href="{% url 'home' %}">
+                        <img
+                            class="municipal-brand-logo"
+                            src="https://framework.laserena.cl/img/horizontal-blanco.svg"
+                            alt="Ilustre Municipalidad de La Serena"
+                            width="250"
+                            height="64"
+                        />
+                        <span class="municipal-brand-divider" aria-hidden="true"></span>
                         <span>
-                            <span class="d-block fs-4 fw-bold">EcoEnergy</span>
-                            <span class="d-block small text-secondary">Gestión energética municipal</span>
+                            <span class="d-block fs-5 fw-bold">Sistema de Gestión</span>
+                            <span class="d-block">de Resultados · SGR</span>
                         </span>
                     </a>
-                    <span class="small text-secondary">Herramienta de apoyo a la gestión municipal</span>
+                    <span class="municipal-project-label">Prototipo académico</span>
                 </div>
             </div>
 
@@ -46,24 +61,95 @@
                     </button>
                     <div class="collapse navbar-collapse" id="navegacionPrincipal">
                         <ul class="navbar-nav gap-lg-3">
-                            <li class="nav-item"><a class="nav-link" href="#">Inicio</a></li>
-                            <li class="nav-item"><a class="nav-link" href="#">Actividades</a></li>
-                            <li class="nav-item"><a class="nav-link" href="#">Agenda</a></li>
-                            <li class="nav-item"><a class="nav-link" href="#">Indicadores</a></li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'home' %}" aria-current="page">Inicio</a>
+                            </li>
+                            {% block primary_navigation %}{% endblock %}
                         </ul>
                     </div>
                 </div>
             </nav>
+
+            {% if user.is_authenticated %}
+                <section class="municipal-context" aria-label="Usuario y delegación activa">
+                    <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div class="municipal-context-item">
+                            <span class="municipal-context-icon" aria-hidden="true">U</span>
+                            <span>
+                                <span class="municipal-context-label">Usuario</span>
+                                <strong>
+                                    {% if user.official %}
+                                        {{ user.official.full_name }}
+                                    {% else %}
+                                        {{ user.get_full_name|default:user.username }}
+                                    {% endif %}
+                                </strong>
+                                <span class="municipal-context-detail">
+                                    Rol:
+                                    {% if user.is_superuser %}
+                                        Administrador del sistema
+                                    {% elif user.official %}
+                                        {% for role in user.official.roles.all %}
+                                            {{ role.role_name }}{% if not forloop.last %}, {% endif %}
+                                        {% empty %}
+                                            Sin rol asignado
+                                        {% endfor %}
+                                    {% else %}
+                                        Sin perfil asignado
+                                    {% endif %}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="municipal-context-item">
+                            <span class="municipal-context-icon" aria-hidden="true">D</span>
+                            <span>
+                                <span class="municipal-context-label">Delegación activa</span>
+                                <strong>
+                                    {% if active_delegation %}
+                                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                                    {% elif user.official.delegation %}
+                                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                                    {% else %}
+                                        Sin delegación asignada
+                                    {% endif %}
+                                </strong>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+            {% endif %}
         </header>
 
-        <main class="container page-content flex-grow-1 py-4 py-md-5">{% block content %}{% endblock %}</main>
+        <main id="contenido" class="container page-content flex-grow-1 py-4 py-md-5">
+            {% block content %}
+                <section class="page-intro" aria-labelledby="inicioTitulo">
+                    <p class="page-intro-kicker">Municipalidad de La Serena</p>
+                    <h1 id="inicioTitulo">Sistema de Gestión de Resultados</h1>
+                    <p>
+                        Plataforma de apoyo a la gestión municipal para registrar, dar seguimiento
+                        y medir la gestión de funcionarios y delegaciones.
+                    </p>
+                    <p class="page-intro-note">
+                        En esta evaluación, el prototipo prioriza el acceso, los mantenedores y el
+                        registro de atención ciudadana. Las funciones disponibles dependen del
+                        avance del proyecto y la integración del backend.
+                    </p>
+                </section>
+            {% endblock %}
+        </main>
 
         <footer class="municipal-footer py-4">
-            <div class="container d-flex flex-wrap justify-content-between gap-2">
-                <span class="fw-semibold">EcoEnergy</span>
-                <span class="small">Plataforma de gestión energética municipal</span>
+            <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div>
+                    <span class="d-block fw-semibold">Sistema de Gestión de Resultados · SGR</span>
+                    <span class="small">Ilustre Municipalidad de La Serena</span>
+                </div>
+                <span class="municipal-footer-note">
+                    Prototipo académico; no representa un sistema oficial aprobado.
+                </span>
             </div>
         </footer>
         {% bootstrap_javascript %}
+        {% block extra_scripts %}{% endblock %}
     </body>
 </html>
