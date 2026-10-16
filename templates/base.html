@@ -66,6 +66,27 @@
                             </li>
                             {% block primary_navigation %}{% endblock %}
                         </ul>
+                        <ul class="navbar-nav ms-lg-auto gap-lg-3 align-items-lg-center">
+                            {% if user.is_authenticated %}
+                                <li class="nav-item">
+                                    <span class="nav-link nav-session-user">
+                                        Sesión: {{ user.get_username }}
+                                    </span>
+                                </li>
+                                <li class="nav-item">
+                                    <form class="nav-session-form" method="post" action="{% url 'logout' %}">
+                                        {% csrf_token %}
+                                        <button class="nav-link nav-session-action" type="submit">
+                                            Cerrar sesión
+                                        </button>
+                                    </form>
+                                </li>
+                            {% else %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'login' %}">Ingresar</a>
+                                </li>
+                            {% endif %}
+                        </ul>
                     </div>
                 </div>
             </nav>
