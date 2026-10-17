@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Ingreso de atención · SGR{% endblock %}
+
+{% block content %}
+    <section class="attention-entry" aria-labelledby="attention-entry-title">
+        <header class="attention-entry-heading">
+            <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Atenciones</p>
+            <h1 id="attention-entry-title">Ingreso de atención</h1>
+        </header>
+
+        <form class="attention-entry-card" id="attention-entry-form">
+            <div class="attention-entry-grid">
+                <div class="attention-entry-field">
+                    <label for="attention-recipient">Vecino o solicitante <span aria-hidden="true">*</span></label>
+                    <select class="form-select" id="attention-recipient" name="recipient" required>
+                        <option value="">Seleccione una persona de ejemplo</option>
+                        <option value="P001">Ana Ejemplo · 11.111.111-1</option>
+                        <option value="P002">Luis Ejemplo · 12.222.222-2</option>
+                        <option value="P003">Sara Ejemplo · 13.333.333-3</option>
+                    </select>
+                    <p class="attention-entry-hint">Listado ficticio para mostrar el selector de solicitantes.</p>
+                </div>
+
+                <div class="attention-entry-field">
+                    <label for="attention-delegation">Delegación de atención</label>
+                    <input
+                        class="form-control attention-entry-readonly"
+                        id="attention-delegation"
+                        type="text"
+                        value="{% if user.is_authenticated and user.official and user.official.delegation %}{{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }} [Asignada por perfil]{% else %}DEL01 · Centro [Asignada por perfil · referencia]{% endif %}"
+                        readonly
+                        aria-describedby="attention-delegation-hint"
+                    >
+                    <p class="attention-entry-hint" id="attention-delegation-hint">La delegación se muestra como contexto y no se puede cambiar desde este formulario.</p>
+                </div>
+
+                <div class="attention-entry-field">
+                    <label for="attention-type">Tipo de Atención <span aria-hidden="true">*</span></label>
+                    <select class="form-select" id="attention-type" name="attention_type" required>
+                        <option value="">Seleccione un tipo</option>
+                        <option value="social" selected>Social</option>
+                        <option value="health">Salud</option>
+                        <option value="education">Educación</option>
+                    </select>
+                </div>
+
+                <div class="attention-entry-field">
+                    <label for="subattention-type">Sub Atención <span aria-hidden="true">*</span></label>
+                    <select class="form-select" id="subattention-type" name="subattention_type" required>
+                        <option value="">Seleccione una subatención</option>
+                        <option value="social" data-attention-type="social" selected>Ayuda social</option>
+                        <option value="guidance" data-attention-type="social">Orientación familiar</option>
+                        <option value="health" data-attention-type="health">Consulta médica</option>
+                        <option value="medication" data-attention-type="health">Entrega de medicamentos</option>
+                        <option value="education" data-attention-type="education">Beca municipal</option>
+                        <option value="school-support" data-attention-type="education">Taller de apoyo escolar</option>
+                    </select>
+                    <p class="attention-entry-hint" id="subattention-hint" aria-live="polite">Las opciones dependen del Tipo de Atención seleccionado.</p>
+                </div>
+
+                <div class="attention-entry-field attention-entry-field-full">
+                    <label for="attention-description">Descripción de la atención <span aria-hidden="true">*</span></label>
+                    <textarea
+                        class="form-control"
+                        id="attention-description"
+                        name="description"
+                        rows="3"
+                        maxlength="5000"
+                        placeholder="Describa la solicitud y los antecedentes necesarios."
+                        required
+                    ></textarea>
+                </div>
+            </div>
+
+            <div class="attention-entry-context" aria-label="Responsable y fecha de registro">
+                <span>
+                    Responsable:
+                    <strong>{% if user.is_authenticated and user.official %}{{ user.official.full_name }}{% elif user.is_authenticated %}{{ user.get_username }}{% else %}Usuario de ejemplo{% endif %}</strong>
+                </span>
+                <span>Fecha y hora: <strong id="attention-registered-at">Se completa en el navegador</strong></span>
+            </div>
+
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'activity_maintainer' %}">Cancelar</a>
+                <button class="btn btn-primary attention-entry-submit" type="submit">Guardar atención</button>
+            </div>
+
+            <p class="attention-entry-note">Demostración visual: no se guardará información ni se generará un identificador de atención.</p>
+        </form>
+
+        <dialog class="attention-entry-dialog" id="attention-entry-dialog" aria-labelledby="attention-entry-dialog-title">
+            <h2 id="attention-entry-dialog-title">Demostración sin persistencia</h2>
+            <p>Los campos son válidos, pero esta pantalla aún no está conectada al backend. No se creó ni guardó una atención.</p>
+            <button class="btn btn-primary" id="attention-entry-dialog-close" type="button">Volver al formulario</button>
+        </dialog>
+        <noscript><p class="attention-entry-note">Activa JavaScript para usar las selecciones dependientes de esta demostración.</p></noscript>
+    </section>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/attention-entry.js' %}" defer></script>
+{% endblock %}

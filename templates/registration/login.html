@@ -22,9 +22,30 @@
                 {% if next %}
                     <input type="hidden" name="next" value="{{ next }}">
                 {% endif %}
-                {{ form.as_p }}
+                <p>
+                    <label for="{{ form.username.id_for_label }}">Usuario institucional</label>
+                    {{ form.username }}
+                </p>
+                <p>
+                    <label for="{{ form.password.id_for_label }}">Contraseña</label>
+                    <span class="password-input-group">
+                        {{ form.password }}
+                        <button
+                            class="password-visibility-toggle"
+                            type="button"
+                            data-password-toggle="{{ form.password.id_for_label }}"
+                            aria-label="Mostrar contraseña"
+                            aria-pressed="false"
+                        >
+                            Mostrar
+                        </button>
+                    </span>
+                </p>
                 <button class="btn btn-primary login-submit" type="submit">Ingresar</button>
             </form>
+            <a class="auth-text-link login-recovery-link" href="{% url 'recovery_request' %}">
+                ¿Olvidaste tu contraseña?
+            </a>
         </section>
     </div>
 {% endblock %}

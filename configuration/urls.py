@@ -14,4 +14,27 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.urls import path
+
+from .views import (
+    AttentionTypeMaintainerView,
+    ItemMaintainerView,
+    PeriodMaintainerView,
+    SubattentionTypeMaintainerView,
+)
+
 urlpatterns = []
+urlpatterns += [
+    path('items/', ItemMaintainerView.as_view(), name='item_maintainer'),
+    path('periodos/', PeriodMaintainerView.as_view(), name='period_maintainer'),
+    path(
+        'tipos-atencion/',
+        AttentionTypeMaintainerView.as_view(),
+        name='attention_type_maintainer',
+    ),
+    path(
+        'subatenciones/',
+        SubattentionTypeMaintainerView.as_view(),
+        name='subattention_type_maintainer',
+    ),
+]

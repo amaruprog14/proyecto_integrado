@@ -1,9 +1,59 @@
 from django.contrib import admin
 from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from accounts.admin import ActivityInline, OfficialAdmin, PositionAdmin
 from accounts.models import Position
 from activities.models import Activity
+
+
+class AuthenticationFrontendRouteTests(SimpleTestCase):
+    def test_login_and_recovery_pages_render_their_templates(self):
+        routes_and_templates = (
+            ("login", "registration/login.html"),
+            ("recovery_request", "accounts/recovery_request.html"),
+            ("recovery_code", "accounts/recovery_code.html"),
+            ("recovery_password", "accounts/recovery_password.html"),
+        )
+
+        for route_name, template_name in routes_and_templates:
+            with self.subTest(route=route_name):
+                response = self.client.get(reverse(route_name))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, template_name)
+
+    def test_recovery_pages_explain_the_demo_scope(self):
+        response = self.client.get(reverse("recovery_request"))
+
+        self.assertContains(response, "no se envía ningún correo")
+        self.assertContains(
+            self.client.get(reverse("recovery_code")),
+            "no se valida con un servidor",
+        )
+        self.assertContains(
+            self.client.get(reverse("recovery_password")),
+            "no se guarda ni modifica en el sistema",
+        )
+
+
+class AccountMaintainerFrontendRouteTests(SimpleTestCase):
+    def test_c3_and_c4_account_maintainers_render_and_keep_crud_disabled(self):
+        routes_and_templates = (
+            ("delegation_list", "accounts/delegation_list.html"),
+            ("role_list", "accounts/role_list.html"),
+            ("user_maintainer", "accounts/user_list.html"),
+        )
+
+        for route_name, template_name in routes_and_templates:
+            with self.subTest(route=route_name):
+                response = self.client.get(reverse(route_name))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, template_name)
+                self.assertContains(response, 'id="maintainer-table"')
+                self.assertContains(response, 'disabled>+ Nuevo registro</button>')
+                self.assertContains(response, 'class="maintainer-actions"')
 
 
 class OfficialAdminInlineTests(SimpleTestCase):

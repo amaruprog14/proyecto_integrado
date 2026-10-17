@@ -1,10 +1,46 @@
 from datetime import date
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from configuration.admin import PeriodAdmin
 from configuration.models import Period
+
+
+class ConfigurationFrontendRouteTests(SimpleTestCase):
+    def test_c4_and_c5_catalogue_routes_render_their_templates(self):
+        routes_and_templates = (
+            ("item_maintainer", "configuration/item_list.html", "Ítems y metas"),
+            (
+                "attention_type_maintainer",
+                "configuration/attention_type_list.html",
+                "Tipos de Atención",
+            ),
+            (
+                "subattention_type_maintainer",
+                "configuration/subattention_type_list.html",
+                "Tipo asociado",
+            ),
+            ("period_maintainer", "configuration/period_list.html", "Períodos"),
+        )
+
+        for route_name, template_name, expected_content in routes_and_templates:
+            with self.subTest(route=route_name):
+                response = self.client.get(reverse(route_name))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, template_name)
+                self.assertContains(response, expected_content)
+                self.assertContains(response, 'id="maintainer-table"')
+
+    def test_catalogue_crud_actions_remain_disabled(self):
+        response = self.client.get(reverse("attention_type_maintainer"))
+
+        self.assertContains(response, 'disabled>+ Nuevo registro</button>')
+        self.assertContains(response, '<button type="button" disabled>Ver</button>')
+        self.assertContains(response, '<button type="button" disabled>Editar</button>')
+        self.assertContains(response, '<button type="button" disabled>Eliminar</button>')
 
 
 class PeriodValidationTests(TestCase):

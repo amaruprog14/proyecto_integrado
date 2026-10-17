@@ -62,9 +62,55 @@
                     <div class="collapse navbar-collapse" id="navegacionPrincipal">
                         <ul class="navbar-nav gap-lg-3">
                             <li class="nav-item">
-                                <a class="nav-link" href="{% url 'home' %}" aria-current="page">Inicio</a>
+                                <a
+                                    class="nav-link"
+                                    href="{% url 'home' %}"
+                                    {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}
+                                >
+                                    Inicio
+                                </a>
                             </li>
                             {% block primary_navigation %}{% endblock %}
+                            <li class="nav-item dropdown">
+                                <a
+                                    class="nav-link dropdown-toggle"
+                                    href="#"
+                                    role="button"
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false"
+                                >
+                                    Cuentas
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'delegation_list' %}">Delegaciones</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'role_list' %}">Roles</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'official_maintainer' %}">Funcionarios</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'user_maintainer' %}">Usuarios</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos</a></li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Operación
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'attention_entry' %}">Ingreso de atención</a></li>
+                                </ul>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Configuración
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'item_maintainer' %}">Ítems y metas</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a></li>
+                                </ul>
+                            </li>
                         </ul>
                         <ul class="navbar-nav ms-lg-auto gap-lg-3 align-items-lg-center">
                             {% if user.is_authenticated %}

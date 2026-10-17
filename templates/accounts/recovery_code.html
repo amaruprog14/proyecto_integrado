@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Validar código · SGR{% endblock %}
+
+{% block content %}
+    <div class="auth-flow-layout">
+        <section class="auth-flow-card" aria-labelledby="recovery-title">
+            <p class="page-intro-kicker">Gestión de Atención Ciudadana</p>
+            <h1 id="recovery-title">Validar código</h1>
+            <p class="auth-step-label">Paso 2 de 3 <span aria-hidden="true">·</span> Verificación</p>
+            <p class="auth-description">
+                Ingresa el código enviado a <strong id="recovery-email-masked">u***@example.test</strong>.
+            </p>
+
+            <form
+                class="auth-form"
+                id="recovery-code-form"
+                data-next-url="{% url 'recovery_password' %}"
+                method="post"
+                novalidate
+            >
+                {% csrf_token %}
+                <fieldset class="code-fieldset">
+                    <legend class="visually-hidden">Código de verificación de seis dígitos</legend>
+                    <div class="code-inputs" role="group" aria-label="Código de seis dígitos">
+                        {% for digit in "123456" %}
+                            <input
+                                class="code-digit"
+                                type="text"
+                                inputmode="numeric"
+                                pattern="[0-9]"
+                                maxlength="1"
+                                aria-label="Dígito {{ forloop.counter }}"
+                                autocomplete="{% if forloop.first %}one-time-code{% else %}off{% endif %}"
+                                required
+                            >
+                        {% endfor %}
+                    </div>
+                </fieldset>
+                <p class="auth-field-error" id="recovery-code-error" role="alert" hidden>Ingresa los seis dígitos para continuar.</p>
+                <p class="auth-demo-note">Demostración visual: cualquier código de seis dígitos permite avanzar; no se valida con un servidor.</p>
+                <p class="auth-expiry-note">Vigencia de referencia: 10 minutos.</p>
+                <button class="btn btn-primary auth-submit" type="submit">Verificar código</button>
+            </form>
+
+            <p class="auth-resend-line">
+                <span id="recovery-resend-countdown" aria-live="polite">Reenviar código en 00:45</span>
+                <button class="auth-text-button" id="recovery-resend" type="button" disabled hidden>Reenviar código</button>
+            </p>
+            <p class="auth-feedback" id="recovery-resend-feedback" role="status" hidden>Solicitud de reenvío simulada; no se envió ningún correo.</p>
+            <a class="auth-text-link auth-return-link" href="{% url 'login' %}">Volver al inicio de sesión</a>
+            <noscript><p class="auth-demo-note">Activa JavaScript para recorrer esta demostración de recuperación.</p></noscript>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="{% static 'js/auth-recovery.js' %}" defer></script>
+{% endblock %}

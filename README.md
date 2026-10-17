@@ -94,7 +94,40 @@ python manage.py seed_demo
 python manage.py runserver
 ```
 
-Abrir el Admin en: <http://127.0.0.1:8000/admin/>
+Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
+<http://127.0.0.1:8000/admin/>.
+
+### Frontend de los anexos C1–C6
+
+Las pantallas de la segunda evaluación están disponibles en estas rutas:
+
+| Anexo | Pantalla | Ruta |
+| ----- | -------- | ---- |
+| C1 | Ingreso al sistema | `/accounts/login/` |
+| C1 | Recuperar contraseña | `/accounts/recuperar/` |
+| C2 | Validar código | `/accounts/recuperar/codigo/` |
+| C2 | Crear nueva contraseña | `/accounts/recuperar/nueva-clave/` |
+| C3 | Delegaciones y roles | `/accounts/delegaciones/`, `/accounts/roles/` |
+| C4 | Usuarios e ítems y metas | `/accounts/usuarios/`, `/configuration/items/` |
+| C5 | Tipo de Atención y Sub Atención | `/configuration/tipos-atencion/`, `/configuration/subatenciones/` |
+| C6 | Ingreso de atención | `/activities/atenciones/nueva/` |
+
+Los mantenedores muestran registros ficticios y ofrecen búsqueda, filtro, exportación y
+paginación del lado del navegador; las acciones CRUD están deshabilitadas y no hay
+persistencia. La recuperación de contraseña y el ingreso de atención también son
+demostraciones frontend: no envían correos, modifican contraseñas ni guardan atenciones.
+El formulario de C6 muestra la delegación de referencia y filtra las subatenciones por
+tipo seleccionado en el navegador.
+
+El login es una excepción: usa las vistas estándar de autenticación de Django incluidas
+en `accounts/urls.py`, por lo que sí valida credenciales contra el backend. El acceso a
+las pantallas de demostración no representa autorización real por perfil o delegación.
+
+Para ejecutar las pruebas:
+
+```bash
+python manage.py test accounts activities configuration
+```
 
 ## Cuentas de prueba
 
@@ -127,14 +160,14 @@ Grupos y permisos (definidos en `seed_demo`):
 
 ### Apps
 
-| App             | Responsabilidad                                                          | Estado                            |
-| --------------- | ------------------------------------------------------------------------ | --------------------------------- |
-| `accounts`      | Cargos, áreas y funcionarios                                             | Implementada                      |
-| `configuration` | Ítems y períodos (tablas maestras)                                       | Implementada                      |
-| `activities`    | Registro de actividades                                                  | Implementada                      |
-| `common`        | `BaseModel` (auditoría), `get_user_area` (scoping) y comando `seed_demo` | Implementada                      |
-| `agenda`        | Planificación de actividades                                             | Reservada para la siguiente etapa |
-| `analytics`     | Reportes e indicadores                                                   | Reservada para la siguiente etapa |
+| App             | Responsabilidad                                                                                         | Estado                            |
+| --------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `accounts`      | Usuarios, delegaciones, roles, cargos, áreas y funcionarios; frontend de C1–C4                          | Implementada                      |
+| `configuration` | Ítems, períodos y catálogos de atención; frontend de C4–C5                                               | Implementada                      |
+| `activities`    | Registro de actividades e interfaz demostrativa de ingreso de atención; frontend de C6                 | Implementada                      |
+| `common`        | `BaseModel` (auditoría), `get_user_area` (scoping) y comando `seed_demo`                                 | Implementada                      |
+| `agenda`        | Planificación de actividades                                                                           | Reservada para la siguiente etapa |
+| `analytics`     | Reportes e indicadores                                                                                   | Reservada para la siguiente etapa |
 
 ### Estructura de carpetas
 
