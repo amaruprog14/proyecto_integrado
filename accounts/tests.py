@@ -4,7 +4,7 @@ from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from accounts.admin import ActivityInline, OfficialAdmin, PositionAdmin
-from accounts.models import Position
+from accounts.models import Delegation, Official, Position
 from activities.models import Activity
 
 
@@ -36,10 +36,35 @@ class AccountMaintainerFrontendRouteTests(TestCase):
             User.objects.create_superuser("admin", "admin@example.test", "Clave-Admin-1")
         )
 
-    def test_c3_and_c4_account_maintainers_render_and_keep_crud_disabled(self):
+    def test_reference_maintainers_render_and_official_crud_is_enabled(self):
+        # Cargos, Áreas y Roles siguen siendo mantenedores visuales; Funcionarios ya
+        # dispone de creación y edición persistentes.
+        routes_and_templates = (
+            ("role_list", "accounts/role_list.html"),
+            ("position_maintainer", "accounts/position_list.html"),
+            ("area_maintainer", "accounts/area_list.html"),
+            ("official_maintainer", "accounts/official_list.html"),
+        )
+
+        for route_name, template_name in routes_and_templates:
+            with self.subTest(route=route_name):
+                response = self.client.get(reverse(route_name))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, template_name)
+                self.assertContains(response, 'id="maintainer-table"')
+                self.assertContains(response, 'class="maintainer-actions"')
+                if route_name == "official_maintainer":
+                    self.assertContains(response, f'href="{reverse("official_create")}"')
+                else:
+                    self.assertContains(response, 'disabled>+ Nuevo registro</button>')
+
+    def test_c3_and_c4_delegations_and_users_render_with_enabled_crud(self):
+        Delegation.objects.create(
+            delegation_name="Delegación de prueba", address="Calle 1", commune="La Serena"
+        )
         routes_and_templates = (
             ("delegation_list", "accounts/delegation_list.html"),
-            ("role_list", "accounts/role_list.html"),
             ("user_maintainer", "accounts/user_list.html"),
         )
 
@@ -50,8 +75,30 @@ class AccountMaintainerFrontendRouteTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertTemplateUsed(response, template_name)
                 self.assertContains(response, 'id="maintainer-table"')
-                self.assertContains(response, 'disabled>+ Nuevo registro</button>')
                 self.assertContains(response, 'class="maintainer-actions"')
+                self.assertNotContains(response, 'disabled>+ Nuevo registro</button>')
+
+        delegation_response = self.client.get(reverse("delegation_list"))
+        self.assertContains(delegation_response, f'href="{reverse("delegation_create")}"')
+
+        user_response = self.client.get(reverse("user_maintainer"))
+        self.assertContains(user_response, f'href="{reverse("user_create")}"')
+
+    def test_official_maintainer_reads_persisted_officials(self):
+        user = User.objects.create_user("persistido", "persistido@example.test", "Clave-User-1")
+        Official.objects.create(
+            user=user,
+            full_name="Funcionario Persistido",
+            national_id="RUT-PERSISTIDO",
+            email="persistido@example.test",
+        )
+
+        response = self.client.get(reverse("official_maintainer"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Funcionario Persistido")
+        self.assertContains(response, "RUT-PERSISTIDO")
+        self.assertNotContains(response, "Camila Rojas")
 
 
 class OfficialAdminInlineTests(SimpleTestCase):

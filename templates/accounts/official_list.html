@@ -40,7 +40,9 @@
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
-                <button class="btn btn-primary maintainer-new-button" type="button" disabled>+ Nuevo registro</button>
+                {% if can_add %}
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'official_create' %}">+ Nuevo funcionario</a>
+                {% endif %}
             </header>
 
             <section class="maintainer-tools" aria-label="Búsqueda y filtros">
@@ -52,15 +54,15 @@
                         <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
                         <select class="form-select maintainer-status-filter" id="maintainer-status">
                             <option value="">Filtrar estado</option>
-                            {% for status in statuses %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
+                            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                         </select>
                     {% endif %}
                 </div>
             </section>
 
             <div class="table-responsive maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-page-size="3" data-export-filename="{{ maintainer_kind }}">
-                    <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th scope="col">Acciones</th></tr></thead>
+                <table class="table maintainer-table" id="maintainer-table" data-page-size="10" data-export-filename="{{ maintainer_kind }}">
+                    <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th class="maintainer-actions" scope="col">Acciones</th></tr></thead>
                     <tbody>
                         {% for record in records %}
                             <tr data-status="{{ record.status|default:'' }}">
@@ -72,9 +74,9 @@
                                     </td>
                                 {% endfor %}
                                 <td class="maintainer-actions">
-                                    <button type="button" disabled>Ver</button>
-                                    <button type="button" disabled>Editar</button>
-                                    <button type="button" disabled>Eliminar</button>
+                                    {% if can_change and not record.is_self %}
+                                        <a href="{% url 'official_update' record.pk %}">Editar</a>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
@@ -86,7 +88,7 @@
                 <p class="maintainer-record-count" id="maintainer-record-count" aria-live="polite"></p>
                 <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination" id="maintainer-pagination"></ul></nav>
             </div>
-            <p class="maintainer-demo-note">Diseño referencial <span aria-hidden="true">·</span> Datos ficticios <span aria-hidden="true">·</span> Acciones visuales sin persistencia</p>
+            <p class="maintainer-demo-note">Funcionarios registrados en el sistema <span aria-hidden="true">·</span> Las acciones disponibles dependen de los permisos asignados</p>
         </section>
     </div>
 {% endblock %}

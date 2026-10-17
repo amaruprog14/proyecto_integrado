@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link is-active" href="{% url 'delegation_list' %}" aria-current="page">Delegaciones</a>
+                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
+                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <div class="maintainer-active-delegation">
+                <span>Delegación activa</span>
+                <strong>
+                    {% if active_delegation %}
+                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                    {% elif user.official.delegation %}
+                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                    {% else %}
+                        DEL01 · Delegación Centro (referencia)
+                    {% endif %}
+                </strong>
+            </div>
+
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">
+                        Gestión municipal <span aria-hidden="true">/</span>
+                        <a class="auth-text-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                        <span aria-hidden="true">/</span> {{ delegation.code }}
+                    </p>
+                    <h1 id="maintainer-title">{{ delegation.delegation_name }}</h1>
+                </div>
+                {% if can_change %}
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'delegation_update' delegation.pk %}">Editar delegación</a>
+                {% endif %}
+            </header>
+
+            <section class="attention-entry-card" aria-label="Datos de la delegación">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Código</dt>
+                    <dd class="col-sm-8">{{ delegation.code }}</dd>
+
+                    <dt class="col-sm-4">Nombre</dt>
+                    <dd class="col-sm-8">{{ delegation.delegation_name }}</dd>
+
+                    <dt class="col-sm-4">Dirección</dt>
+                    <dd class="col-sm-8">{{ delegation.address }}</dd>
+
+                    <dt class="col-sm-4">Comuna</dt>
+                    <dd class="col-sm-8">{{ delegation.commune }}</dd>
+
+                    <dt class="col-sm-4">Estado</dt>
+                    <dd class="col-sm-8">
+                        <span class="maintainer-status-pill{% if delegation.status == 'ACTIVE' %} is-active{% else %} is-inactive{% endif %}">{{ delegation.get_status_display }}</span>
+                    </dd>
+
+                    <dt class="col-sm-4">Funcionarios en esta delegación</dt>
+                    <dd class="col-sm-8">{{ officials_count }}</dd>
+
+                    <dt class="col-sm-4">Funcionarios con acceso autorizado</dt>
+                    <dd class="col-sm-8">{{ authorized_count }}</dd>
+
+                    <dt class="col-sm-4">Atenciones registradas</dt>
+                    <dd class="col-sm-8">{{ attentions_count }}</dd>
+
+                    <dt class="col-sm-4">Creada</dt>
+                    <dd class="col-sm-8">{{ delegation.created_at|date:"d-m-Y H:i" }}</dd>
+
+                    <dt class="col-sm-4">Última actualización</dt>
+                    <dd class="col-sm-8">{{ delegation.updated_at|date:"d-m-Y H:i" }}</dd>
+                </dl>
+            </section>
+
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'delegation_list' %}">Volver</a>
+                {% if can_change %}
+                    {% if delegation.status == 'ACTIVE' %}
+                        <form class="d-inline" method="post" action="{% url 'delegation_deactivate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} quedará inactiva. No se elimina su historial." data-swal-title="Desactivar delegación" data-swal-confirm-text="Sí, desactivar">
+                            {% csrf_token %}
+                            <button class="btn attention-entry-submit" type="submit">Desactivar</button>
+                        </form>
+                    {% else %}
+                        <form class="d-inline" method="post" action="{% url 'delegation_activate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} volverá a estar activa." data-swal-title="Activar delegación" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
+                            {% csrf_token %}
+                            <button class="btn attention-entry-submit" type="submit">Activar</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}

@@ -8,7 +8,7 @@ from datetime import timedelta
 from django.contrib.auth.models import Group, Permission, User
 from django.core import mail
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -141,6 +141,28 @@ class LoginTests(TestCase):
         self.client.force_login(self.user)
 
         self.assertRedirects(self.client.get(reverse("login")), reverse("home"))
+
+    def test_login_requires_csrf_and_accepts_current_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        login_url = reverse("login")
+
+        page = csrf_client.get(login_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("csrftoken", csrf_client.cookies)
+
+        rejected = csrf_client.post(
+            login_url,
+            {"username": "ana", "password": PASSWORD},
+        )
+        self.assertEqual(rejected.status_code, 403)
+
+        token = csrf_client.cookies["csrftoken"].value
+        accepted = csrf_client.post(
+            login_url,
+            {"username": "ana", "password": PASSWORD, "csrfmiddlewaretoken": token},
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertRedirects(accepted, reverse("home"))
 
 
 class ProtectedRouteTests(TestCase):

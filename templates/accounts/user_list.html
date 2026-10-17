@@ -40,55 +40,130 @@
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
-                <button class="btn btn-primary maintainer-new-button" type="button" disabled>+ Nuevo registro</button>
+                {% if can_add %}
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'user_create' %}">+ Nuevo registro</a>
+                {% endif %}
             </header>
 
-            <section class="maintainer-tools" aria-label="Búsqueda y filtros">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros">
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
-                <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
-                    <input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off">
-                    <button class="btn maintainer-export-button" id="maintainer-export" type="button">Exportar CSV para Excel</button>
-                    {% if statuses %}
-                        <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
-                        <select class="form-select maintainer-status-filter" id="maintainer-status">
-                            <option value="">Filtrar estado</option>
-                            {% for status in statuses %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
-                        </select>
-                    {% endif %}
+                <div class="maintainer-controls">
+                    <div class="input-group">
+                        <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" value="{{ query }}" placeholder="Buscar por nombre, usuario, correo, rol o delegación..." autocomplete="off">
+                        <button class="btn btn-primary" type="submit">Buscar</button>
+                    </div>
+                    <a class="btn maintainer-export-button" href="{% url 'user_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar CSV para Excel</a>
+                    <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
+                        <option value="">Filtrar estado</option>
+                        {% for value, label in status_choices %}
+                            <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-            </section>
+            </form>
 
             <div class="table-responsive maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-page-size="3" data-export-filename="{{ maintainer_kind }}">
-                    <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th scope="col">Acciones</th></tr></thead>
+                <table class="table maintainer-table" id="maintainer-table" data-export-filename="{{ maintainer_kind }}">
+                    <thead>
+                        <tr>
+                            <th scope="col">Nombre</th>
+                            <th scope="col">Correo electrónico</th>
+                            <th scope="col">Rol</th>
+                            <th scope="col">Delegación</th>
+                            <th scope="col">Estado</th>
+                            <th scope="col">Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        {% for record in records %}
-                            <tr data-status="{{ record.status|default:'' }}">
-                                {% for value in record.cells %}
-                                    <td>
-                                        {% if forloop.last and record.status %}
-                                            <span class="maintainer-status-pill{% if record.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ value }}</span>
-                                        {% else %}{{ value }}{% endif %}
-                                    </td>
-                                {% endfor %}
+                        {% for account in users %}
+                            <tr data-status="{{ account.status_code }}">
+                                <td>
+                                    {{ account.display_name }}
+                                    <span class="d-block small text-muted">{{ account.username }}</span>
+                                </td>
+                                <td>{{ account.display_email }}</td>
+                                <td>{{ account.display_roles }}</td>
+                                <td>{% if account.display_delegation %}{{ account.display_delegation.code }} · {{ account.display_delegation.delegation_name }}{% else %}—{% endif %}</td>
+                                <td>
+                                    <span class="maintainer-status-pill{% if account.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ account.status_label }}</span>
+                                </td>
                                 <td class="maintainer-actions">
-                                    <button type="button" disabled>Ver</button>
-                                    <button type="button" disabled>Editar</button>
-                                    <button type="button" disabled>Eliminar</button>
+                                    <a class="auth-text-link" href="{% url 'user_detail' account.pk %}">Ver</a>
+                                    {% if can_change %}
+                                        {% if account.pk != request.user.pk %}
+                                            <a class="auth-text-link" href="{% url 'user_update' account.pk %}">Editar</a>
+                                        {% endif %}
+                                        {% if account.status_is_active %}
+                                            {% if account.pk != request.user.pk %}
+                                                <form class="d-inline" method="post" action="{% url 'user_deactivate' account.pk %}" data-swal-confirm="El usuario {{ account.username }} quedará inactivo y no podrá iniciar sesión." data-swal-title="Desactivar usuario" data-swal-confirm-text="Sí, desactivar">
+                                                    {% csrf_token %}
+                                                    <button type="submit">Desactivar</button>
+                                                </form>
+                                            {% endif %}
+                                        {% else %}
+                                            <form class="d-inline" method="post" action="{% url 'user_activate' account.pk %}" data-swal-confirm="El usuario {{ account.username }} volverá a estar activo." data-swal-title="Activar usuario" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
+                                                {% csrf_token %}
+                                                <button type="submit">Activar</button>
+                                            </form>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center">
+                                    {% if query or selected_status %}
+                                        No hay usuarios que coincidan con la búsqueda o el filtro aplicado.
+                                    {% else %}
+                                        Aún no hay usuarios registrados.
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <p class="maintainer-empty" id="maintainer-empty" hidden>No hay registros que coincidan con la búsqueda.</p>
+
             <div class="maintainer-table-footer">
-                <p class="maintainer-record-count" id="maintainer-record-count" aria-live="polite"></p>
-                <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination" id="maintainer-pagination"></ul></nav>
+                <p class="maintainer-record-count" aria-live="polite">
+                    Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros
+                </p>
+                {% if page_obj.paginator.num_pages > 1 %}
+                    <nav aria-label="Paginación de usuarios">
+                        <ul class="pagination maintainer-pagination">
+                            <li class="page-item{% if not page_obj.has_previous %} disabled{% endif %}">
+                                {% if page_obj.has_previous %}
+                                    <a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+                                {% else %}
+                                    <span class="page-link">Anterior</span>
+                                {% endif %}
+                            </li>
+                            {% for number in page_obj.paginator.page_range %}
+                                <li class="page-item{% if number == page_obj.number %} active{% endif %}">
+                                    {% if number == page_obj.number %}
+                                        <span class="page-link">{{ number }}</span>
+                                    {% else %}
+                                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ number }}">{{ number }}</a>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                            <li class="page-item{% if not page_obj.has_next %} disabled{% endif %}">
+                                {% if page_obj.has_next %}
+                                    <a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Siguiente</a>
+                                {% else %}
+                                    <span class="page-link">Siguiente</span>
+                                {% endif %}
+                            </li>
+                        </ul>
+                    </nav>
+                {% endif %}
             </div>
-            <p class="maintainer-demo-note">Diseño referencial <span aria-hidden="true">·</span> Datos ficticios <span aria-hidden="true">·</span> El acceso por perfil y delegación requiere backend</p>
+            <p class="maintainer-demo-note">Los registros se guardan en el sistema. Las contraseñas se almacenan cifradas y nunca se muestran en el listado ni en la exportación.</p>
         </section>
     </div>
 {% endblock %}
 
-{% block extra_scripts %}<script src="{% static 'js/maintainer-list.js' %}" defer></script>{% endblock %}
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}
