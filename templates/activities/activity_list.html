@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
+                <a class="maintainer-sidebar-link is-active" href="{% url 'activity_maintainer' %}" aria-current="page">Actividades</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
+                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'attention_entry' %}">Ingreso de atención</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <div class="maintainer-active-delegation">
+                <span>Delegación activa</span>
+                <strong>
+                    {% if active_delegation %}
+                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                    {% elif user.official.delegation %}
+                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                    {% else %}
+                        DEL01 · Delegación Centro (referencia)
+                    {% endif %}
+                </strong>
+            </div>
+
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
+                    <h1 id="maintainer-title">{{ maintainer_title }}</h1>
+                </div>
+                <button class="btn btn-primary maintainer-new-button" type="button" disabled>+ Nuevo registro</button>
+            </header>
+
+            <section class="maintainer-tools" aria-label="Búsqueda y filtros">
+                <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
+                <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
+                    <input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off">
+                    <button class="btn maintainer-export-button" id="maintainer-export" type="button">Exportar CSV para Excel</button>
+                    {% if statuses %}
+                        <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
+                        <select class="form-select maintainer-status-filter" id="maintainer-status">
+                            <option value="">Filtrar estado</option>
+                            {% for status in statuses %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
+                        </select>
+                    {% endif %}
+                </div>
+            </section>
+
+            <div class="table-responsive maintainer-table-wrap">
+                <table class="table maintainer-table" id="maintainer-table" data-page-size="3" data-export-filename="{{ maintainer_kind }}">
+                    <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th scope="col">Acciones</th></tr></thead>
+                    <tbody>
+                        {% for record in records %}
+                            <tr data-status="{{ record.status|default:'' }}">
+                                {% for value in record.cells %}
+                                    <td>
+                                        {% if forloop.last and record.status %}
+                                            <span class="maintainer-status-pill{% if record.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ value }}</span>
+                                        {% else %}{{ value }}{% endif %}
+                                    </td>
+                                {% endfor %}
+                                <td class="maintainer-actions">
+                                    <button type="button" disabled>Ver</button>
+                                    <button type="button" disabled>Editar</button>
+                                    <button type="button" disabled>Eliminar</button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="maintainer-empty" id="maintainer-empty" hidden>No hay registros que coincidan con la búsqueda.</p>
+            <div class="maintainer-table-footer">
+                <p class="maintainer-record-count" id="maintainer-record-count" aria-live="polite"></p>
+                <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination" id="maintainer-pagination"></ul></nav>
+            </div>
+            <p class="maintainer-demo-note">Diseño referencial <span aria-hidden="true">·</span> Datos ficticios <span aria-hidden="true">·</span> Acciones visuales sin persistencia</p>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}<script src="{% static 'js/maintainer-list.js' %}" defer></script>{% endblock %}

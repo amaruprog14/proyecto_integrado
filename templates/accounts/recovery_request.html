@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Recuperar contraseña · SGR{% endblock %}
+
+{% block content %}
+    <div class="auth-flow-layout">
+        <section class="auth-flow-card" aria-labelledby="recovery-title">
+            <p class="page-intro-kicker">Gestión de Atención Ciudadana</p>
+            <h1 id="recovery-title">Recuperar contraseña</h1>
+            <p class="auth-step-label">Paso 1 de 3 <span aria-hidden="true">·</span> Solicitar código</p>
+            <p class="auth-description">Ingresa el correo asociado a tu cuenta.</p>
+
+            <form
+                class="auth-form"
+                id="recovery-request-form"
+                data-next-url="{% url 'recovery_code' %}"
+                method="post"
+                novalidate
+            >
+                {% csrf_token %}
+                <label for="recovery-email">Correo electrónico</label>
+                <input
+                    class="form-control"
+                    id="recovery-email"
+                    name="email"
+                    type="email"
+                    placeholder="usuario@example.test"
+                    autocomplete="email"
+                    required
+                >
+                <p class="auth-field-error" id="recovery-email-error" hidden>Ingresa un correo electrónico válido para continuar.</p>
+                <button class="btn btn-primary auth-submit" type="submit">Enviar código</button>
+            </form>
+
+            <p class="auth-feedback" id="recovery-request-feedback" role="status" hidden>
+                Si la cuenta existe, recibirás instrucciones. Esta es una vista de demostración: no se envía ningún correo.
+            </p>
+            <a class="btn btn-primary auth-submit auth-continue-link" id="recovery-request-continue" href="{% url 'recovery_code' %}" hidden>Continuar a validar código</a>
+            <a class="auth-text-link auth-return-link" href="{% url 'login' %}">Volver al inicio de sesión</a>
+            <noscript><p class="auth-demo-note">Activa JavaScript para recorrer esta demostración de recuperación.</p></noscript>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="{% static 'js/auth-recovery.js' %}" defer></script>
+{% endblock %}

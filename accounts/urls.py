@@ -16,6 +16,37 @@ Including another URLconf
 """
 from django.urls import include, path
 
+from .views import (
+    AreaMaintainerView,
+    DelegationMaintainerView,
+    GroupMaintainerView,
+    OfficialMaintainerView,
+    PositionMaintainerView,
+    RecoveryCodeView,
+    RecoveryPasswordView,
+    RecoveryRequestView,
+    RoleMaintainerView,
+    UserMaintainerView,
+)
+
 urlpatterns = [
+    path('recuperar/', RecoveryRequestView.as_view(), name='recovery_request'),
+    path('recuperar/codigo/', RecoveryCodeView.as_view(), name='recovery_code'),
+    path('recuperar/nueva-clave/', RecoveryPasswordView.as_view(), name='recovery_password'),
+    path('cargos/', PositionMaintainerView.as_view(), name='position_maintainer'),
+    path('areas/', AreaMaintainerView.as_view(), name='area_maintainer'),
+    path('funcionarios/', OfficialMaintainerView.as_view(), name='official_maintainer'),
+    path('usuarios/', UserMaintainerView.as_view(), name='user_maintainer'),
+    path('grupos/', GroupMaintainerView.as_view(), name='group_maintainer'),
+    path(
+        'delegaciones/',
+        DelegationMaintainerView.as_view(),
+        name='delegation_list',
+    ),
+    path(
+        'roles/',
+        RoleMaintainerView.as_view(),
+        name='role_list',
+    ),
     path('', include('django.contrib.auth.urls')),
 ]
