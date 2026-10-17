@@ -129,6 +129,29 @@ body {
     text-underline-offset: 0.35rem;
 }
 
+.municipal-nav .nav-session-user {
+    color: var(--color-primary-lightest);
+}
+
+.nav-session-form {
+    margin: 0;
+}
+
+.municipal-nav .nav-session-action {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 0.25rem;
+    background: transparent;
+    font: inherit;
+}
+
+.municipal-nav .nav-session-action:hover,
+.municipal-nav .nav-session-action:focus {
+    border-color: var(--color-white);
+    color: var(--color-white);
+    text-decoration: underline;
+}
+
 .municipal-nav .navbar-toggler {
     border-color: rgba(255, 255, 255, 0.5);
 }
@@ -209,6 +232,72 @@ body {
 .page-intro-note {
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+}
+
+.login-layout {
+    min-height: 55vh;
+}
+
+.login-panel {
+    width: min(100%, 30rem);
+    padding: clamp(1.5rem, 5vw, 2.5rem);
+    border-top: 5px solid var(--color-primary);
+    border-radius: 0.35rem;
+    background-color: var(--color-surface);
+    box-shadow: 0 0.25rem 1rem rgba(26, 26, 26, 0.08);
+    text-align: center;
+}
+
+.login-panel h1 {
+    margin-bottom: 0.5rem;
+    color: var(--color-neutral-90);
+    font-size: clamp(var(--font-size-3xl), 4vw, var(--font-size-5xl));
+}
+
+.login-description {
+    margin-bottom: 1.75rem;
+    color: var(--color-text-muted);
+}
+
+.login-form p {
+    margin-bottom: 1.25rem;
+}
+
+.login-form label {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--color-neutral-80);
+    font-weight: 600;
+}
+
+.login-form input:not([type="hidden"]) {
+    display: block;
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-neutral-30);
+    border-radius: 0.25rem;
+    background-color: var(--color-white);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+}
+
+.login-form input:not([type="hidden"]):focus {
+    border-color: var(--color-primary);
+    outline: 3px solid var(--color-primary-lightest);
+}
+
+.login-submit {
+    width: 100%;
+    margin-top: 0.25rem;
+    border-color: var(--color-primary);
+    background-color: var(--color-primary);
+}
+
+.login-submit:hover,
+.login-submit:focus {
+    border-color: var(--color-primary-dark);
+    background-color: var(--color-primary-dark);
 }
 
 .municipal-footer {

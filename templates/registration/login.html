@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Ingreso al sistema · SGR{% endblock %}
+
+{% block content %}
+    <div class="login-layout d-flex justify-content-center align-items-center">
+        <section class="login-panel" aria-labelledby="login-title">
+            <p class="page-intro-kicker">Acceso de usuarios</p>
+            <h1 id="login-title">Ingreso al sistema</h1>
+            <p class="login-description">
+                Ingresa tus credenciales para continuar al Sistema de Gestión de Resultados.
+            </p>
+
+            {% if form.errors %}
+                <div class="alert alert-danger" role="alert">
+                    Usuario o contraseña incorrectos.
+                </div>
+            {% endif %}
+
+            <form class="login-form" method="post">
+                {% csrf_token %}
+                {% if next %}
+                    <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+                {{ form.as_p }}
+                <button class="btn btn-primary login-submit" type="submit">Ingresar</button>
+            </form>
+        </section>
+    </div>
+{% endblock %}
