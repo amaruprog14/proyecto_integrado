@@ -14,8 +14,10 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.urls import include, path
+from django.contrib.auth import views as auth_views
+from django.urls import path
 
+from .forms import SGRAuthenticationForm
 from .views import (
     AreaMaintainerView,
     DelegationMaintainerView,
@@ -30,6 +32,15 @@ from .views import (
 )
 
 urlpatterns = [
+    path(
+        'login/',
+        auth_views.LoginView.as_view(
+            authentication_form=SGRAuthenticationForm,
+            redirect_authenticated_user=True,
+        ),
+        name='login',
+    ),
+    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('recuperar/', RecoveryRequestView.as_view(), name='recovery_request'),
     path('recuperar/codigo/', RecoveryCodeView.as_view(), name='recovery_code'),
     path('recuperar/nueva-clave/', RecoveryPasswordView.as_view(), name='recovery_password'),
@@ -48,5 +59,4 @@ urlpatterns = [
         RoleMaintainerView.as_view(),
         name='role_list',
     ),
-    path('', include('django.contrib.auth.urls')),
 ]

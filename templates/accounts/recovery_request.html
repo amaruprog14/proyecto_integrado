@@ -14,7 +14,6 @@
             <form
                 class="auth-form"
                 id="recovery-request-form"
-                data-next-url="{% url 'recovery_code' %}"
                 method="post"
                 novalidate
             >
@@ -25,20 +24,20 @@
                     id="recovery-email"
                     name="email"
                     type="email"
+                    value="{{ form.email.value|default_if_none:'' }}"
+                    maxlength="191"
                     placeholder="usuario@example.test"
                     autocomplete="email"
                     required
+                    {% if form.email.errors %}aria-invalid="true"{% endif %}
                 >
-                <p class="auth-field-error" id="recovery-email-error" hidden>Ingresa un correo electrónico válido para continuar.</p>
+                <p class="auth-field-error" id="recovery-email-error" role="alert" {% if not form.email.errors %}hidden{% endif %}>
+                    {% if form.email.errors %}{{ form.email.errors.0 }}{% else %}Ingresa un correo electrónico válido para continuar.{% endif %}
+                </p>
                 <button class="btn btn-primary auth-submit" type="submit">Enviar código</button>
             </form>
 
-            <p class="auth-feedback" id="recovery-request-feedback" role="status" hidden>
-                Si la cuenta existe, recibirás instrucciones. Esta es una vista de demostración: no se envía ningún correo.
-            </p>
-            <a class="btn btn-primary auth-submit auth-continue-link" id="recovery-request-continue" href="{% url 'recovery_code' %}" hidden>Continuar a validar código</a>
             <a class="auth-text-link auth-return-link" href="{% url 'login' %}">Volver al inicio de sesión</a>
-            <noscript><p class="auth-demo-note">Activa JavaScript para recorrer esta demostración de recuperación.</p></noscript>
         </section>
     </div>
 {% endblock %}

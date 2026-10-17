@@ -71,46 +71,55 @@
                                 </a>
                             </li>
                             {% block primary_navigation %}{% endblock %}
-                            <li class="nav-item dropdown">
-                                <a
-                                    class="nav-link dropdown-toggle"
-                                    href="#"
-                                    role="button"
-                                    data-bs-toggle="dropdown"
-                                    aria-expanded="false"
-                                >
-                                    Cuentas
-                                </a>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="{% url 'delegation_list' %}">Delegaciones</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'role_list' %}">Roles</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'official_maintainer' %}">Funcionarios</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'user_maintainer' %}">Usuarios</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos</a></li>
-                                </ul>
-                            </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    Operación
-                                </a>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'attention_entry' %}">Ingreso de atención</a></li>
-                                </ul>
-                            </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    Configuración
-                                </a>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="{% url 'item_maintainer' %}">Ítems y metas</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a></li>
-                                </ul>
-                            </li>
+                            {% comment %}
+                                El menú solo refleja los permisos; el acceso real se valida en cada vista.
+                            {% endcomment %}
+                            {% if perms.accounts.view_delegation or perms.accounts.view_role or perms.accounts.view_position or perms.accounts.view_area or perms.accounts.view_official or perms.auth.view_user or perms.auth.view_group %}
+                                <li class="nav-item dropdown">
+                                    <a
+                                        class="nav-link dropdown-toggle"
+                                        href="#"
+                                        role="button"
+                                        data-bs-toggle="dropdown"
+                                        aria-expanded="false"
+                                    >
+                                        Cuentas
+                                    </a>
+                                    <ul class="dropdown-menu">
+                                        {% if perms.accounts.view_delegation %}<li><a class="dropdown-item" href="{% url 'delegation_list' %}">Delegaciones</a></li>{% endif %}
+                                        {% if perms.accounts.view_role %}<li><a class="dropdown-item" href="{% url 'role_list' %}">Roles</a></li>{% endif %}
+                                        {% if perms.accounts.view_position %}<li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos</a></li>{% endif %}
+                                        {% if perms.accounts.view_area %}<li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas</a></li>{% endif %}
+                                        {% if perms.accounts.view_official %}<li><a class="dropdown-item" href="{% url 'official_maintainer' %}">Funcionarios</a></li>{% endif %}
+                                        {% if perms.auth.view_user %}<li><a class="dropdown-item" href="{% url 'user_maintainer' %}">Usuarios</a></li>{% endif %}
+                                        {% if perms.auth.view_group %}<li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos</a></li>{% endif %}
+                                    </ul>
+                                </li>
+                            {% endif %}
+                            {% if perms.activities.view_activity or perms.activities.add_socialattention %}
+                                <li class="nav-item dropdown">
+                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        Operación
+                                    </a>
+                                    <ul class="dropdown-menu">
+                                        {% if perms.activities.view_activity %}<li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades</a></li>{% endif %}
+                                        {% if perms.activities.add_socialattention %}<li><a class="dropdown-item" href="{% url 'attention_entry' %}">Ingreso de atención</a></li>{% endif %}
+                                    </ul>
+                                </li>
+                            {% endif %}
+                            {% if perms.configuration.view_item or perms.configuration.view_period or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype %}
+                                <li class="nav-item dropdown">
+                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        Configuración
+                                    </a>
+                                    <ul class="dropdown-menu">
+                                        {% if perms.configuration.view_item %}<li><a class="dropdown-item" href="{% url 'item_maintainer' %}">Ítems y metas</a></li>{% endif %}
+                                        {% if perms.configuration.view_period %}<li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos</a></li>{% endif %}
+                                        {% if perms.configuration.view_attentiontype %}<li><a class="dropdown-item" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a></li>{% endif %}
+                                        {% if perms.configuration.view_subattentiontype %}<li><a class="dropdown-item" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a></li>{% endif %}
+                                    </ul>
+                                </li>
+                            {% endif %}
                         </ul>
                         <ul class="navbar-nav ms-lg-auto gap-lg-3 align-items-lg-center">
                             {% if user.is_authenticated %}
@@ -188,6 +197,13 @@
         </header>
 
         <main id="contenido" class="container page-content flex-grow-1 py-4 py-md-5">
+            {% if messages %}
+                <div data-sgr-messages>
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.level_tag }}" role="alert" data-sgr-message data-level="{{ message.level_tag }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
             {% block content %}
                 <section class="page-intro" aria-labelledby="inicioTitulo">
                     <p class="page-intro-kicker">Municipalidad de La Serena</p>
@@ -217,6 +233,10 @@
             </div>
         </footer>
         {% bootstrap_javascript %}
+        {% if messages %}
+            <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+            <script src="{% static 'js/messages.js' %}" defer></script>
+        {% endif %}
         {% block extra_scripts %}{% endblock %}
     </body>
 </html>

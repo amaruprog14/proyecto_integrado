@@ -114,14 +114,55 @@ Las pantallas de la segunda evaluación están disponibles en estas rutas:
 
 Los mantenedores muestran registros ficticios y ofrecen búsqueda, filtro, exportación y
 paginación del lado del navegador; las acciones CRUD están deshabilitadas y no hay
-persistencia. La recuperación de contraseña y el ingreso de atención también son
-demostraciones frontend: no envían correos, modifican contraseñas ni guardan atenciones.
-El formulario de C6 muestra la delegación de referencia y filtra las subatenciones por
-tipo seleccionado en el navegador.
+persistencia. El ingreso de atención también es una demostración frontend: no guarda
+atenciones. El formulario de C6 muestra la delegación de referencia y filtra las
+subatenciones por tipo seleccionado en el navegador.
 
-El login es una excepción: usa las vistas estándar de autenticación de Django incluidas
-en `accounts/urls.py`, por lo que sí valida credenciales contra el backend. El acceso a
-las pantallas de demostración no representa autorización real por perfil o delegación.
+El login, el cierre de sesión, la protección de rutas y la recuperación de contraseña (C1–C2)
+sí están integrados con el backend (ver [Acceso y recuperación de contraseña](#acceso-y-recuperación-de-contraseña)).
+
+### Acceso y recuperación de contraseña
+
+**Ingreso (C1).** Se ingresa con nombre de usuario o correo (el del funcionario o, si no
+tiene, el del usuario) y contraseña. Los errores de credenciales muestran un mensaje genérico.
+Un usuario inactivo o un funcionario Inactivo, Suspendido o archivado no puede ingresar, y si
+tenía una sesión abierta deja de ser reconocido en la siguiente petición. El cierre de sesión
+es por `POST` y las páginas protegidas se envían sin caché, por lo que el botón Atrás no
+recupera datos tras cerrar sesión.
+
+**Rutas protegidas.** Sin sesión, toda pantalla interna redirige al login. Con sesión, cada
+vista valida en el servidor el permiso requerido (ocultar opciones del menú es solo visual):
+
+| Pantalla | Permiso requerido |
+| -------- | ----------------- |
+| Inicio | Solo sesión activa |
+| Delegaciones, Roles, Cargos, Áreas, Funcionarios | `accounts.view_delegation`, `view_role`, `view_position`, `view_area`, `view_official` |
+| Usuarios, Grupos | `auth.view_user`, `auth.view_group` |
+| Actividades, Ingreso de atención | `activities.view_activity`, `activities.add_socialattention` |
+| Ítems, Períodos, Tipo de Atención, Sub Atención | `configuration.view_item`, `view_period`, `view_attentiontype`, `view_subattentiontype` |
+
+Los permisos provienen del usuario, de sus grupos y de los **roles SGR vigentes** (activos y no
+archivados) de su funcionario (`accounts.backends.SGRAuthBackend`). Salvo el superusuario, se
+exige además un funcionario habilitado. Cada acceso denegado responde 403 y queda en el log de
+auditoría (`AuditLog`, acción «Acceso denegado»).
+
+**Recuperación (C1–C2).** Flujo en tres pasos con el modelo `PasswordResetCode`:
+
+1. Se ingresa el correo. La respuesta es la misma exista o no la cuenta; solo una cuenta
+   activa recibe el código de seis dígitos (en la base solo se guarda su hash).
+2. Se valida el código: controla vigencia, intentos fallidos, código ya usado, espera entre
+   reenvíos y máximo de reenvíos.
+3. Solo tras una verificación válida se define la nueva contraseña. Se validan sus requisitos
+   en el navegador y en el servidor (mínimo 8 caracteres, mayúscula, minúscula y número, además
+   de los validadores de Django). Al guardar se invalida el código, se registra en auditoría y
+   se vuelve al login con una confirmación SweetAlert2.
+
+Los mensajes del sistema (mensajes de Django) se muestran con SweetAlert2. Parámetros
+configurables en el `.env` (valores por defecto entre paréntesis): `PASSWORD_RESET_CODE_TTL_MINUTES`
+(10), `PASSWORD_RESET_RESEND_WAIT_SECONDS` (45), `PASSWORD_RESET_MAX_ATTEMPTS` (5) y
+`PASSWORD_RESET_MAX_RESENDS` (3). Por defecto el correo se imprime en la consola de
+`runserver` (`EMAIL_BACKEND` de consola); para enviarlo a un buzón real se configuran
+`EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` y las variables `EMAIL_*`.
 
 Para ejecutar las pruebas:
 
@@ -131,30 +172,54 @@ python manage.py test accounts activities configuration
 
 ## Cuentas de prueba
 
-Creadas por el comando `seed_demo` (solo para demostración). Todas usan la contraseña `demo1234`.
+Creadas por el comando `seed_demo` (solo para demostración). Todas usan la contraseña `demo1234`
+y también pueden ingresar con su correo (por ejemplo, `funcionario1@demo.cl` o `admin@demo.cl`).
 
-| Usuario                        | Rol                         | Área         | Alcance                                                                                                                                         |
-| ------------------------------ | --------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin_demo`                   | Superusuario                | Todas        | Acceso completo (incluye eliminar y ver registros archivados)                                                                                   |
-| `funcionario1`, `funcionario2` | Staff, grupo `Funcionarios` | Área Norte   | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
-| `funcionario3`, `funcionario4` | Staff, grupo `Funcionarios` | Área Sur     | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
-| `funcionario5`                 | Staff, grupo `Funcionarios` | Sin contexto | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
-| `consulta_norte`               | Staff, grupo `Consulta`     | Área Norte   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
+| Usuario          | Grupo / rol SGR                                   | Área         | Delegación                                  | Alcance                                                                                                                                         |
+| ---------------- | ------------------------------------------------- | ------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin_demo`     | Superusuario; rol Administrador                   | Todas        | D01 Centro (alcance ALL: todas las activas) | Acceso completo (incluye eliminar y ver registros archivados)                                                                                   |
+| `funcionario1`   | `Funcionarios`; rol Operador                      | Área Norte   | D01 Centro                                  | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
+| `funcionario2`   | `Funcionarios`; roles Operador y Verificador      | Área Norte   | D02 Norte                                   | Como funcionario1, más validación de evidencias (dos roles)                                                                                     |
+| `funcionario3`   | `Funcionarios`; rol Coordinador                   | Área Sur     | D03 Sur (alcance ALL: todas las activas)    | Como funcionario1, más consulta transversal y gestión de ítems y períodos                                                                       |
+| `funcionario4`   | `Funcionarios`; rol Supervisor                    | Área Sur     | D03 Sur; autorizadas Sur y Norte            | Como funcionario1, más consulta de delegaciones y períodos. Dos delegaciones autorizadas para probar el selector                                 |
+| `funcionario5`   | `Funcionarios`                                    | Sin contexto | —                                           | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
+| `consulta_norte` | `Consulta`; rol Consulta                          | Área Norte   | D02 Norte                                   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
+
+Todos son staff. Los permisos efectivos son los del grupo más los de los roles vigentes del funcionario.
 
 Grupos y permisos (definidos en `seed_demo`):
 
 | Grupo          | Permisos                                                                                           |
 | -------------- | -------------------------------------------------------------------------------------------------- |
-| `Funcionarios` | `view`, `add` y `change` sobre Actividad; `view` sobre Funcionario e Ítem. Sin permiso de eliminar |
+| `Funcionarios` | `view`, `add` y `change` sobre Actividad; `view` y `add` sobre Atención social; `view` sobre Funcionario e Ítem. Sin permiso de eliminar |
 | `Consulta`     | Solo `view` sobre Actividad, Funcionario e Ítem                                                    |
+
+Roles SGR (modelo `Role`, definidos en `seed_demo`). Ninguno incluye permisos de eliminar: la
+eliminación queda reservada al superusuario y el resto se archiva o desactiva.
+
+| Rol           | Alcance    | Permisos                                                                                                  |
+| ------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| Administrador | ALL        | `view`, `add` y `change` sobre cuentas, actividades y configuración, más usuarios y grupos; la auditoría solo se consulta |
+| Coordinador   | ALL        | Consulta de la operación, delegaciones y catálogos; `add` y `change` sobre Ítems y Períodos                |
+| Supervisor    | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios, delegaciones, ítems y períodos              |
+| Operador      | DELEGATION | Los mismos permisos del grupo `Funcionarios`                                                              |
+| Verificador   | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios e ítems; `add` y `change` sobre Validación de evidencia |
+| Consulta      | DELEGATION | Los mismos permisos del grupo `Consulta`                                                                  |
 
 ## Datos cargados por `seed_demo`
 
 - 5 áreas (Norte, Sur, Centro, Cordillera, Costa), 5 cargos, 5 ítems y 5 períodos (tablas maestras)
-- 6 funcionarios: 2 en Área Norte, 2 en Área Sur, 1 en Área Centro (archivado) y 1 de consulta en Área Norte
+- 4 delegaciones: D01 Centro, D02 Norte y D03 Sur activas; D04 Rural inactiva (direcciones ficticias)
+- 6 roles SGR (ver tabla anterior)
+- 7 funcionarios, todos con delegación y al menos un rol: 2 en Área Norte, 2 en Área Sur, 1 en Área
+  Centro (archivado), 1 de consulta en Área Norte y el funcionario del administrador
 - 10 actividades (2 por cada uno de los 5 funcionarios principales)
 - 1 funcionario con `deleted_at` como evidencia de borrado lógico
 - Áreas Norte y Sur con funcionarios y actividades, para demostrar el scoping por área
+
+El comando puede ejecutarse varias veces, incluso en días distintos, sin duplicar datos. En cada
+ejecución restablece los permisos de grupos y roles, y la delegación, delegaciones autorizadas y roles
+de los funcionarios de demostración.
 
 ## Arquitectura del proyecto
 

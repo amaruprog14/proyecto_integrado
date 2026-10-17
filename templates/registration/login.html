@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Ingreso al sistema · SGR{% endblock %}
 
@@ -8,23 +9,26 @@
             <p class="page-intro-kicker">Acceso de usuarios</p>
             <h1 id="login-title">Ingreso al sistema</h1>
             <p class="login-description">
-                Ingresa tus credenciales para continuar al Sistema de Gestión de Resultados.
+                Ingresa tu usuario o correo y tu contraseña para continuar al Sistema de Gestión de Resultados.
             </p>
 
-            {% if form.errors %}
+            {% if form.non_field_errors %}
                 <div class="alert alert-danger" role="alert">
-                    Usuario o contraseña incorrectos.
+                    {% for error in form.non_field_errors %}{{ error }}{% endfor %}
                 </div>
             {% endif %}
 
-            <form class="login-form" method="post">
+            <form class="login-form" method="post" novalidate>
                 {% csrf_token %}
                 {% if next %}
                     <input type="hidden" name="next" value="{{ next }}">
                 {% endif %}
                 <p>
-                    <label for="{{ form.username.id_for_label }}">Usuario institucional</label>
+                    <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
                     {{ form.username }}
+                    {% for error in form.username.errors %}
+                        <span class="auth-field-error d-block mt-1 mb-0" role="alert">{{ error }}</span>
+                    {% endfor %}
                 </p>
                 <p>
                     <label for="{{ form.password.id_for_label }}">Contraseña</label>
@@ -40,6 +44,9 @@
                             Mostrar
                         </button>
                     </span>
+                    {% for error in form.password.errors %}
+                        <span class="auth-field-error d-block mt-1 mb-0" role="alert">{{ error }}</span>
+                    {% endfor %}
                 </p>
                 <button class="btn btn-primary login-submit" type="submit">Ingresar</button>
             </form>
@@ -48,4 +55,8 @@
             </a>
         </section>
     </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="{% static 'js/auth-recovery.js' %}" defer></script>
 {% endblock %}

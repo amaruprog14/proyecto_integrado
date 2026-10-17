@@ -10,13 +10,13 @@
             <h1 id="recovery-title">Validar código</h1>
             <p class="auth-step-label">Paso 2 de 3 <span aria-hidden="true">·</span> Verificación</p>
             <p class="auth-description">
-                Ingresa el código enviado a <strong id="recovery-email-masked">u***@example.test</strong>.
+                Ingresa el código de seis dígitos enviado a <strong id="recovery-email-masked">{{ masked_email }}</strong>
+                si corresponde a una cuenta activa.
             </p>
 
             <form
                 class="auth-form"
                 id="recovery-code-form"
-                data-next-url="{% url 'recovery_password' %}"
                 method="post"
                 novalidate
             >
@@ -28,6 +28,7 @@
                             <input
                                 class="code-digit"
                                 type="text"
+                                name="code"
                                 inputmode="numeric"
                                 pattern="[0-9]"
                                 maxlength="1"
@@ -38,19 +39,22 @@
                         {% endfor %}
                     </div>
                 </fieldset>
-                <p class="auth-field-error" id="recovery-code-error" role="alert" hidden>Ingresa los seis dígitos para continuar.</p>
-                <p class="auth-demo-note">Demostración visual: cualquier código de seis dígitos permite avanzar; no se valida con un servidor.</p>
-                <p class="auth-expiry-note">Vigencia de referencia: 10 minutos.</p>
+                <p class="auth-field-error" id="recovery-code-error" role="alert" {% if not form.errors %}hidden{% endif %}>
+                    {% if form.non_field_errors %}{{ form.non_field_errors.0 }}{% elif form.code.errors %}{{ form.code.errors.0 }}{% else %}Ingresa los seis dígitos para continuar.{% endif %}
+                </p>
+                <p class="auth-expiry-note">El código vence {{ ttl_minutes }} minutos después de su envío.</p>
                 <button class="btn btn-primary auth-submit" type="submit">Verificar código</button>
             </form>
 
-            <p class="auth-resend-line">
-                <span id="recovery-resend-countdown" aria-live="polite">Reenviar código en 00:45</span>
-                <button class="auth-text-button" id="recovery-resend" type="button" disabled hidden>Reenviar código</button>
-            </p>
-            <p class="auth-feedback" id="recovery-resend-feedback" role="status" hidden>Solicitud de reenvío simulada; no se envió ningún correo.</p>
+            <form class="auth-resend-line" id="recovery-resend-form" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="resend">
+                <span id="recovery-resend-countdown" aria-live="polite" data-resend-wait="{{ resend_wait }}" {% if not resend_wait %}hidden{% endif %}>
+                    Reenviar código en {{ resend_wait_display }}
+                </span>
+                <button class="auth-text-button" id="recovery-resend" type="submit" {% if resend_wait %}disabled hidden{% endif %}>Reenviar código</button>
+            </form>
             <a class="auth-text-link auth-return-link" href="{% url 'login' %}">Volver al inicio de sesión</a>
-            <noscript><p class="auth-demo-note">Activa JavaScript para recorrer esta demostración de recuperación.</p></noscript>
         </section>
     </div>
 {% endblock %}

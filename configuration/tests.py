@@ -1,14 +1,20 @@
 from datetime import date
 
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
 from configuration.admin import PeriodAdmin
 from configuration.models import Period
 
 
-class ConfigurationFrontendRouteTests(SimpleTestCase):
+class ConfigurationFrontendRouteTests(TestCase):
+    def setUp(self):
+        self.client.force_login(
+            User.objects.create_superuser("admin", "admin@example.test", "Clave-Admin-1")
+        )
+
     def test_c4_and_c5_catalogue_routes_render_their_templates(self):
         routes_and_templates = (
             ("item_maintainer", "configuration/item_list.html", "Ítems y metas"),
