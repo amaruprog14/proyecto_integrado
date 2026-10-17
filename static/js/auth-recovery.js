@@ -1,3 +1,5 @@
+// Validación en el navegador del login y la recuperación de contraseña. Los formularios
+// válidos se envían al servidor, que vuelve a validar todo.
 document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-password-toggle]").forEach((toggle) => {
         toggle.addEventListener("click", () => {
@@ -15,25 +17,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // Evita el doble envío mientras el servidor responde.
+    const disableSubmit = (form) => {
+        form.querySelectorAll("button[type='submit']").forEach((button) => {
+            button.disabled = true;
+        });
+    };
+
     const requestForm = document.querySelector("#recovery-request-form");
     if (requestForm instanceof HTMLFormElement) {
         const emailInput = document.querySelector("#recovery-email");
         const emailError = document.querySelector("#recovery-email-error");
-        const feedback = document.querySelector("#recovery-request-feedback");
-        const continueLink = document.querySelector("#recovery-request-continue");
 
         requestForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            if (
-                !(emailInput instanceof HTMLInputElement) ||
-                !(emailError instanceof HTMLElement) ||
-                !(feedback instanceof HTMLElement) ||
-                !(continueLink instanceof HTMLAnchorElement)
-            ) {
-                return;
-            }
+            if (!(emailInput instanceof HTMLInputElement) || !(emailError instanceof HTMLElement)) return;
 
             if (!emailInput.validity.valid || !emailInput.value.trim()) {
+                event.preventDefault();
+                emailError.textContent = "Ingresa un correo electrónico válido para continuar.";
                 emailError.hidden = false;
                 emailInput.setAttribute("aria-invalid", "true");
                 emailInput.focus();
@@ -42,35 +43,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
             emailError.hidden = true;
             emailInput.removeAttribute("aria-invalid");
-            sessionStorage.setItem("sgr-recovery-email", emailInput.value.trim());
-            continueLink.href = requestForm.dataset.nextUrl || continueLink.href;
-            feedback.hidden = false;
-            continueLink.hidden = false;
+            disableSubmit(requestForm);
         });
     }
 
     const codeInputs = [...document.querySelectorAll(".code-digit")];
     const codeForm = document.querySelector("#recovery-code-form");
     if (codeInputs.length === 6 && codeForm instanceof HTMLFormElement) {
-        const emailLabel = document.querySelector("#recovery-email-masked");
-        const savedEmail = sessionStorage.getItem("sgr-recovery-email");
-        if (emailLabel instanceof HTMLElement && savedEmail) {
-            const [name, domain] = savedEmail.split("@");
-            emailLabel.textContent = domain
-                ? `${name.slice(0, 1)}***@${domain}`
-                : "u***@example.test";
-        }
-
         const codeError = document.querySelector("#recovery-code-error");
         const countdown = document.querySelector("#recovery-resend-countdown");
         const resendButton = document.querySelector("#recovery-resend");
-        const resendFeedback = document.querySelector("#recovery-resend-feedback");
 
         codeInputs.forEach((input, index) => {
             input.addEventListener("input", () => {
                 input.value = input.value.replace(/\D/g, "").slice(-1);
                 if (input.value && index < codeInputs.length - 1) codeInputs[index + 1].focus();
-                if (codeInputs.every((digit) => digit.value)) {
+                if (codeInputs.every((digit) => digit.value) && codeError instanceof HTMLElement) {
                     codeError.hidden = true;
                 }
             });
@@ -100,24 +88,21 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         codeForm.addEventListener("submit", (event) => {
-            event.preventDefault();
             const code = codeInputs.map((input) => input.value).join("");
             if (!/^\d{6}$/.test(code)) {
-                codeError.hidden = false;
+                event.preventDefault();
+                if (codeError instanceof HTMLElement) {
+                    codeError.textContent = "Ingresa los seis dígitos para continuar.";
+                    codeError.hidden = false;
+                }
                 codeInputs.find((input) => !input.value)?.focus();
                 return;
             }
-
-            codeError.hidden = true;
-            window.location.assign(codeForm.dataset.nextUrl);
+            disableSubmit(codeForm);
         });
 
-        if (
-            countdown instanceof HTMLElement &&
-            resendButton instanceof HTMLButtonElement &&
-            resendFeedback instanceof HTMLElement
-        ) {
-            let secondsRemaining = 45;
+        if (countdown instanceof HTMLElement && resendButton instanceof HTMLButtonElement) {
+            let secondsRemaining = Number(countdown.dataset.resendWait) || 0;
             const updateCountdown = () => {
                 if (secondsRemaining <= 0) {
                     countdown.hidden = true;
@@ -133,15 +118,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 window.setTimeout(updateCountdown, 1000);
             };
             updateCountdown();
-
-            resendButton.addEventListener("click", () => {
-                resendFeedback.hidden = false;
-                resendButton.disabled = true;
-                resendButton.hidden = true;
-                countdown.hidden = false;
-                secondsRemaining = 45;
-                updateCountdown();
-            });
         }
     }
 
@@ -150,14 +126,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const passwordInput = document.querySelector("#new-password");
         const confirmationInput = document.querySelector("#confirm-password");
         const error = document.querySelector("#recovery-password-error");
-        const success = document.querySelector("#recovery-password-success");
-        const successDialog = document.querySelector("#recovery-success-dialog");
-        const closeSuccess = document.querySelector("#recovery-success-close");
         const requirements = {
             length: (value) => value.length >= 8,
-            uppercase: (value) => /[A-Z]/.test(value),
-            lowercase: (value) => /[a-z]/.test(value),
-            number: (value) => /\d/.test(value),
+            uppercase: (value) => /\p{Lu}/u.test(value),
+            lowercase: (value) => /\p{Ll}/u.test(value),
+            number: (value) => /[0-9]/.test(value),
             match: (value) => value.length > 0 && value === confirmationInput.value,
         };
 
@@ -180,33 +153,15 @@ document.addEventListener("DOMContentLoaded", () => {
         confirmationInput?.addEventListener("input", updateRequirements);
 
         passwordForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            const isValid = updateRequirements();
-            if (!isValid) {
-                error.hidden = false;
+            if (!updateRequirements()) {
+                event.preventDefault();
+                if (error instanceof HTMLElement) error.hidden = false;
                 passwordInput?.focus();
                 return;
             }
 
-            error.hidden = true;
-            if (window.Swal) {
-                window.Swal.fire({
-                    title: "Validación completada (demo)",
-                    text: "La contraseña cumple los requisitos, pero no se ha guardado.",
-                    icon: "success",
-                    confirmButtonText: "Entendido",
-                    confirmButtonColor: "#ad0000",
-                }).then(() => {
-                    success.hidden = false;
-                });
-            } else {
-                successDialog.showModal();
-            }
-        });
-
-        closeSuccess?.addEventListener("click", () => {
-            successDialog.close();
-            success.hidden = false;
+            if (error instanceof HTMLElement) error.hidden = true;
+            disableSubmit(passwordForm);
         });
     }
 });

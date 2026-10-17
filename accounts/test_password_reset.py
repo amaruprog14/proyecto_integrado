@@ -72,6 +72,17 @@ class PasswordResetCodeTests(TestCase):
             PasswordResetCode.issue(self.user)
         self.assertEqual(ctx.exception.code, "resend_limit")
 
+    @override_settings(PASSWORD_RESET_MAX_RESENDS=1, PASSWORD_RESET_RESEND_WAIT_SECONDS=0)
+    def test_resend_limit_resets_when_the_current_code_expires(self):
+        PasswordResetCode.issue(self.user)
+        second, _ = PasswordResetCode.issue(self.user)
+        self._expire(second)
+
+        third, code = PasswordResetCode.issue(self.user)
+
+        self.assertEqual(third.resend_count, 0)
+        self.assertTrue(third.verify(code))
+
 
 class OfficialDelegationsTests(TestCase):
     def setUp(self):

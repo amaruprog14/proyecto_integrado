@@ -1,7 +1,7 @@
 from datetime import date
 
 from django.contrib.auth.models import Permission, User
-from django.test import SimpleTestCase, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
 from accounts.models import Area, Official, Position
@@ -9,7 +9,10 @@ from configuration.models import Item
 from .models import Activity
 
 
-class ActivityFrontendRouteTests(SimpleTestCase):
+class ActivityFrontendRouteTests(TestCase):
+	def setUp(self):
+		self.client.force_login(User.objects.create_superuser("admin", "admin@example.test", "Clave-Admin-1"))
+
 	def test_activity_list_route_renders_its_template(self):
 		response = self.client.get(reverse("activity_maintainer"))
 

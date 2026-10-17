@@ -1,7 +1,10 @@
 from django.views.generic import TemplateView
 
+from common.access import ProtectedViewMixin
 
-class ItemMaintainerView(TemplateView):
+
+class ItemMaintainerView(ProtectedViewMixin, TemplateView):
+    permission_required = 'configuration.view_item'
     template_name = 'configuration/item_list.html'
     extra_context = {
         'maintainer_title': 'Ítems y metas',
@@ -43,7 +46,8 @@ class ItemMaintainerView(TemplateView):
     }
 
 
-class AttentionTypeMaintainerView(TemplateView):
+class AttentionTypeMaintainerView(ProtectedViewMixin, TemplateView):
+    permission_required = 'configuration.view_attentiontype'
     template_name = 'configuration/attention_type_list.html'
     extra_context = {
         'maintainer_title': 'Tipos de Atención',
@@ -85,7 +89,8 @@ class AttentionTypeMaintainerView(TemplateView):
     }
 
 
-class SubattentionTypeMaintainerView(TemplateView):
+class SubattentionTypeMaintainerView(ProtectedViewMixin, TemplateView):
+    permission_required = 'configuration.view_subattentiontype'
     template_name = 'configuration/subattention_type_list.html'
     extra_context = {
         'maintainer_title': 'Sub Atención',
@@ -127,7 +132,8 @@ class SubattentionTypeMaintainerView(TemplateView):
     }
 
 
-class PeriodMaintainerView(TemplateView):
+class PeriodMaintainerView(ProtectedViewMixin, TemplateView):
+    permission_required = 'configuration.view_period'
     template_name = 'configuration/period_list.html'
     extra_context = {
         'maintainer_title': 'Períodos',

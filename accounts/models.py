@@ -114,6 +114,11 @@ class Official(BaseModel):
     def __str__(self):
         return self.full_name
 
+    @property
+    def is_enabled(self):
+        """Habilitado para operar: estado Activo y no archivado."""
+        return self.status == self.Status.ACTIVE and self.deleted_at is None
+
     def get_authorized_delegations(self):
         """
         Delegaciones activas a las que puede acceder el funcionario.
@@ -322,6 +327,8 @@ class PasswordResetCode(BaseModel):
         """
         Genera un código nuevo e invalida los anteriores. Devuelve (registro, código_en_claro).
         Lanza ValidationError si se pide antes de la espera mínima o se superó el máximo de reenvíos.
+        El conteo de reenvíos se reinicia cuando vence el código vigente, para no bloquear la cuenta
+        de forma permanente.
         """
         now = timezone.now()
         previous = cls.objects.filter(user=user, used_at__isnull=True).order_by("-created_at").first()
@@ -331,7 +338,8 @@ class PasswordResetCode(BaseModel):
                 raise ValidationError(
                     "Debe esperar antes de solicitar un nuevo código.", code="resend_too_soon"
                 )
-            resend_count = previous.resend_count + 1
+            if now < previous.expires_at:
+                resend_count = previous.resend_count + 1
             if resend_count > cls.max_resends():
                 raise ValidationError(
                     "Se alcanzó el máximo de reenvíos de código.", code="resend_limit"

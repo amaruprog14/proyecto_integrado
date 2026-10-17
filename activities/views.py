@@ -1,7 +1,10 @@
 from django.views.generic import TemplateView
 
+from common.access import ProtectedViewMixin
 
-class ActivityMaintainerView(TemplateView):
+
+class ActivityMaintainerView(ProtectedViewMixin, TemplateView):
+    permission_required = 'activities.view_activity'
     template_name = 'activities/activity_list.html'
     extra_context = {
         'maintainer_title': 'Actividades',
@@ -43,5 +46,6 @@ class ActivityMaintainerView(TemplateView):
     }
 
 
-class AttentionEntryView(TemplateView):
+class AttentionEntryView(ProtectedViewMixin, TemplateView):
+    permission_required = 'activities.add_socialattention'
     template_name = 'activities/attention_entry.html'

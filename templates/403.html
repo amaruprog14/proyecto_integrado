@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Acceso restringido · SGR{% endblock %}
+
+{% block content %}
+    <section class="page-intro" aria-labelledby="forbidden-title">
+        <p class="page-intro-kicker">Acceso restringido</p>
+        <h1 id="forbidden-title">No tienes permiso para ver esta página</h1>
+        <p>
+            Tu perfil no está autorizado para esta sección o no tiene un funcionario vigente asociado.
+        </p>
+        <p class="page-intro-note">
+            Si crees que se trata de un error, contacta al administrador del sistema.
+        </p>
+        <a class="auth-text-link" href="{% url 'home' %}">Volver al inicio</a>
+    </section>
+{% endblock %}
