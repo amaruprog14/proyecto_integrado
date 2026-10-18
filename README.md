@@ -175,24 +175,18 @@ python manage.py test accounts activities configuration
 Creadas por el comando `seed_demo` (solo para demostración). Todas usan la contraseña `demo1234`
 y también pueden ingresar con su correo (por ejemplo, `funcionario1@demo.cl` o `admin@demo.cl`).
 
-| Usuario          | Grupo / rol SGR                                   | Área         | Delegación                                  | Alcance                                                                                                                                         |
+| Usuario          | Rol SGR                                           | Área         | Delegación                                  | Alcance                                                                                                                                         |
 | ---------------- | ------------------------------------------------- | ------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `admin_demo`     | Superusuario; rol Administrador                   | Todas        | D01 Centro (alcance ALL: todas las activas) | Acceso completo (incluye eliminar y ver registros archivados)                                                                                   |
-| `funcionario1`   | `Funcionarios`; rol Operador                      | Área Norte   | D01 Centro                                  | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
-| `funcionario2`   | `Funcionarios`; roles Operador y Verificador      | Área Norte   | D02 Norte                                   | Como funcionario1, más validación de evidencias (dos roles)                                                                                     |
-| `funcionario3`   | `Funcionarios`; rol Coordinador                   | Área Sur     | D03 Sur (alcance ALL: todas las activas)    | Como funcionario1, más consulta transversal y gestión de ítems y períodos                                                                       |
-| `funcionario4`   | `Funcionarios`; rol Supervisor                    | Área Sur     | D03 Sur; autorizadas Sur y Norte            | Como funcionario1, más consulta de delegaciones y períodos. Dos delegaciones autorizadas para probar el selector                                 |
-| `funcionario5`   | `Funcionarios`                                    | Sin contexto | —                                           | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
-| `consulta_norte` | `Consulta`; rol Consulta                          | Área Norte   | D02 Norte                                   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
+| `funcionario1`   | Operador                                          | Área Norte   | D01 Centro                                  | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
+| `funcionario2`   | Operador y Verificador                            | Área Norte   | D02 Norte                                   | Como funcionario1, más validación de evidencias (dos roles)                                                                                     |
+| `funcionario3`   | Coordinador y Operador                            | Área Sur     | D03 Sur (alcance ALL: todas las activas)    | Como funcionario1, más consulta transversal y gestión de ítems y períodos                                                                       |
+| `funcionario4`   | Supervisor y Operador                             | Área Sur     | D03 Sur; autorizadas Sur y Norte            | Como funcionario1, más consulta de delegaciones y períodos. Dos delegaciones autorizadas para probar el selector                                 |
+| `funcionario5`   | Sin rol                                           | Sin contexto | —                                           | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
+| `consulta_norte` | Consulta                                          | Área Norte   | D02 Norte                                   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
 
-Todos son staff. Los permisos efectivos son los del grupo más los de los roles vigentes del funcionario.
-
-Grupos y permisos (definidos en `seed_demo`):
-
-| Grupo          | Permisos                                                                                           |
-| -------------- | -------------------------------------------------------------------------------------------------- |
-| `Funcionarios` | `view`, `add` y `change` sobre Actividad; `view` y `add` sobre Atención social; `view` sobre Funcionario e Ítem. Sin permiso de eliminar |
-| `Consulta`     | Solo `view` sobre Actividad, Funcionario e Ítem                                                    |
+Todos son staff. Los permisos efectivos de los funcionarios vienen **solo de sus roles SGR vigentes**
+(ninguno tiene grupos ni permisos propios), por lo que desactivar un rol retira lo que otorgaba.
 
 Roles SGR (modelo `Role`, definidos en `seed_demo`). Ninguno incluye permisos de eliminar: la
 eliminación queda reservada al superusuario y el resto se archiva o desactiva.
@@ -202,9 +196,9 @@ eliminación queda reservada al superusuario y el resto se archiva o desactiva.
 | Administrador | ALL        | `view`, `add` y `change` sobre cuentas, actividades y configuración, más usuarios y grupos; la auditoría solo se consulta |
 | Coordinador   | ALL        | Consulta de la operación, delegaciones y catálogos; `add` y `change` sobre Ítems y Períodos                |
 | Supervisor    | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios, delegaciones, ítems y períodos              |
-| Operador      | DELEGATION | Los mismos permisos del grupo `Funcionarios`                                                              |
+| Operador      | DELEGATION | `view`, `add` y `change` sobre Actividad; `view` y `add` sobre Atención social; `view` sobre Funcionario e Ítem |
 | Verificador   | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios e ítems; `add` y `change` sobre Validación de evidencia |
-| Consulta      | DELEGATION | Los mismos permisos del grupo `Consulta`                                                                  |
+| Consulta      | DELEGATION | Solo `view` sobre Actividad, Funcionario e Ítem                                                           |
 
 ## Datos cargados por `seed_demo`
 
@@ -218,8 +212,10 @@ eliminación queda reservada al superusuario y el resto se archiva o desactiva.
 - Áreas Norte y Sur con funcionarios y actividades, para demostrar el scoping por área
 
 El comando puede ejecutarse varias veces, incluso en días distintos, sin duplicar datos. En cada
-ejecución restablece los permisos de grupos y roles, y la delegación, delegaciones autorizadas y roles
-de los funcionarios de demostración.
+ejecución restablece los permisos de los roles, y la delegación, delegaciones autorizadas y roles
+de los funcionarios de demostración. Si una base cargada con una versión anterior tiene a los
+usuarios de demostración en los grupos `Funcionarios` o `Consulta`, los quita de ellos (los grupos
+no se eliminan).
 
 ## Arquitectura del proyecto
 

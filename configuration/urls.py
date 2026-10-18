@@ -16,16 +16,30 @@ Including another URLconf
 """
 from django.urls import path
 
+from .item_views import (
+    ItemActivateView,
+    ItemCreateView,
+    ItemDeactivateView,
+    ItemDetailView,
+    ItemExportView,
+    ItemListView,
+    ItemUpdateView,
+)
 from .views import (
     AttentionTypeMaintainerView,
-    ItemMaintainerView,
     PeriodMaintainerView,
     SubattentionTypeMaintainerView,
 )
 
 urlpatterns = []
 urlpatterns += [
-    path('items/', ItemMaintainerView.as_view(), name='item_maintainer'),
+    path('items/', ItemListView.as_view(), name='item_maintainer'),
+    path('items/exportar/', ItemExportView.as_view(), name='item_export'),
+    path('items/nuevo/', ItemCreateView.as_view(), name='item_create'),
+    path('items/<int:pk>/', ItemDetailView.as_view(), name='item_detail'),
+    path('items/<int:pk>/editar/', ItemUpdateView.as_view(), name='item_update'),
+    path('items/<int:pk>/desactivar/', ItemDeactivateView.as_view(), name='item_deactivate'),
+    path('items/<int:pk>/activar/', ItemActivateView.as_view(), name='item_activate'),
     path('periodos/', PeriodMaintainerView.as_view(), name='period_maintainer'),
     path(
         'tipos-atencion/',

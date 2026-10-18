@@ -11,14 +11,20 @@ from activities.models import Activity
 from configuration.models import Item, Period
 
 # Ningún perfil, salvo el superusuario, elimina registros: se archivan o desactivan.
-OFFICIALS_GROUP_PERMISSIONS = [
+# Los permisos de los funcionarios vienen solo de sus roles SGR, de modo que desactivar un rol
+# retira efectivamente lo que otorgaba.
+OPERATOR_PERMISSIONS = [
     "activities.view_activity", "activities.add_activity", "activities.change_activity",
     "activities.view_socialattention", "activities.add_socialattention",
     "accounts.view_official", "configuration.view_item",
 ]
-CONSULTA_GROUP_PERMISSIONS = [
+CONSULTA_PERMISSIONS = [
     "activities.view_activity", "accounts.view_official", "configuration.view_item",
 ]
+
+# Versiones anteriores del seed daban permisos por estos grupos. Se quita a los usuarios de
+# demostración de ellos (los grupos no se eliminan, por si se usan para otra cosa).
+LEGACY_GROUPS = ("Funcionarios", "Consulta")
 
 # (código, nombre, dirección, comuna, estado). Direcciones ficticias.
 DELEGATIONS = [
@@ -60,7 +66,7 @@ ROLES = {
     "Operador": (
         Role.Scope.DELEGATION,
         "Registra actividades y atenciones de su delegación.",
-        OFFICIALS_GROUP_PERMISSIONS,
+        OPERATOR_PERMISSIONS,
     ),
     "Verificador": (
         Role.Scope.DELEGATION,
@@ -75,16 +81,19 @@ ROLES = {
     "Consulta": (
         Role.Scope.DELEGATION,
         "Solo lectura sobre la información de su delegación.",
-        CONSULTA_GROUP_PERMISSIONS,
+        CONSULTA_PERMISSIONS,
     ),
 }
 
 # Contexto de Funcionario Demo 1 a 5: (delegación principal, roles, delegaciones autorizadas).
+# Coordinador y Supervisor no registran atenciones por sí solos; funcionario3 y funcionario4 suman
+# el rol Operador para conservar esa capacidad (ninguno es Administrador global, así que pueden
+# combinarse).
 OFFICIAL_CONTEXT = [
     ("Centro", ["Operador"], []),
     ("Norte", ["Operador", "Verificador"], []),
-    ("Sur", ["Coordinador"], []),
-    ("Sur", ["Supervisor"], ["Sur", "Norte"]),  # dos delegaciones autorizadas: prueba del selector
+    ("Sur", ["Coordinador", "Operador"], []),
+    ("Sur", ["Supervisor", "Operador"], ["Sur", "Norte"]),  # dos delegaciones autorizadas: prueba del selector
     ("Centro", ["Operador"], []),  # archivado y sin usuario: funcionario5 sigue sin contexto
 ]
 
@@ -138,13 +147,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         today = timezone.now().date()
-        officials_group, _ = Group.objects.get_or_create(name="Funcionarios")
-        # Permisos del usuario limitado: sin eliminar. El scoping (área) se aplica en el Admin.
-        officials_group.permissions.set(get_permissions(OFFICIALS_GROUP_PERMISSIONS))
-
-        # Grupo de solo lectura (usuario de consulta): ve su ámbito pero no modifica
-        consulta_group, _ = Group.objects.get_or_create(name="Consulta")
-        consulta_group.permissions.set(get_permissions(CONSULTA_GROUP_PERMISSIONS))
+        legacy_groups = list(Group.objects.filter(name__in=LEGACY_GROUPS))
 
         # ---------- 5 Áreas ----------
         area_names = ["Área Norte", "Área Sur", "Área Centro", "Área Cordillera", "Área Costa"]
@@ -194,7 +197,7 @@ class Command(BaseCommand):
             if created:
                 user.set_password("demo1234")
                 user.save()
-            user.groups.add(officials_group)
+            user.groups.remove(*legacy_groups)
             users.append(user)
 
         # ---------- 5 Funcionarios: 1-2 en Norte, 3-4 en Sur, 5 en Centro (archivado) ----------
@@ -228,7 +231,7 @@ class Command(BaseCommand):
         if created:
             consulta_user.set_password("demo1234")
             consulta_user.save()
-        consulta_user.groups.add(consulta_group)
+        consulta_user.groups.remove(*legacy_groups)
         consulta_official, _ = Official.objects.get_or_create(
             national_id="10000099-9",
             defaults=dict(full_name="Consulta Demo Norte", email="consulta_norte@demo.cl",

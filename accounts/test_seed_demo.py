@@ -3,7 +3,7 @@ from datetime import timedelta
 from io import StringIO
 from unittest import mock
 
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import Group, Permission, User
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
@@ -74,13 +74,37 @@ class SeedDemoDataTests(TestCase):
                 self.assertTrue(role.permissions.exists())
                 self.assertFalse(role.permissions.filter(codename__startswith="delete_").exists())
 
-    def test_operator_and_consulta_roles_match_the_existing_groups(self):
-        for role_name, group_name in (("Operador", "Funcionarios"), ("Consulta", "Consulta")):
-            with self.subTest(role=role_name):
+    def test_permissions_come_only_from_roles(self):
+        for username in SEEDED_USERNAMES[1:] + ("funcionario5",):  # admin_demo es superusuario
+            with self.subTest(username=username):
+                user = User.objects.get(username=username)
+
+                self.assertFalse(user.groups.exists())
+                self.assertFalse(user.user_permissions.exists())
                 self.assertEqual(
-                    permission_names(Role.objects.get(role_name=role_name).permissions.all()),
-                    permission_names(Group.objects.get(name=group_name).permissions.all()),
+                    user.get_all_permissions(),
+                    permission_names(Permission.objects.filter(sgr_roles__officials__user=user)),
                 )
+
+    def test_coordinator_and_supervisor_also_hold_the_operator_role(self):
+        for username, main_role in (("funcionario3", "Coordinador"), ("funcionario4", "Supervisor")):
+            with self.subTest(username=username):
+                official = User.objects.get(username=username).official
+
+                self.assertEqual(
+                    set(official.roles.values_list("role_name", flat=True)), {main_role, "Operador"}
+                )
+
+    def test_reseeding_removes_demo_users_from_legacy_groups(self):
+        group = Group.objects.create(name="Funcionarios")
+        group.permissions.add(Permission.objects.get(content_type__app_label="activities", codename="add_activity"))
+        user = User.objects.get(username="funcionario1")
+        user.groups.add(group)
+
+        run_seed()
+
+        self.assertFalse(user.groups.exists())
+        self.assertTrue(Group.objects.filter(name="Funcionarios").exists())
 
     def test_administrator_role_manages_the_system_but_cannot_alter_the_audit_log(self):
         permissions = permission_names(Role.objects.get(role_name="Administrador").permissions.all())
@@ -200,9 +224,21 @@ class SeedDemoAccessTests(TestCase):
         self.assertStatus("attention_type_maintainer", 200)
         self.assertStatus("role_list", 403)
 
-        self.login("funcionario4")  # Supervisor
+        self.login("funcionario4")  # Supervisor y Operador
         self.assertStatus("delegation_list", 200)
+        self.assertStatus("attention_entry", 200)
         self.assertStatus("user_maintainer", 403)
+
+    def test_deactivating_the_operator_role_removes_the_access_it_granted(self):
+        Role.objects.filter(role_name="Operador").update(is_active=False)
+
+        self.login("funcionario1")  # solo Operador
+        self.assertStatus("attention_entry", 403)
+        self.assertStatus("activity_maintainer", 403)
+
+        self.login("funcionario3")  # conserva lo que otorga Coordinador
+        self.assertStatus("attention_entry", 403)
+        self.assertStatus("period_maintainer", 200)
 
     def test_user_without_context_is_denied(self):
         self.login("funcionario5")

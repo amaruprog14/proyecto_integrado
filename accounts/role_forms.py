@@ -23,16 +23,12 @@ from django.db.models import Exists, OuterRef, Q
 
 from accounts.forms import privileged_permission_query
 from accounts.models import Official, Role
+from common.text import normalize_spaces
 
 SGR_APP_LABELS = ("accounts", "activities", "agenda", "analytics", "configuration")
 ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "delete": "Eliminar"}
 ACTION_ORDER = ("view", "add", "change")
 ROLE_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
-
-
-def normalize_spaces(value):
-    """Quita los espacios de los extremos y deja uno solo entre palabras."""
-    return " ".join((value or "").split())
 
 
 def sort_text(value):
@@ -189,12 +185,6 @@ def role_snapshot(role):
         "Estado": "Activo" if role.is_active else "Inactivo",
         "Permisos": ", ".join(permissions) or "Sin permisos",
     }
-
-
-def format_snapshot(snapshot, keys=None):
-    return "\n".join(
-        f"{key}: {value}" for key, value in snapshot.items() if keys is None or key in keys
-    )
 
 
 class PermissionCheckboxSelectMultiple(forms.CheckboxSelectMultiple):
