@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
+from common.text import describe_changes, format_snapshot, normalize_spaces
 
 from .models import Role
 from .role_forms import (
@@ -24,12 +25,10 @@ from .role_forms import (
     active_officials,
     can_grant_privileged_permissions,
     combined_roles_message,
-    format_snapshot,
     group_permissions,
     is_global_administrator,
     last_global_administrator,
     last_global_administrator_message,
-    normalize_spaces,
     officials_combining_roles,
     officials_phrase,
     permission_action,
@@ -223,17 +222,10 @@ class RoleUpdateView(ProtectedViewMixin, UpdateView):
     def form_valid(self, form):
         # A diferencia de RoleCreateView, aquí no se verifican los permisos privilegiados: editar
         # ya exige accounts.change_role, que es lo mismo que pide otorgarlos.
-        previous = form.previous_snapshot
+        previous_snapshot = form.previous_snapshot
         self.object = form.save()
-        current = role_snapshot(self.object)
-        changed = [key for key in current if current[key] != previous[key]]
-        _registrar_auditoria(
-            self.request,
-            "Actualización de rol",
-            self.object,
-            previous=format_snapshot(previous, changed) if changed else "Sin cambios",
-            new=format_snapshot(current, changed) if changed else "Sin cambios",
-        )
+        previous, new = describe_changes(previous_snapshot, role_snapshot(self.object))
+        _registrar_auditoria(self.request, "Actualización de rol", self.object, previous=previous, new=new)
         messages.success(self.request, f"El rol {self.object.role_name} fue actualizado correctamente.")
         return redirect(self.get_success_url())
 

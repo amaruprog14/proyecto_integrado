@@ -3,49 +3,6 @@ from django.views.generic import TemplateView
 from common.access import ProtectedViewMixin
 
 
-class ItemMaintainerView(ProtectedViewMixin, TemplateView):
-    permission_required = 'configuration.view_item'
-    template_name = 'configuration/item_list.html'
-    extra_context = {
-        'maintainer_title': 'Ítems y metas',
-        'maintainer_kind': 'items',
-        'columns': ['Código', 'Nombre', 'Descripción', 'Estado'],
-        'statuses': ['Activo', 'Inactivo'],
-        'records': [
-            {
-                'cells': ['ITM001', 'Cobertura', 'Atenciones registradas', 'Activo'],
-                'status': 'Activo',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ITM002', 'Satisfacción', 'Experiencia de atención', 'Activo'],
-                'status': 'Activo',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ITM003', 'Tiempos', 'Tiempo de respuesta', 'Activo'],
-                'status': 'Activo',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ITM004', 'Fiscalizaciones', 'Fiscalizaciones efectuadas', 'Activo'],
-                'status': 'Activo',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ITM005', 'Informes emitidos', 'Informes preparados y enviados', 'Activo'],
-                'status': 'Activo',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ITM006', 'Inspecciones', 'Inspecciones realizadas en terreno', 'Inactivo'],
-                'status': 'Inactivo',
-                'status_is_active': False,
-            },
-        ],
-    }
-
-
 class AttentionTypeMaintainerView(ProtectedViewMixin, TemplateView):
     permission_required = 'configuration.view_attentiontype'
     template_name = 'configuration/attention_type_list.html'
