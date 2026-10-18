@@ -8,7 +8,9 @@ advertencia por funcionarios afectados, protección del último Administrador gl
 auditoría de cambios de permisos y alcance.
 """
 
+import re
 from io import BytesIO
+from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -18,6 +20,7 @@ from openpyxl import load_workbook
 
 from accounts.forms import OfficialForm, OfficialUserForm
 from accounts.models import Delegation, Official, Role
+from accounts.role_forms import last_global_administrator
 from configuration.models import AuditLog
 
 User = get_user_model()
@@ -356,6 +359,17 @@ class RoleCrudAdminTests(TestCase):
         self.assertEqual(cell.value, "=1+1")
         self.assertEqual(cell.data_type, "s")
 
+    def test_export_file_contains_no_formula_for_names_starting_with_equals(self):
+        make_role('=HYPERLINK("http://ejemplo.test","clic")', "activities.view_activity")
+
+        response = self.client.get(reverse("role_export"), {"q": "=HYPERLINK"})
+
+        with ZipFile(BytesIO(response.content)) as workbook:
+            sheet_xml = workbook.read("xl/worksheets/sheet1.xml")
+        self.assertIsNone(re.search(rb"<f[ >]", sheet_xml))
+        self.assertIn(b'<c r="A2" t="inlineStr">', sheet_xml)
+        self.assertIn(b"=HYPERLINK", sheet_xml)
+
     def test_create_update_and_detail_views_render(self):
         official_with_role("operador.detalle", self.role)
 
@@ -468,6 +482,15 @@ class GlobalAdministratorProtectionTests(TestCase):
 
         self.admin_role.refresh_from_db()
         self.assertTrue(self.admin_role.is_active)
+
+    def test_last_global_administrator_is_none_with_two_staffed_global_administrators(self):
+        official_with_role("admin.global.dos", self.admin_role)
+        self.assertEqual(last_global_administrator(), self.admin_role)
+
+        backup = make_role("Administrador Respaldo", "accounts.change_role", scope=Role.Scope.ALL)
+        official_with_role("admin.respaldo", backup)
+
+        self.assertIsNone(last_global_administrator())
 
     def test_role_cannot_become_global_administrator_while_combined_with_other_roles(self):
         operator = make_role("Operador", "activities.view_activity")

@@ -221,6 +221,8 @@ class RoleUpdateView(ProtectedViewMixin, UpdateView):
         return context
 
     def form_valid(self, form):
+        # A diferencia de RoleCreateView, aquí no se verifican los permisos privilegiados: editar
+        # ya exige accounts.change_role, que es lo mismo que pide otorgarlos.
         previous = form.previous_snapshot
         self.object = form.save()
         current = role_snapshot(self.object)

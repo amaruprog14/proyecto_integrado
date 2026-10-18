@@ -2,8 +2,9 @@
 Mantenedor de Roles: formulario y reglas que lo mantienen coherente con el CRUD de usuarios.
 
 - "Administrador global" es la misma regla que aplica accounts.forms al asignar roles: alcance
-  ALL y al menos un permiso de privileged_permission_query(). Aquí vive solo en
-  is_global_administrator(), que reutiliza esa consulta.
+  ALL y al menos un permiso de privileged_permission_query(). Aquí se reutiliza esa consulta en
+  is_global_administrator() (un alcance y permisos dados) y en last_global_administrator()
+  (resuelta en la base de datos).
 - Asignar permisos privilegiados exige accounts.change_role, igual que asignar roles
   privilegiados a un usuario.
 - El sistema nunca queda sin administrador: el último rol Administrador global vigente con
@@ -18,7 +19,7 @@ from django import forms
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from accounts.forms import privileged_permission_query
 from accounts.models import Official, Role
@@ -75,12 +76,17 @@ def active_officials(role):
 
 def last_global_administrator():
     """El único rol vigente que da administración global a funcionarios activos, si es uno solo."""
-    roles = Role.objects.filter(is_active=True, deleted_at__isnull=True, scope=Role.Scope.ALL)
-    supporting = [
-        role
-        for role in roles
-        if is_global_administrator(role.scope, role.permissions.all()) and active_officials(role).exists()
-    ]
+    privileged = Permission.objects.filter(privileged_permission_query(), sgr_roles=OuterRef("pk"))
+    staffed = Official.objects.filter(active_official_filter(), roles=OuterRef("pk"))
+    supporting = list(
+        Role.objects.filter(
+            Exists(privileged),
+            Exists(staffed),
+            is_active=True,
+            deleted_at__isnull=True,
+            scope=Role.Scope.ALL,
+        ).order_by("pk")[:2]
+    )
     return supporting[0] if len(supporting) == 1 else None
 
 
