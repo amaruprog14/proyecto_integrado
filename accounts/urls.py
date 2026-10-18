@@ -18,6 +18,15 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from .forms import SGRAuthenticationForm
+from .role_views import (
+    RoleActivateView,
+    RoleCreateView,
+    RoleDeactivateView,
+    RoleDetailView,
+    RoleExportView,
+    RoleListView,
+    RoleUpdateView,
+)
 from .views import (
     AreaMaintainerView,
     DelegationActivateView,
@@ -36,7 +45,6 @@ from .views import (
     RecoveryCodeView,
     RecoveryPasswordView,
     RecoveryRequestView,
-    RoleMaintainerView,
     UserActivateView,
     UserCreateView,
     UserDeactivateView,
@@ -84,9 +92,11 @@ urlpatterns = [
     path('delegaciones/<int:pk>/editar/', DelegationUpdateView.as_view(), name='delegation_update'),
     path('delegaciones/<int:pk>/desactivar/', DelegationDeactivateView.as_view(), name='delegation_deactivate'),
     path('delegaciones/<int:pk>/activar/', DelegationActivateView.as_view(), name='delegation_activate'),
-    path(
-        'roles/',
-        RoleMaintainerView.as_view(),
-        name='role_list',
-    ),
+    path('roles/', RoleListView.as_view(), name='role_list'),
+    path('roles/exportar/', RoleExportView.as_view(), name='role_export'),
+    path('roles/nuevo/', RoleCreateView.as_view(), name='role_create'),
+    path('roles/<int:pk>/', RoleDetailView.as_view(), name='role_detail'),
+    path('roles/<int:pk>/editar/', RoleUpdateView.as_view(), name='role_update'),
+    path('roles/<int:pk>/desactivar/', RoleDeactivateView.as_view(), name='role_deactivate'),
+    path('roles/<int:pk>/activar/', RoleActivateView.as_view(), name='role_activate'),
 ]

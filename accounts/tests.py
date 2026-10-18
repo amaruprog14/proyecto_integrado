@@ -37,8 +37,9 @@ class AccountMaintainerFrontendRouteTests(TestCase):
         )
 
     def test_reference_maintainers_render_and_official_crud_is_enabled(self):
-        # Cargos, Áreas y Roles siguen siendo mantenedores visuales; Funcionarios ya
-        # dispone de creación y edición persistentes.
+        # Cargos y Áreas siguen siendo mantenedores visuales; Funcionarios y Roles ya
+        # disponen de creación y edición persistentes.
+        create_routes = {"official_maintainer": "official_create", "role_list": "role_create"}
         routes_and_templates = (
             ("role_list", "accounts/role_list.html"),
             ("position_maintainer", "accounts/position_list.html"),
@@ -54,8 +55,8 @@ class AccountMaintainerFrontendRouteTests(TestCase):
                 self.assertTemplateUsed(response, template_name)
                 self.assertContains(response, 'id="maintainer-table"')
                 self.assertContains(response, 'class="maintainer-actions"')
-                if route_name == "official_maintainer":
-                    self.assertContains(response, f'href="{reverse("official_create")}"')
+                if route_name in create_routes:
+                    self.assertContains(response, f'href="{reverse(create_routes[route_name])}"')
                 else:
                     self.assertContains(response, 'disabled>+ Nuevo registro</button>')
 

@@ -283,28 +283,6 @@ class RecoveryPasswordView(RecoveryFlowMixin, FormView):
 
 # --- Mantenedores (SCRUM-30: acceso validado en el servidor) ---
 
-class RoleMaintainerView(MaintainerListView):
-    permission_required = 'accounts.view_role'
-    template_name = 'accounts/role_list.html'
-    extra_context = {
-        'maintainer_title': 'Roles y permisos',
-        'maintainer_kind': 'roles',
-        'columns': ['Código', 'Rol', 'Alcance', 'Estado'],
-        'statuses': ['Activo', 'Inactivo'],
-        'records': [
-            {'cells': ['ROL01', 'Administrador', 'Transversal', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL02', 'Operador', 'Delegación', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL03', 'Consultor', 'Solo lectura', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL04', 'Supervisor', 'Delegaciones autorizadas', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL05', 'Coordinador', 'Delegación', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL06', 'Auditor', 'Solo lectura', 'Inactivo'], 'status': 'Inactivo', 'status_is_active': False},
-            {'cells': ['ROL07', 'Atención', 'Solo registros propios', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL08', 'Analista', 'Delegación', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['ROL09', 'Consulta general', 'Solo lectura', 'Inactivo'], 'status': 'Inactivo', 'status_is_active': False},
-        ],
-    }
-
-
 class PositionMaintainerView(MaintainerListView):
     permission_required = 'accounts.view_position'
     template_name = 'accounts/position_list.html'
