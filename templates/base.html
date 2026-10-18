@@ -124,6 +124,11 @@
                         <ul class="navbar-nav ms-lg-auto gap-lg-3 align-items-lg-center">
                             {% if user.is_authenticated %}
                                 <li class="nav-item">
+                                    {% if user.official %}
+                                        <a class="nav-link" href="{% url 'my_profile' %}">Mi perfil</a>
+                                    {% endif %}
+                                </li>
+                                <li class="nav-item">
                                     <span class="nav-link nav-session-user">
                                         Sesión: {{ user.get_username }}
                                     </span>

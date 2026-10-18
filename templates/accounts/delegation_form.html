@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link is-active" href="{% url 'delegation_list' %}" aria-current="page">Delegaciones</a>
+                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
+                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <div class="maintainer-active-delegation">
+                <span>Delegación activa</span>
+                <strong>
+                    {% if active_delegation %}
+                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                    {% elif user.official.delegation %}
+                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                    {% else %}
+                        DEL01 · Delegación Centro (referencia)
+                    {% endif %}
+                </strong>
+            </div>
+
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">
+                        Gestión municipal <span aria-hidden="true">/</span>
+                        <a class="auth-text-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                        <span aria-hidden="true">/</span> {{ maintainer_title }}
+                    </p>
+                    <h1 id="maintainer-title">{{ maintainer_title }}</h1>
+                </div>
+            </header>
+
+            <form class="attention-entry-card" method="post" aria-label="{{ maintainer_title }}">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="invalid-feedback d-block mb-3" role="alert">
+                        {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
+                    </div>
+                {% endif %}
+
+                <div class="attention-entry-grid">
+                    {% if form_mode == 'edit' %}
+                        <div class="attention-entry-field">
+                            <label for="delegation-code">Código</label>
+                            <input class="form-control attention-entry-readonly" id="delegation-code" type="text" value="{{ form.instance.code }}" readonly>
+                            <p class="attention-entry-hint">El código se genera automáticamente y no se modifica.</p>
+                        </div>
+                    {% endif %}
+
+                    <div class="attention-entry-field{% if form_mode == 'edit' %} attention-entry-field-full{% endif %}">
+                        <label for="{{ form.delegation_name.id_for_label }}">Nombre de la delegación <span aria-hidden="true">*</span></label>
+                        {{ form.delegation_name }}
+                        {% for error in form.delegation_name.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.address.id_for_label }}">Dirección <span aria-hidden="true">*</span></label>
+                        {{ form.address }}
+                        {% for error in form.address.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.commune.id_for_label }}">Comuna <span aria-hidden="true">*</span></label>
+                        {{ form.commune }}
+                        {% for error in form.commune.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.status.id_for_label }}">Estado <span aria-hidden="true">*</span></label>
+                        {{ form.status }}
+                        {% for error in form.status.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="attention-entry-actions">
+                    <a class="btn attention-entry-cancel" href="{% url 'delegation_list' %}">Cancelar</a>
+                    <button class="btn btn-primary attention-entry-submit" type="submit">Guardar delegación</button>
+                </div>
+
+                {% if form_mode == 'create' %}
+                    <p class="attention-entry-note">El código se genera automáticamente al guardar (por ejemplo, DEL-0001).</p>
+                {% endif %}
+            </form>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}

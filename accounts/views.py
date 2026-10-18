@@ -1,24 +1,45 @@
+import csv
 import logging
 import math
 import time
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import SetPasswordForm
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
-from django.shortcuts import redirect
+from django.db.models import Q
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.generic import FormView, TemplateView
+from django.views.generic import (
+    CreateView,
+    DetailView,
+    FormView,
+    ListView,
+    TemplateView,
+    UpdateView,
+    View,
+)
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 from common.access import ProtectedViewMixin
 from configuration.services import AuditoriaService
 
 from .backends import SGRAuthBackend, find_user_by_email
-from .forms import RecoveryCodeForm, RecoveryRequestForm
-from .models import PasswordResetCode
+from .forms import (
+    DelegationForm,
+    OfficialForm,
+    OwnOfficialProfileForm,
+    OfficialUserForm,
+    RecoveryCodeForm,
+    RecoveryRequestForm,
+)
+from .models import Delegation, Official, PasswordResetCode, Role
 
 logger = logging.getLogger(__name__)
 
@@ -262,28 +283,6 @@ class RecoveryPasswordView(RecoveryFlowMixin, FormView):
 
 # --- Mantenedores (SCRUM-30: acceso validado en el servidor) ---
 
-class DelegationMaintainerView(MaintainerListView):
-    permission_required = 'accounts.view_delegation'
-    template_name = 'accounts/delegation_list.html'
-    extra_context = {
-        'maintainer_title': 'Delegaciones municipales',
-        'maintainer_kind': 'delegations',
-        'columns': ['Código', 'Nombre', 'Comuna', 'Estado'],
-        'statuses': ['Activa', 'Inactiva'],
-        'records': [
-            {'cells': ['DEL01', 'Centro', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL02', 'Norte', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL03', 'Sur', 'La Serena', 'Inactiva'], 'status': 'Inactiva', 'status_is_active': False},
-            {'cells': ['DEL04', 'Las Compañías', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL05', 'La Pampa', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL06', 'Avenida del Mar', 'La Serena', 'Inactiva'], 'status': 'Inactiva', 'status_is_active': False},
-            {'cells': ['DEL07', 'Alfalfares', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL08', 'Islón', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-            {'cells': ['DEL09', 'Rural', 'La Serena', 'Activa'], 'status': 'Activa', 'status_is_active': True},
-        ],
-    }
-
-
 class RoleMaintainerView(MaintainerListView):
     permission_required = 'accounts.view_role'
     template_name = 'accounts/role_list.html'
@@ -351,35 +350,58 @@ class OfficialMaintainerView(MaintainerListView):
         'maintainer_title': 'Funcionarios',
         'maintainer_kind': 'officials',
         'columns': ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado'],
-        'statuses': ['Activo', 'Inactivo', 'Suspendido'],
-        'records': [
-            {'cells': ['Camila Rojas', '11.111.111-1', 'camila.rojas@example.test', 'Administración Municipal', 'Profesional', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Diego Muñoz', '12.222.222-2', 'diego.munoz@example.test', 'Desarrollo Comunitario', 'Director', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Sofía González', '13.333.333-3', 'sofia.gonzalez@example.test', 'Obras Municipales', 'Técnico', 'Suspendido'], 'status': 'Suspendido', 'status_is_active': False},
-            {'cells': ['Matías Fuentes', '14.444.444-4', 'matias.fuentes@example.test', 'Tránsito y Transporte', 'Administrativo', 'Inactivo'], 'status': 'Inactivo', 'status_is_active': False},
-            {'cells': ['Valentina Pérez', '15.555.555-5', 'valentina.perez@example.test', 'Secretaría Municipal', 'Jefe de departamento', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Tomás Silva', '16.666.666-6', 'tomas.silva@example.test', 'Administración Municipal', 'Profesional', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-        ],
+        'statuses': Official.Status.choices,
     }
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        officials = (
+            Official.objects.filter(deleted_at__isnull=True)
+            .select_related("area", "position", "delegation", "user")
+            .order_by("full_name")
+        )
+        ids = _authorized_delegation_ids(self.request.user)
+        if ids is not None:
+            officials = officials.filter(delegation_id__in=ids)
 
-class UserMaintainerView(MaintainerListView):
-    permission_required = 'auth.view_user'
-    template_name = 'accounts/user_list.html'
-    extra_context = {
-        'maintainer_title': 'Usuarios del sistema',
-        'maintainer_kind': 'users',
-        'columns': ['Nombre', 'Correo electrónico', 'Rol', 'Delegación', 'Estado'],
-        'statuses': ['Activo', 'Inactivo'],
-        'records': [
-            {'cells': ['Ana Ejemplo', 'ana@example.test', 'Operador', 'Centro', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Luis Ejemplo', 'luis@example.test', 'Consultor', 'Centro', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Sara Ejemplo', 'sara@example.test', 'Operador', 'Norte', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Camila Rojas', 'camila.rojas@example.test', 'Administrador', 'Centro', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Diego Muñoz', 'diego.munoz@example.test', 'Operador', 'Sur', 'Activo'], 'status': 'Activo', 'status_is_active': True},
-            {'cells': ['Matías Fuentes', 'matias.fuentes@example.test', 'Consultor', 'Centro', 'Inactivo'], 'status': 'Inactivo', 'status_is_active': False},
-        ],
-    }
+        query = (self.request.GET.get("q") or "").strip()
+        status = (self.request.GET.get("status") or "").strip()
+        if query:
+            officials = officials.filter(
+                Q(full_name__icontains=query)
+                | Q(national_id__icontains=query)
+                | Q(email__icontains=query)
+                | Q(area__area_name__icontains=query)
+                | Q(position__position_name__icontains=query)
+            )
+        if status in Official.Status.values:
+            officials = officials.filter(status=status)
+
+        records = []
+        for official in officials:
+            records.append(
+                {
+                    "cells": [
+                        official.full_name,
+                        official.national_id,
+                        official.email,
+                        official.area.area_name if official.area else "—",
+                        official.position.position_name if official.position else "—",
+                        official.get_status_display(),
+                    ],
+                    "pk": official.pk,
+                    "is_self": is_same_identity(
+                        self.request.user, target_official=official
+                    ),
+                    "status": official.status,
+                    "status_is_active": official.status == Official.Status.ACTIVE,
+                }
+            )
+        context["records"] = records
+        context["total"] = len(records)
+        context["can_add"] = self.request.user.has_perm("accounts.add_official")
+        context["can_change"] = self.request.user.has_perm("accounts.change_official")
+        return context
 
 
 class GroupMaintainerView(MaintainerListView):
@@ -399,3 +421,749 @@ class GroupMaintainerView(MaintainerListView):
             {'cells': ['Auditoría', 'Consulta de registros']},
         ],
     }
+
+
+# --- CRUD de Delegaciones y Usuarios (persistencia real, ámbito por delegación) ---
+#
+# El alcance del actor se calcula con la misma regla de Official.get_authorized_delegations()
+# (rol vigente de alcance ALL => todas las delegaciones; en otro caso, la delegación principal
+# más las autorizadas). A diferencia del modelo, aquí también se incluyen las delegaciones
+# inactivas del ámbito, porque el mantenedor debe poder consultarlas y reactivarlas. El
+# superusuario conserva el alcance total. Los formularios limitan sus opciones a este ámbito,
+# de modo que un identificador enviado desde el navegador fuera del alcance no valida.
+
+
+def _authorized_delegation_ids(user):
+    """IDs de delegaciones dentro del ámbito, o None cuando el alcance es total."""
+    if user.is_superuser:
+        return None
+    official = getattr(user, "official", None)
+    if official is None:
+        return set()
+    if official.roles.filter(is_active=True, scope=Role.Scope.ALL).exists():
+        return None
+    ids = set(official.get_authorized_delegations().values_list("pk", flat=True))
+    ids |= set(official.authorized_delegations.values_list("pk", flat=True))
+    if official.delegation_id:
+        ids.add(official.delegation_id)
+    return ids
+
+
+def scoped_delegations(user):
+    """Delegaciones que el actor puede consultar y administrar."""
+    ids = _authorized_delegation_ids(user)
+    if ids is None:
+        return Delegation.objects.all()
+    return Delegation.objects.filter(pk__in=ids)
+
+
+def scoped_users(user):
+    """Cuentas cuyo funcionario pertenece al ámbito de delegaciones del actor."""
+    ids = _authorized_delegation_ids(user)
+    users = get_user_model().objects.all()
+    if ids is None:
+        return users
+    return users.filter(official__delegation_id__in=ids)
+
+
+def scoped_officials(user):
+    queryset = Official.objects.filter(deleted_at__isnull=True)
+    ids = _authorized_delegation_ids(user)
+    if ids is not None:
+        queryset = queryset.filter(delegation_id__in=ids)
+    return queryset
+
+
+def is_same_identity(actor, target_user=None, target_official=None):
+    """Comprueba la identidad User/Official sin confiar en un identificador enviado."""
+    if target_user is not None and actor.pk == target_user.pk:
+        return True
+    official = getattr(actor, "official", None)
+    if target_official is not None and official is not None and official.pk == target_official.pk:
+        return True
+    if (
+        target_user is not None
+        and official is not None
+        and official.user_id == target_user.pk
+    ):
+        return True
+    if (
+        target_official is not None
+        and getattr(target_official, "user_id", None) == actor.pk
+    ):
+        return True
+    return False
+
+
+def filter_delegations(queryset, params):
+    """Búsqueda parcial (código, nombre, dirección, comuna) y filtro por estado."""
+    query = (params.get("q") or "").strip()
+    status = (params.get("status") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(code__icontains=query)
+            | Q(delegation_name__icontains=query)
+            | Q(address__icontains=query)
+            | Q(commune__icontains=query)
+        )
+    if status in Delegation.Status.values:
+        queryset = queryset.filter(status=status)
+    return queryset
+
+
+def filter_users(queryset, params):
+    """Búsqueda parcial en varios campos y filtro por estado (usuario y funcionario)."""
+    query = (params.get("q") or "").strip()
+    status = (params.get("status") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(username__icontains=query)
+            | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(email__icontains=query)
+            | Q(official__full_name__icontains=query)
+            | Q(official__national_id__icontains=query)
+            | Q(official__email__icontains=query)
+            | Q(official__delegation__delegation_name__icontains=query)
+            | Q(official__delegation__code__icontains=query)
+            | Q(official__roles__role_name__icontains=query)
+        ).distinct()
+    if status == Official.Status.ACTIVE:
+        queryset = queryset.filter(is_active=True).filter(
+            Q(official__isnull=True) | Q(official__status=Official.Status.ACTIVE)
+        )
+    elif status == Official.Status.INACTIVE:
+        queryset = queryset.filter(
+            Q(official__isnull=True, is_active=False)
+            | Q(official__status=Official.Status.INACTIVE)
+        )
+    elif status == Official.Status.SUSPENDED:
+        queryset = queryset.filter(official__status=Official.Status.SUSPENDED)
+    return queryset
+
+
+def display_status(user):
+    """Estado mostrado de la cuenta: combina User.is_active con Official.status."""
+    official = getattr(user, "official", None)
+    if official is not None and official.status == Official.Status.SUSPENDED:
+        return Official.Status.SUSPENDED
+    if not user.is_active or (official is not None and official.status != Official.Status.ACTIVE):
+        return Official.Status.INACTIVE
+    return Official.Status.ACTIVE
+
+
+def decorate_user(user):
+    """Valores de presentación (nombre, correo, rol, delegación y estado) para las tablas."""
+    official = getattr(user, "official", None)
+    user.display_name = (
+        official.full_name
+        if official is not None and official.full_name
+        else (user.get_full_name().strip() or user.username)
+    )
+    user.display_email = (official.email if official is not None and official.email else user.email) or "—"
+    user.display_delegation = official.delegation if official is not None else None
+    if official is not None and official.roles.exists():
+        user.display_roles = ", ".join(role.role_name for role in official.roles.all())
+    elif user.is_superuser:
+        user.display_roles = "Administrador del sistema"
+    else:
+        user.display_roles = "Sin rol"
+    code = display_status(user)
+    user.status_code = code
+    user.status_label = Official.Status(code).label
+    user.status_is_active = code == Official.Status.ACTIVE
+    return user
+
+
+def _actor_official(request):
+    return getattr(request.user, "official", None)
+
+
+def _registrar_auditoria(request, action, instance, previous="", new=""):
+    AuditoriaService.register_change(
+        official=_actor_official(request),
+        action=action,
+        instance=instance,
+        previous_value=previous,
+        new_value=new,
+        origin_ip=request.META.get("REMOTE_ADDR") or None,
+    )
+
+
+class ClampedPaginationMixin:
+    """
+    Paginación que ajusta la página al último disponible.
+
+    Si un filtro reduce los resultados y la página solicitada deja de existir, se muestra la
+    última página válida en lugar de responder 404.
+    """
+
+    def paginate_queryset(self, queryset, page_size):
+        paginator = self.get_paginator(
+            queryset,
+            page_size,
+            orphans=self.get_paginate_orphans(),
+            allow_empty_first_page=self.get_allow_empty(),
+        )
+        page = self.kwargs.get(self.page_kwarg) or self.request.GET.get(self.page_kwarg) or 1
+        try:
+            page_number = int(page)
+        except (TypeError, ValueError):
+            page_number = 1
+        page_number = max(1, min(page_number, paginator.num_pages))
+        page = paginator.page(page_number)
+        return paginator, page, page.object_list, page.has_other_pages()
+
+
+class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
+    permission_required = "accounts.view_delegation"
+    template_name = "accounts/delegation_list.html"
+    context_object_name = "delegations"
+    paginate_by = 10
+
+    def get_queryset(self):
+        queryset = scoped_delegations(self.request.user).order_by("delegation_name", "pk")
+        return filter_delegations(queryset, self.request.GET)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        params = self.request.GET.copy()
+        params.pop(self.page_kwarg, None)
+        context.update(
+            maintainer_title="Delegaciones municipales",
+            maintainer_kind="delegations",
+            query=(self.request.GET.get("q") or "").strip(),
+            selected_status=(self.request.GET.get("status") or "").strip(),
+            status_choices=Delegation.Status.choices,
+            querystring=params.urlencode(),
+            total=context["paginator"].count,
+            can_add=self.request.user.has_perm("accounts.add_delegation"),
+            can_change=self.request.user.has_perm("accounts.change_delegation"),
+        )
+        return context
+
+
+class DelegationExportView(ProtectedViewMixin, View):
+    permission_required = "accounts.view_delegation"
+
+    def get(self, request):
+        queryset = filter_delegations(
+            scoped_delegations(request.user).order_by("delegation_name", "pk"), request.GET
+        )
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="delegaciones.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response, delimiter=";")
+        writer.writerow(["Código", "Nombre", "Dirección", "Comuna", "Estado"])
+        for delegation in queryset:
+            writer.writerow(
+                [
+                    delegation.code,
+                    delegation.delegation_name,
+                    delegation.address,
+                    delegation.commune,
+                    delegation.get_status_display(),
+                ]
+            )
+        return response
+
+
+class DelegationCreateView(ProtectedViewMixin, CreateView):
+    permission_required = "accounts.add_delegation"
+    model = Delegation
+    form_class = DelegationForm
+    template_name = "accounts/delegation_form.html"
+    success_url = reverse_lazy("delegation_list")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(maintainer_title="Nueva delegación", form_mode="create")
+        return context
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        _registrar_auditoria(self.request, "Creación de delegación", self.object, new=str(self.object))
+        messages.success(
+            self.request,
+            f"La delegación {self.object.delegation_name} fue creada correctamente.",
+        )
+        return response
+
+    def form_invalid(self, form):
+        messages.error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
+        return super().form_invalid(form)
+
+
+class DelegationUpdateView(ProtectedViewMixin, UpdateView):
+    permission_required = "accounts.change_delegation"
+    model = Delegation
+    form_class = DelegationForm
+    template_name = "accounts/delegation_form.html"
+    success_url = reverse_lazy("delegation_list")
+
+    def get_queryset(self):
+        return scoped_delegations(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(maintainer_title=f"Editar delegación {self.object.code}", form_mode="edit")
+        return context
+
+    def form_valid(self, form):
+        previous = str(type(self.object).objects.get(pk=self.object.pk))
+        response = super().form_valid(form)
+        _registrar_auditoria(
+            self.request, "Actualización de delegación", self.object, previous=previous, new=str(self.object)
+        )
+        messages.success(
+            self.request,
+            f"La delegación {self.object.delegation_name} fue actualizada correctamente.",
+        )
+        return response
+
+    def form_invalid(self, form):
+        messages.error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
+        return super().form_invalid(form)
+
+
+class DelegationDetailView(ProtectedViewMixin, DetailView):
+    permission_required = "accounts.view_delegation"
+    model = Delegation
+    template_name = "accounts/delegation_detail.html"
+    context_object_name = "delegation"
+
+    def get_queryset(self):
+        return scoped_delegations(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        delegation = self.object
+        context.update(
+            maintainer_title="Detalle de delegación",
+            officials_count=delegation.officials.count(),
+            authorized_count=delegation.authorized_officials.count(),
+            attentions_count=delegation.social_attentions.count(),
+            can_change=self.request.user.has_perm("accounts.change_delegation"),
+        )
+        return context
+
+
+class DelegationDeactivateView(ProtectedViewMixin, View):
+    permission_required = "accounts.change_delegation"
+
+    def post(self, request, pk):
+        delegation = get_object_or_404(scoped_delegations(request.user), pk=pk)
+        if delegation.status == Delegation.Status.INACTIVE:
+            messages.info(request, "La delegación ya estaba inactiva.")
+            return redirect("delegation_list")
+        delegation.deactivate()
+        _registrar_auditoria(
+            request, "Desactivación de delegación", delegation, previous=str(delegation), new=str(delegation)
+        )
+        messages.success(
+            request, f"La delegación {delegation.delegation_name} fue desactivada correctamente."
+        )
+        return redirect("delegation_list")
+
+
+class DelegationActivateView(ProtectedViewMixin, View):
+    permission_required = "accounts.change_delegation"
+
+    def post(self, request, pk):
+        delegation = get_object_or_404(scoped_delegations(request.user), pk=pk)
+        if delegation.status == Delegation.Status.ACTIVE:
+            messages.info(request, "La delegación ya estaba activa.")
+            return redirect("delegation_list")
+        delegation.activate()
+        _registrar_auditoria(
+            request, "Activación de delegación", delegation, previous=str(delegation), new=str(delegation)
+        )
+        messages.success(
+            request, f"La delegación {delegation.delegation_name} fue activada correctamente."
+        )
+        return redirect("delegation_list")
+
+
+class OfficialCreateView(ProtectedViewMixin, FormView):
+    permission_required = "accounts.add_official"
+    template_name = "accounts/official_form.html"
+    form_class = OfficialForm
+    success_url = reverse_lazy("official_maintainer")
+
+    def get_form_kwargs(self):
+            kwargs = super().get_form_kwargs()
+            kwargs.update(
+                actor=self.request.user,
+                delegation_queryset=scoped_delegations(self.request.user),
+                existing_usernames=get_user_model().objects.values_list("username", flat=True),
+            )
+            return kwargs
+
+    def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            context.update(
+                maintainer_title="Nuevo funcionario",
+                form_mode="create",
+                existing_usernames=list(
+                    get_user_model().objects.values_list("username", flat=True)
+                ),
+            )
+            return context
+
+    def form_valid(self, form):
+            official = form.save()
+            _registrar_auditoria(
+                self.request,
+                "Creación de funcionario",
+                official,
+                new=official.full_name,
+            )
+            messages.success(
+                self.request,
+                f"El funcionario {official.full_name} fue creado correctamente.",
+            )
+            return super().form_valid(form)
+
+    def form_invalid(self, form):
+            messages.error(
+                self.request,
+                "No se pudo guardar el funcionario. Revisa los datos ingresados.",
+            )
+            return super().form_invalid(form)
+
+
+class OfficialUpdateView(ProtectedViewMixin, FormView):
+    permission_required = "accounts.change_official"
+    template_name = "accounts/official_form.html"
+    form_class = OfficialForm
+    success_url = reverse_lazy("official_maintainer")
+
+    def get_official(self):
+            if not hasattr(self, "_official"):
+                self._official = get_object_or_404(
+                    scoped_officials(self.request.user)
+                    .select_related("user", "area", "position", "delegation"),
+                    pk=self.kwargs["pk"],
+                )
+            return self._official
+
+    def dispatch(self, request, *args, **kwargs):
+            if request.user.is_authenticated and request.user.has_perm(self.permission_required):
+                official = self.get_official()
+                if is_same_identity(request.user, target_official=official):
+                    return redirect("my_profile")
+            return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+            kwargs = super().get_form_kwargs()
+            kwargs.update(
+                actor=self.request.user,
+                instance=self.get_official(),
+                delegation_queryset=scoped_delegations(self.request.user),
+            )
+            return kwargs
+
+    def get_context_data(self, **kwargs):
+            context = super().get_context_data(**kwargs)
+            official = self.get_official()
+            context.update(
+                maintainer_title=f"Editar funcionario {official.full_name}",
+                form_mode="edit",
+                edited_official=official,
+            )
+            return context
+
+    def form_valid(self, form):
+            official = form.save()
+            _registrar_auditoria(
+                self.request,
+                "Actualización de funcionario",
+                official,
+                new=official.full_name,
+            )
+            messages.success(
+                self.request,
+                f"El funcionario {official.full_name} fue actualizado correctamente.",
+            )
+            return super().form_valid(form)
+
+    def form_invalid(self, form):
+            messages.error(
+                self.request,
+                "No se pudo actualizar el funcionario. Revisa los datos ingresados.",
+            )
+            return super().form_invalid(form)
+
+
+class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
+    permission_required = "auth.view_user"
+    template_name = "accounts/user_list.html"
+    context_object_name = "users"
+    paginate_by = 10
+
+    def get_queryset(self):
+        queryset = (
+            scoped_users(self.request.user)
+            .select_related("official", "official__delegation")
+            .prefetch_related("official__roles")
+            .order_by("username")
+        )
+        return filter_users(queryset, self.request.GET)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        for user in context["users"]:
+            decorate_user(user)
+        params = self.request.GET.copy()
+        params.pop(self.page_kwarg, None)
+        context.update(
+            maintainer_title="Usuarios del sistema",
+            maintainer_kind="users",
+            query=(self.request.GET.get("q") or "").strip(),
+            selected_status=(self.request.GET.get("status") or "").strip(),
+            status_choices=Official.Status.choices,
+            querystring=params.urlencode(),
+            total=context["paginator"].count,
+            can_add=self.request.user.has_perm("auth.add_user"),
+            can_change=self.request.user.has_perm("auth.change_user"),
+        )
+        return context
+
+
+class UserDetailView(ProtectedViewMixin, DetailView):
+    permission_required = "auth.view_user"
+    template_name = "accounts/user_detail.html"
+    context_object_name = "account"
+
+    def get_queryset(self):
+        return (
+            scoped_users(self.request.user)
+            .select_related("official", "official__delegation", "official__area", "official__position")
+            .prefetch_related("official__roles", "official__authorized_delegations")
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        decorate_user(self.object)
+        context.update(
+            maintainer_title="Detalle de usuario",
+            can_change=(
+                self.request.user.has_perm("auth.change_user")
+                and not is_same_identity(self.request.user, target_user=self.object)
+            ),
+            authorized_delegations=self.object.official.authorized_delegations.all()
+            if getattr(self.object, "official", None) is not None
+            else [],
+        )
+        return context
+
+
+class UserExportView(ProtectedViewMixin, View):
+    permission_required = "auth.view_user"
+
+    def get(self, request):
+        queryset = (
+            scoped_users(request.user)
+            .select_related("official", "official__delegation")
+            .prefetch_related("official__roles")
+            .order_by("username")
+        )
+        queryset = filter_users(queryset, request.GET)
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="usuarios.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response, delimiter=";")
+        writer.writerow(
+            [
+                "Nombre de usuario",
+                "Nombre",
+                "Correo electrónico",
+                "RUT / identificador",
+                "Rol",
+                "Delegación",
+                "Estado",
+            ]
+        )
+        for user in queryset:
+            decorate_user(user)
+            official = getattr(user, "official", None)
+            writer.writerow(
+                [
+                    user.username,
+                    user.display_name,
+                    user.display_email,
+                    (official.national_id if official is not None else "") or "",
+                    user.display_roles,
+                    str(user.display_delegation) if user.display_delegation else "",
+                    user.status_label,
+                ]
+            )
+        return response
+
+
+class UserCreateView(ProtectedViewMixin, FormView):
+    permission_required = "auth.add_user"
+    template_name = "accounts/user_form.html"
+    form_class = OfficialUserForm
+    success_url = reverse_lazy("user_maintainer")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        kwargs["delegation_queryset"] = scoped_delegations(self.request.user)
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            maintainer_title="Nuevo usuario",
+            form_mode="create",
+            edited_user=None,
+            existing_usernames=list(
+                get_user_model().objects.values_list("username", flat=True)
+            ),
+        )
+        return context
+
+    def form_valid(self, form):
+        user = form.save()
+        _registrar_auditoria(self.request, "Creación de usuario", user, new=user.username)
+        messages.success(self.request, f"El usuario {user.username} fue creado correctamente.")
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
+        return super().form_invalid(form)
+
+
+class OwnOfficialProfileView(LoginRequiredMixin, FormView):
+    """Edición personal aislada de la administración de cuentas y funcionarios."""
+
+    template_name = "accounts/my_profile.html"
+    form_class = OwnOfficialProfileForm
+    success_url = reverse_lazy("my_profile")
+
+    def dispatch(self, request, *args, **kwargs):
+        official = getattr(request.user, "official", None)
+        if official is None or not official.is_enabled:
+            raise PermissionDenied("Tu cuenta no tiene un perfil de funcionario habilitado.")
+        self.official = official
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.official
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            maintainer_title="Mi perfil",
+            profile_official=self.official,
+        )
+        return context
+
+    def form_valid(self, form):
+        official = form.save()
+        _registrar_auditoria(
+            self.request,
+            "Actualización del perfil propio",
+            official,
+            new=official.email,
+        )
+        messages.success(self.request, "Tus datos personales fueron actualizados correctamente.")
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, "No se pudo actualizar tu perfil. Revisa los datos ingresados.")
+        return super().form_invalid(form)
+
+
+class UserUpdateView(ProtectedViewMixin, FormView):
+    permission_required = "auth.change_user"
+    template_name = "accounts/user_form.html"
+    form_class = OfficialUserForm
+    success_url = reverse_lazy("user_maintainer")
+
+    def get_edited_user(self):
+        if not hasattr(self, "_edited_user"):
+            self._edited_user = get_object_or_404(
+                scoped_users(self.request.user), pk=self.kwargs["pk"]
+            )
+        return self._edited_user
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        kwargs["instance"] = self.get_edited_user()
+        kwargs["delegation_queryset"] = scoped_delegations(self.request.user)
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        edited_user = self.get_edited_user()
+        context.update(
+            maintainer_title=f"Editar usuario {edited_user.username}",
+            form_mode="edit",
+            edited_user=edited_user,
+            existing_usernames=list(
+                get_user_model()
+                .objects.exclude(pk=edited_user.pk)
+                .values_list("username", flat=True)
+            ),
+        )
+        return context
+
+    def form_valid(self, form):
+        user = form.save()
+        _registrar_auditoria(self.request, "Actualización de usuario", user, new=user.username)
+        messages.success(self.request, f"El usuario {user.username} fue actualizado correctamente.")
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
+        return super().form_invalid(form)
+
+
+class UserDeactivateView(ProtectedViewMixin, View):
+    permission_required = "auth.change_user"
+
+    def post(self, request, pk):
+        target = get_object_or_404(scoped_users(request.user), pk=pk)
+        if is_same_identity(request.user, target_user=target):
+            messages.error(request, "No puedes desactivar tu propia cuenta.")
+            return redirect("user_maintainer")
+        if not target.is_active and display_status(target) != Official.Status.ACTIVE:
+            messages.info(request, f"El usuario {target.username} ya estaba inactivo.")
+            return redirect("user_maintainer")
+        target.is_active = False
+        target.save(update_fields=["is_active"])
+        official = getattr(target, "official", None)
+        if official is not None and official.status == Official.Status.ACTIVE:
+            official.status = Official.Status.INACTIVE
+            official.save(update_fields=["status", "updated_at"])
+        _registrar_auditoria(request, "Desactivación de usuario", target, new=target.username)
+        messages.success(request, f"El usuario {target.username} fue desactivado correctamente.")
+        return redirect("user_maintainer")
+
+
+class UserActivateView(ProtectedViewMixin, View):
+    permission_required = "auth.change_user"
+
+    def post(self, request, pk):
+        target = get_object_or_404(scoped_users(request.user), pk=pk)
+        if is_same_identity(request.user, target_user=target):
+            messages.error(request, "No puedes cambiar el estado de tu propia cuenta desde la administración.")
+            return redirect("user_maintainer")
+        if target.is_active and display_status(target) == Official.Status.ACTIVE:
+            messages.info(request, f"El usuario {target.username} ya estaba activo.")
+            return redirect("user_maintainer")
+        target.is_active = True
+        target.save(update_fields=["is_active"])
+        official = getattr(target, "official", None)
+        if official is not None and official.status != Official.Status.ACTIVE:
+            official.status = Official.Status.ACTIVE
+            official.save(update_fields=["status", "updated_at"])
+        _registrar_auditoria(request, "Activación de usuario", target, new=target.username)
+        messages.success(request, f"El usuario {target.username} fue activado correctamente.")
+        return redirect("user_maintainer")

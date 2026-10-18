@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Mi perfil · SGR{% endblock %}
+
+{% block content %}
+    <section class="attention-entry-card" aria-labelledby="profile-title">
+        <p class="maintainer-breadcrumb">Cuenta personal / Mi perfil</p>
+        <h1 id="profile-title">Mi perfil</h1>
+        <p class="attention-entry-note">
+            Desde aquí solo puedes modificar tus datos personales de contacto. Los roles,
+            delegaciones, cargo, área y estado laboral son administrados por personal autorizado.
+        </p>
+
+        <dl class="row mb-4">
+            <dt class="col-sm-4">Nombre completo</dt>
+            <dd class="col-sm-8">{{ profile_official.full_name }}</dd>
+            <dt class="col-sm-4">Nombre de usuario</dt>
+            <dd class="col-sm-8">{{ request.user.username }}</dd>
+            <dt class="col-sm-4">Delegación principal</dt>
+            <dd class="col-sm-8">{{ profile_official.delegation|default:"Sin delegación asignada" }}</dd>
+            <dt class="col-sm-4">Cargo</dt>
+            <dd class="col-sm-8">{{ profile_official.position|default:"Sin cargo asignado" }}</dd>
+            <dt class="col-sm-4">Área</dt>
+            <dd class="col-sm-8">{{ profile_official.area|default:"Sin área asignada" }}</dd>
+        </dl>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="invalid-feedback d-block mb-3" role="alert">
+                    {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
+                </div>
+            {% endif %}
+            <div class="attention-entry-grid">
+                {% for field in form %}
+                    <div class="attention-entry-field">
+                        <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
+                        {{ field }}
+                        {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="attention-entry-actions">
+                <button class="btn btn-primary attention-entry-submit" type="submit">Guardar cambios</button>
+            </div>
+        </form>
+    </section>
+{% endblock %}

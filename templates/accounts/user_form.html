@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
+                <a class="maintainer-sidebar-link is-active" href="{% url 'user_maintainer' %}" aria-current="page">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems y metas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <div class="maintainer-active-delegation">
+                <span>Delegación activa</span>
+                <strong>
+                    {% if active_delegation %}
+                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                    {% elif user.official.delegation %}
+                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                    {% else %}
+                        DEL01 · Delegación Centro (referencia)
+                    {% endif %}
+                </strong>
+            </div>
+
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">
+                        Gestión municipal <span aria-hidden="true">/</span>
+                        <a class="auth-text-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                        <span aria-hidden="true">/</span> {{ maintainer_title }}
+                    </p>
+                    <h1 id="maintainer-title">{{ maintainer_title }}</h1>
+                </div>
+            </header>
+
+            <form
+                class="attention-entry-card"
+                method="post"
+                aria-label="{{ maintainer_title }}"
+                data-user-form-mode="{{ form_mode }}"
+            >
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="invalid-feedback d-block mb-3" role="alert">
+                        {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
+                    </div>
+                {% endif %}
+
+                <h2 class="h5 mb-3">Datos de la cuenta</h2>
+                <div class="attention-entry-grid">
+                    <div class="attention-entry-field">
+                        <label for="{{ form.username.id_for_label }}">Nombre de usuario <span aria-hidden="true">*</span></label>
+                        {{ form.username }}
+                        {% for error in form.username.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.email.id_for_label }}">Correo electrónico <span aria-hidden="true">*</span></label>
+                        {{ form.email }}
+                        {% for error in form.email.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.first_name.id_for_label }}">Nombres</label>
+                        {{ form.first_name }}
+                        {% for error in form.first_name.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.last_name.id_for_label }}">Apellidos</label>
+                        {{ form.last_name }}
+                        {% for error in form.last_name.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.password1.id_for_label }}">Contraseña{% if form_mode == 'create' %} <span aria-hidden="true">*</span>{% endif %}</label>
+                        {{ form.password1 }}
+                        <p class="attention-entry-hint">{{ form.password1.help_text }}</p>
+                        {% for error in form.password1.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.password2.id_for_label }}">Confirmar contraseña{% if form_mode == 'create' %} <span aria-hidden="true">*</span>{% endif %}</label>
+                        {{ form.password2 }}
+                        {% for error in form.password2.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.status.id_for_label }}">Estado <span aria-hidden="true">*</span></label>
+                        {{ form.status }}
+                        <p class="attention-entry-hint">Un usuario solo puede iniciar sesión con estado Activo.</p>
+                        {% for error in form.status.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <div class="form-check">
+                            {{ form.is_staff }}
+                            <label class="form-check-label" for="{{ form.is_staff.id_for_label }}">{{ form.is_staff.label }}</label>
+                        </div>
+                        {% for error in form.is_staff.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <h2 class="h5 mt-4 mb-3">Perfil de funcionario/a</h2>
+                {% if form.has_official %}
+                    <div class="form-check mb-3">
+                        {{ form.has_official }}
+                        <label class="form-check-label" for="{{ form.has_official.id_for_label }}">{{ form.has_official.label }}</label>
+                        <p class="attention-entry-hint">{{ form.has_official.help_text }}</p>
+                    </div>
+                {% endif %}
+
+                <div class="attention-entry-grid">
+                    <div class="attention-entry-field">
+                        <label for="{{ form.full_name.id_for_label }}">Nombre completo</label>
+                        {{ form.full_name }}
+                        {% for error in form.full_name.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.national_id.id_for_label }}">RUT / identificador</label>
+                        {{ form.national_id }}
+                        {% for error in form.national_id.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.phone.id_for_label }}">Teléfono</label>
+                        {{ form.phone }}
+                        {% for error in form.phone.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.area.id_for_label }}">Área</label>
+                        {{ form.area }}
+                        {% for error in form.area.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.position.id_for_label }}">Cargo</label>
+                        {{ form.position }}
+                        {% for error in form.position.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="attention-entry-field">
+                        <label for="{{ form.delegation.id_for_label }}">Delegación principal</label>
+                        {{ form.delegation }}
+                        {% for error in form.delegation.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <fieldset class="attention-entry-field">
+                        <legend class="form-label">Delegaciones autorizadas</legend>
+                        <p class="attention-entry-hint">{{ form.authorized_delegations.help_text }}</p>
+                        <div class="d-grid gap-2">
+                            {% for checkbox in form.authorized_delegations %}
+                                <div class="form-check">
+                                    {{ checkbox.tag }}
+                                    <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                                </div>
+                            {% empty %}
+                                <span class="text-muted">No hay delegaciones disponibles.</span>
+                            {% endfor %}
+                        </div>
+                        {% for error in form.authorized_delegations.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </fieldset>
+
+                    <fieldset class="attention-entry-field">
+                        <legend class="form-label">Roles SGR</legend>
+                        <p class="attention-entry-hint">{{ form.roles.help_text }}</p>
+                        <div class="d-grid gap-2">
+                            {% for checkbox in form.roles %}
+                                <div class="form-check">
+                                    {{ checkbox.tag }}
+                                    <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                                </div>
+                            {% empty %}
+                                <span class="text-muted">No hay roles vigentes disponibles.</span>
+                            {% endfor %}
+                        </div>
+                        {% for error in form.roles.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </fieldset>
+                </div>
+
+                <div class="attention-entry-actions">
+                    <a class="btn attention-entry-cancel" href="{% url 'user_maintainer' %}">Cancelar</a>
+                    <button class="btn btn-primary attention-entry-submit" type="submit">Guardar usuario</button>
+                </div>
+
+                <p class="attention-entry-note">Las contraseñas se procesan con el mecanismo seguro de Django y nunca se muestran en texto plano.</p>
+            </form>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    {{ existing_usernames|json_script:"existing-usernames" }}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}
