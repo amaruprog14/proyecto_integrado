@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                <a class="maintainer-sidebar-link is-active" href="{% url 'role_list' %}" aria-current="page">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
+                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
+                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
+                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <div class="maintainer-active-delegation">
+                <span>Delegación activa</span>
+                <strong>
+                    {% if active_delegation %}
+                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                    {% elif user.official.delegation %}
+                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
+                    {% else %}
+                        DEL01 · Delegación Centro (referencia)
+                    {% endif %}
+                </strong>
+            </div>
+
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">
+                        Gestión municipal <span aria-hidden="true">/</span>
+                        <a class="auth-text-link" href="{% url 'role_list' %}">Roles</a>
+                        <span aria-hidden="true">/</span> {{ role.role_name }}
+                    </p>
+                    <h1 id="maintainer-title">{{ role.role_name }}</h1>
+                </div>
+                {% if can_change %}
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'role_update' role.pk %}">Editar rol</a>
+                {% endif %}
+            </header>
+
+            <section class="attention-entry-card" aria-label="Datos del rol">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Nombre</dt>
+                    <dd class="col-sm-8">{{ role.role_name }}</dd>
+
+                    <dt class="col-sm-4">Descripción</dt>
+                    <dd class="col-sm-8">{{ role.description|default:"—"|linebreaksbr }}</dd>
+
+                    <dt class="col-sm-4">Alcance</dt>
+                    <dd class="col-sm-8">{{ role.get_scope_display }}</dd>
+
+                    <dt class="col-sm-4">Estado</dt>
+                    <dd class="col-sm-8">
+                        <span class="maintainer-status-pill{% if role.is_active %} is-active{% else %} is-inactive{% endif %}">{% if role.is_active %}Activo{% else %}Inactivo{% endif %}</span>
+                    </dd>
+
+                    <dt class="col-sm-4">Administrador global</dt>
+                    <dd class="col-sm-8">
+                        {% if is_global_administrator %}Sí: alcance transversal con permisos privilegiados; no se combina con otros roles.{% else %}No{% endif %}
+                    </dd>
+
+                    <dt class="col-sm-4">Funcionarios activos con este rol</dt>
+                    <dd class="col-sm-8">{{ active_official_count }}</dd>
+
+                    <dt class="col-sm-4">Creado</dt>
+                    <dd class="col-sm-8">{{ role.created_at|date:"d-m-Y H:i" }}</dd>
+
+                    <dt class="col-sm-4">Última actualización</dt>
+                    <dd class="col-sm-8">{{ role.updated_at|date:"d-m-Y H:i" }}</dd>
+                </dl>
+            </section>
+
+            <section class="attention-entry-card mt-3" aria-label="Permisos del rol">
+                <h2 class="h5 mb-3">Permisos</h2>
+                {% if permission_groups %}
+                    <dl class="row mb-0">
+                        {% for group_label, actions in permission_groups %}
+                            <dt class="col-sm-4">{{ group_label }}</dt>
+                            <dd class="col-sm-8">{{ actions }}</dd>
+                        {% endfor %}
+                    </dl>
+                {% else %}
+                    <p class="mb-0">Este rol no tiene permisos asignados.</p>
+                {% endif %}
+            </section>
+
+            <section class="attention-entry-card mt-3" aria-label="Funcionarios con este rol">
+                <h2 class="h5 mb-1">Funcionarios con este rol</h2>
+                <p class="attention-entry-hint">Se muestran los funcionarios de las delegaciones de tu ámbito.</p>
+                <div class="table-responsive">
+                    <table class="table maintainer-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Nombre</th>
+                                <th scope="col">Delegación</th>
+                                <th scope="col">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for official in assigned_officials %}
+                                <tr>
+                                    <td>{{ official.full_name }}</td>
+                                    <td>{% if official.delegation %}{{ official.delegation.code }} · {{ official.delegation.delegation_name }}{% else %}—{% endif %}</td>
+                                    <td>
+                                        <span class="maintainer-status-pill{% if official.status == 'ACTIVE' %} is-active{% else %} is-inactive{% endif %}">{{ official.get_status_display }}</span>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="3" class="text-center">No hay funcionarios de tu ámbito con este rol.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'role_list' %}">Volver</a>
+                {% if can_change %}
+                    {% if role.is_active %}
+                        {% if is_protected %}
+                            <button class="btn attention-entry-submit" type="button" disabled>Desactivar</button>
+                            <p class="attention-entry-hint w-100 text-end">Es el último rol Administrador global con funcionarios activos: no se puede desactivar.</p>
+                        {% else %}
+                            <form class="d-inline" method="post" action="{% url 'role_deactivate' role.pk %}" data-swal-confirm="El rol {{ role.role_name }} quedará inactivo; no se elimina su historial. {% if active_official_count %}{{ active_official_count }} funcionario{{ active_official_count|pluralize }} activo{{ active_official_count|pluralize }} quedará{{ active_official_count|pluralize:'n' }} sin los permisos de este rol.{% else %}Ningún funcionario activo tiene este rol asignado.{% endif %}" data-swal-title="Desactivar rol" data-swal-confirm-text="Sí, desactivar">
+                                {% csrf_token %}
+                                <input type="hidden" name="affected_officials" value="{{ active_official_count }}">
+                                <button class="btn attention-entry-submit" type="submit">Desactivar</button>
+                            </form>
+                        {% endif %}
+                    {% else %}
+                        <form class="d-inline" method="post" action="{% url 'role_activate' role.pk %}" data-swal-confirm="El rol {{ role.role_name }} volverá a estar activo y sus funcionarios recuperarán sus permisos." data-swal-title="Activar rol" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
+                            {% csrf_token %}
+                            <button class="btn attention-entry-submit" type="submit">Activar</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}
