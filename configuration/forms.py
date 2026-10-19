@@ -22,13 +22,44 @@ def item_snapshot(item):
     }
 
 
+def attention_type_snapshot(attention_type):
+    """Valores auditables del tipo de atención."""
+    return {
+        "Código": attention_type.code,
+        "Nombre": attention_type.name,
+        "Descripción": attention_type.description or "—",
+        "Estado": "Activo" if attention_type.is_active else "Inactivo",
+    }
+
+
+def subattention_type_snapshot(subattention_type):
+    """Valores auditables de la subatención, con su tipo asociado por código y nombre."""
+    attention_type = subattention_type.attention_type
+    return {
+        "Código": subattention_type.code,
+        "Nombre": subattention_type.name,
+        "Descripción": subattention_type.description or "—",
+        "Tipo de Atención asociado": f"{attention_type.code} · {attention_type.name}",
+        "Estado": "Activo" if subattention_type.is_active else "Inactivo",
+    }
+
+
+def catalog_snapshot(record):
+    """Snapshot del tipo de atención o de la subatención, según el registro."""
+    if isinstance(record, SubattentionType):
+        return subattention_type_snapshot(record)
+    return attention_type_snapshot(record)
+
+
 class ItemForm(forms.ModelForm):
     """
     Alta y edición de ítems.
 
-    - El código es opcional: si queda vacío se genera ITM-NNNN al guardar. Uno escrito se guarda
-      en mayúsculas y sin espacios sobrantes, y no puede usar el formato reservado ITM-<número>
-      (salvo el que el ítem ya tiene), para no chocar con la numeración automática.
+    - Al crear, el código es opcional: si queda vacío se genera ITM-NNNN al guardar. Al editar es
+      obligatorio, para que vaciarlo no cambie en silencio el código de un ítem existente. Uno
+      escrito se guarda en mayúsculas y sin espacios sobrantes, y no puede usar el formato
+      reservado ITM-<número> (salvo el que el ítem ya tiene), para no chocar con la numeración
+      automática.
     - El estado solo se elige al crear; después se cambia con Desactivar/Activar.
     """
 
@@ -75,6 +106,13 @@ class ItemForm(forms.ModelForm):
         if self.instance.pk:
             self.fields.pop("is_active")
             self.previous_snapshot = item_snapshot(self.instance)
+            code_field = self.fields["code"]
+            code_field.required = True
+            code_field.widget.attrs.pop("placeholder", None)
+            code_field.error_messages["required"] = (
+                f"Ingresa el código del ítem. El código actual es {self.instance.code}; "
+                "un ítem existente no puede quedar sin código."
+            )
         else:
             self.previous_snapshot = None
 

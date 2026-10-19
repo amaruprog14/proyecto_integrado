@@ -380,3 +380,112 @@ class PeriodActionTests(TestCase):
         period.refresh_from_db()
 
         self.assertEqual(period.status, Period.Status.CLOSED)
+
+class CatalogAuditAndExportCleanupTests(TestCase):
+    """Auditoría por campo en Tipo y Sub Atención y exportación sin permiso por defecto."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("catalog.audit", "catalog.audit@example.test", "Clave-Admin-1")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_attention_type_update_audits_previous_and_new_value_per_field(self):
+        record = AttentionType.objects.create(name="Orientación", description="Inicial")
+
+        self.client.post(
+            reverse("attention_type_update", args=(record.pk,)),
+            {"name": "Orientación legal", "description": "Inicial", "is_active": "True"},
+        )
+
+        log = AuditLog.objects.get(action="Actualización de tipo de atención")
+        self.assertEqual(log.previous_value, "Nombre: Orientación")
+        self.assertEqual(log.new_value, "Nombre: Orientación legal")
+        self.assertEqual(log.affected_record_id, record.pk)
+
+    def test_subattention_update_audits_name_status_and_associated_type(self):
+        first = AttentionType.objects.create(name="Social")
+        second = AttentionType.objects.create(name="Jurídica")
+        record = SubattentionType.objects.create(name="Orientación", attention_type=first)
+
+        self.client.post(
+            reverse("subattention_type_update", args=(record.pk,)),
+            {"name": "Orientación inicial", "attention_type": second.pk, "is_active": "False"},
+        )
+
+        log = AuditLog.objects.get(action="Actualización de subatención")
+        self.assertEqual(
+            log.previous_value,
+            f"Nombre: Orientación\nTipo de Atención asociado: {first.code} · Social\nEstado: Activo",
+        )
+        self.assertEqual(
+            log.new_value,
+            f"Nombre: Orientación inicial\nTipo de Atención asociado: {second.code} · Jurídica\nEstado: Inactivo",
+        )
+
+    def test_update_without_changes_is_audited_as_such(self):
+        record = AttentionType.objects.create(name="Sin cambios", description="Igual")
+
+        self.client.post(
+            reverse("attention_type_update", args=(record.pk,)),
+            {"name": "Sin cambios", "description": "Igual", "is_active": "True"},
+        )
+
+        log = AuditLog.objects.get(action="Actualización de tipo de atención")
+        self.assertEqual((log.previous_value, log.new_value), ("Sin cambios", "Sin cambios"))
+
+    def test_creation_audits_every_field(self):
+        attention_type = AttentionType.objects.create(name="Social")
+
+        self.client.post(
+            reverse("subattention_type_create"),
+            {"name": "Derivación", "attention_type": attention_type.pk, "is_active": "True"},
+        )
+
+        record = SubattentionType.objects.get(name="Derivación")
+        log = AuditLog.objects.get(action="Creación de subatención")
+        self.assertEqual(
+            log.new_value,
+            f"Código: {record.code}\nNombre: Derivación\nDescripción: —\n"
+            f"Tipo de Atención asociado: {attention_type.code} · Social\nEstado: Activo",
+        )
+
+    def test_export_view_without_permission_required_fails_instead_of_staying_open(self):
+        from django.core.exceptions import ImproperlyConfigured
+        from django.test import RequestFactory
+
+        from configuration.views import CatalogExportView
+
+        class ForgottenPermissionExport(CatalogExportView):
+            model = AttentionType
+            filename = "olvido"
+            headings = ("Código",)
+
+            def row_values(self, record):
+                return (record.code,)
+
+        request = RequestFactory().get("/exportar/")
+        request.user = self.admin
+
+        with self.assertRaises(ImproperlyConfigured):
+            ForgottenPermissionExport.as_view()(request)
+
+    def test_exports_name_their_sheet_after_the_catalog(self):
+        for route_name, sheet_title in (
+            ("attention_type_export", "Tipos de atención"),
+            ("subattention_type_export", "Subatenciones"),
+        ):
+            with self.subTest(route=route_name):
+                response = self.client.get(reverse(route_name))
+
+                self.assertEqual(load_workbook(BytesIO(response.content)).active.title, sheet_title)
+
+    def test_out_of_range_page_is_clamped(self):
+        for index in range(12):
+            AttentionType.objects.create(name=f"Tipo {index:02d}")
+
+        response = self.client.get(reverse("attention_type_maintainer"), {"page": 99})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].number, 2)

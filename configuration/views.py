@@ -7,9 +7,11 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from common.access import ProtectedViewMixin
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
+from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
 
-from .forms import AttentionTypeForm, SubattentionTypeForm
+from .forms import AttentionTypeForm, SubattentionTypeForm, catalog_snapshot
 from .models import AttentionType, Period, SubattentionType
 
 
@@ -54,26 +56,6 @@ class PeriodMaintainerView(ProtectedViewMixin, TemplateView):
             },
         ],
     }
-
-
-class ClampedPaginationMixin:
-    """Ajusta páginas inválidas o fuera de rango al rango disponible."""
-
-    def paginate_queryset(self, queryset, page_size):
-        paginator = self.get_paginator(
-            queryset,
-            page_size,
-            orphans=self.get_paginate_orphans(),
-            allow_empty_first_page=self.get_allow_empty(),
-        )
-        requested_page = self.request.GET.get(self.page_kwarg, "1")
-        try:
-            page_number = int(requested_page)
-        except (TypeError, ValueError):
-            page_number = 1
-        page_number = max(1, min(page_number, paginator.num_pages))
-        page = paginator.page(page_number)
-        return paginator, page, page.object_list, page.has_other_pages()
 
 
 class CatalogListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
@@ -133,12 +115,20 @@ class SubattentionTypeMaintainerView(CatalogListView):
     change_permission = "configuration.change_subattentiontype"
     search_fields = ("code", "name", "attention_type__name")
 
+    def get_queryset(self):
+        return super().get_queryset().select_related("attention_type")
+
 
 class CatalogExportView(ProtectedViewMixin, View):
-    permission_required = ""
+    """
+    Exportación a Excel de un catálogo. Sin permiso por defecto: una subclase que no declare
+    permission_required falla (ImproperlyConfigured) en vez de quedar abierta.
+    """
+
     model = None
     search_fields = ()
     filename = ""
+    sheet_title = "Registros"
     headings = ()
 
     def get_queryset(self, request):
@@ -162,7 +152,7 @@ class CatalogExportView(ProtectedViewMixin, View):
             self.filename,
             self.headings,
             (self.row_values(record) for record in self.get_queryset(request)),
-            sheet_title=self.headings[0],
+            sheet_title=self.sheet_title,
         )
 
 
@@ -171,6 +161,7 @@ class AttentionTypeExportView(CatalogExportView):
     model = AttentionType
     search_fields = ("code", "name", "description")
     filename = "tipos-de-atencion"
+    sheet_title = "Tipos de atención"
     headings = ("Código", "Nombre", "Descripción", "Estado")
 
     def row_values(self, record):
@@ -205,7 +196,7 @@ class CatalogCreateView(ProtectedViewMixin, CreateView):
                 official=getattr(self.request.user, "official", None),
                 action=f"Creación de {self.audit_label}",
                 instance=self.object,
-                new_value=str(self.object),
+                new_value=format_snapshot(catalog_snapshot(self.object)),
                 origin_ip=self.request.META.get("REMOTE_ADDR") or None,
             )
         messages.success(self.request, self.created_message)
@@ -239,15 +230,17 @@ class CatalogUpdateView(ProtectedViewMixin, UpdateView):
         return context
 
     def form_valid(self, form):
-        previous = str(self.model.objects.get(pk=self.object.pk))
+        # self.object ya trae los valores del formulario: el anterior se lee de la base.
+        previous_snapshot = catalog_snapshot(self.model.objects.get(pk=self.object.pk))
         with transaction.atomic():
             response = super().form_valid(form)
+            previous, new = describe_changes(previous_snapshot, catalog_snapshot(self.object))
             AuditoriaService.register_change(
                 official=getattr(self.request.user, "official", None),
                 action=f"Actualización de {self.audit_label}",
                 instance=self.object,
                 previous_value=previous,
-                new_value=str(self.object),
+                new_value=new,
                 origin_ip=self.request.META.get("REMOTE_ADDR") or None,
             )
         messages.success(self.request, self.updated_message)
@@ -311,10 +304,10 @@ class CatalogSetActiveView(ProtectedViewMixin, View):
             )
             return redirect(self.list_url)
 
-        previous = "Activo" if record.is_active else "Inactivo"
+        previous = "Estado: Activo" if record.is_active else "Estado: Inactivo"
         record.is_active = self.target_active
         record.save(update_fields=("is_active", "updated_at"))
-        current = "Activo" if record.is_active else "Inactivo"
+        current = "Estado: Activo" if record.is_active else "Estado: Inactivo"
         AuditoriaService.register_change(
             official=getattr(request.user, "official", None),
             action=f"{'Activación' if self.target_active else 'Desactivación'} de {self.audit_label}",
@@ -433,7 +426,11 @@ class SubattentionTypeExportView(CatalogExportView):
     model = SubattentionType
     search_fields = ("code", "name", "attention_type__name")
     filename = "subatenciones"
+    sheet_title = "Subatenciones"
     headings = ("Código", "Nombre", "Tipo de Atención asociado", "Estado")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("attention_type")
 
     def row_values(self, record):
         return (

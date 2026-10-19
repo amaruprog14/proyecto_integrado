@@ -28,6 +28,7 @@ from django.views.generic import (
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from configuration.services import AuditoriaService
 
 from .backends import SGRAuthBackend, find_user_by_email
@@ -653,31 +654,6 @@ def _registrar_auditoria(request, action, instance, previous="", new=""):
         new_value=new,
         origin_ip=request.META.get("REMOTE_ADDR") or None,
     )
-
-
-class ClampedPaginationMixin:
-    """
-    Paginación que ajusta la página al último disponible.
-
-    Si un filtro reduce los resultados y la página solicitada deja de existir, se muestra la
-    última página válida en lugar de responder 404.
-    """
-
-    def paginate_queryset(self, queryset, page_size):
-        paginator = self.get_paginator(
-            queryset,
-            page_size,
-            orphans=self.get_paginate_orphans(),
-            allow_empty_first_page=self.get_allow_empty(),
-        )
-        page = self.kwargs.get(self.page_kwarg) or self.request.GET.get(self.page_kwarg) or 1
-        try:
-            page_number = int(page)
-        except (TypeError, ValueError):
-            page_number = 1
-        page_number = max(1, min(page_number, paginator.num_pages))
-        page = paginator.page(page_number)
-        return paginator, page, page.object_list, page.has_other_pages()
 
 
 class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):

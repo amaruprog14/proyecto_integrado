@@ -68,3 +68,13 @@ class ExportLabelTests(TestCase):
                 self.assertContains(
                     response, '<button class="btn maintainer-export-button" type="button" disabled>'
                 )
+
+
+class PaginationImportTests(SimpleTestCase):
+    def test_old_import_paths_point_to_the_shared_mixin(self):
+        from accounts.views import ClampedPaginationMixin as from_accounts
+        from common.pagination import ClampedPaginationMixin
+        from configuration.views import ClampedPaginationMixin as from_configuration
+
+        self.assertIs(from_accounts, ClampedPaginationMixin)
+        self.assertIs(from_configuration, ClampedPaginationMixin)

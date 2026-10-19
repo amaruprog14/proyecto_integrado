@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
 from .models import Role
@@ -35,7 +36,7 @@ from .role_forms import (
     permission_label,
     role_snapshot,
 )
-from .views import ClampedPaginationMixin, _registrar_auditoria, scoped_officials
+from .views import _registrar_auditoria, scoped_officials
 
 
 def roles_queryset():

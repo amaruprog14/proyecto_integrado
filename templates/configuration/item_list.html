@@ -85,8 +85,9 @@
                                     {% if can_change %}
                                         <a class="auth-text-link" href="{% url 'item_update' item.pk %}">Editar</a>
                                         {% if item.is_active %}
-                                            <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial." data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
+                                            <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial. {% if item.activity_count %}{{ item.activity_count }} actividad{{ item.activity_count|pluralize:'es' }} registrada{{ item.activity_count|pluralize }} lo usa{{ item.activity_count|pluralize:'n' }} y conservará{{ item.activity_count|pluralize:'n' }} el ítem.{% else %}Ninguna actividad registrada lo usa.{% endif %}" data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
                                                 {% csrf_token %}
+                                                <input type="hidden" name="affected_activities" value="{{ item.activity_count }}">
                                                 <button type="submit">Desactivar</button>
                                             </form>
                                         {% else %}

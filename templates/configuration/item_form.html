@@ -55,9 +55,13 @@
 
                 <div class="attention-entry-grid">
                     <div class="attention-entry-field">
-                        <label for="{{ form.code.id_for_label }}">Código</label>
+                        <label for="{{ form.code.id_for_label }}">Código{% if form_mode == 'edit' %} <span aria-hidden="true">*</span>{% endif %}</label>
                         {{ form.code }}
-                        <p class="attention-entry-hint">Opcional. Si lo dejas vacío se genera automáticamente (por ejemplo, ITM-0006). Se guarda en mayúsculas.</p>
+                        {% if form_mode == 'edit' %}
+                            <p class="attention-entry-hint">Puedes cambiarlo, pero no dejarlo vacío. Se guarda en mayúsculas.</p>
+                        {% else %}
+                            <p class="attention-entry-hint">Opcional. Si lo dejas vacío se genera automáticamente (por ejemplo, ITM-0006). Se guarda en mayúsculas.</p>
+                        {% endif %}
                         {% for error in form.code.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </div>
 
