@@ -207,7 +207,7 @@
                                     {% endif %}
                                 </strong>
                                 {% if can_select_active_delegation %}
-                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2" method="post" action="{% url 'active_delegation_select' %}">
+                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2" method="post" action="{% url 'active_delegation_select' %}" data-delegation-switch>
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <label class="visually-hidden" for="active-delegation-select">Cambiar delegación activa</label>
@@ -229,7 +229,11 @@
         </header>
 
         <main id="contenido" class="container page-content flex-grow-1 py-4 py-md-5">
-            {% if messages %}
+            {% comment %}
+                Las peticiones de la búsqueda en tiempo real (X-Live-Search) solo reemplazan el
+                listado: no muestran ni consumen los mensajes pendientes del usuario.
+            {% endcomment %}
+            {% if messages and not request.headers.x_live_search %}
                 <div data-sgr-messages>
                     {% for message in messages %}
                         <div class="alert alert-{{ message.level_tag }}" role="alert" data-sgr-message data-level="{{ message.level_tag }}">{{ message }}</div>
@@ -265,10 +269,16 @@
             </div>
         </footer>
         {% bootstrap_javascript %}
-        {% if messages %}
+        {% if messages or can_select_active_delegation %}
             <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+        {% endif %}
+        {% if messages %}
             <script src="{% static 'js/messages.js' %}" defer></script>
         {% endif %}
         {% block extra_scripts %}{% endblock %}
+        {% if can_select_active_delegation %}
+            {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}
+            <script src="{% static 'js/delegation-switch.js' %}" defer></script>
+        {% endif %}
     </body>
 </html>

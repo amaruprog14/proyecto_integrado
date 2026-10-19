@@ -57,6 +57,7 @@ ejecución no afecta los resultados.
 | `common/tests.py` | Generación de `.xlsx`, textos de exportación, paginación compartida |
 | `common/test_frontend.py` | Navegación, distintivo de contexto, estados de carga/vacío/error, maquetas |
 | `common/test_requirements.py` | 403 con auditoría en cada operación, longitudes, relaciones inactivas, entradas adversas |
+| `common/test_live_search.py` | Búsqueda en tiempo real (marcado, filtros en la URL) y aviso de cambios sin guardar al cambiar de delegación |
 
 ## Matriz requisito → prueba
 
@@ -100,6 +101,8 @@ automatizada y debe ejecutarse y registrarse en la ficha de ejecución; no se de
 | Requisito | Pruebas |
 | --------- | ------- |
 | UX-01 Búsqueda parcial sin distinguir mayúsculas y filtros combinados | `*_crud.*test_search_is_partial_and_case_insensitive*`, `*_crud.*test_status_filter_combines_with_search` |
+| B1 / UX-01 Búsqueda en tiempo real que conserva los filtros en la URL, el paginador y la exportación | `common.test_live_search.LiveSearchMarkupTests`. Espera de 400 ms, cancelación, «Buscando…» y error de red: **manual** en el navegador |
+| A2 Advertir cambios sin guardar al cambiar la delegación activa | `common.test_live_search.DelegationSwitchWarningTests` (script y selector). Confirmación SweetAlert2 y cancelación: **manual** |
 | UX-02 Paginación de 10, filtros al paginar, página ajustada | `*_crud.*test_pagination_is_ten_per_page_and_keeps_filters`, `*_crud.*test_out_of_range_page_is_clamped`, `configuration.tests.CatalogAuditAndExportCleanupTests.test_out_of_range_page_is_clamped` |
 | UX-03 Exportar a Excel: todas las páginas, filtros, columnas, sin secretos ni campos internos | `accounts.test_delegation_crud.DelegationCrudAdminTests.test_export_*`, `accounts.test_user_crud.UserCrudAdminTests.test_export_*`, `accounts.test_official_crud.OfficialExportTests`, `accounts.test_role_crud.RoleCrudAdminTests.test_export_*`, `configuration.test_item_crud.ItemCrudAdminTests.test_export_*`, `configuration.tests.AttentionCatalogCrudTests.test_*excel_export*`, `common.tests` |
 | Estados de carga, vacío, sin coincidencias y error | `common.test_frontend.MaintainerLayoutTests`, `*_crud.*test_empty_states_distinguish_no_matches`, `common.test_frontend.ErrorPageTests` |

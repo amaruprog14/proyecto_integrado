@@ -213,6 +213,9 @@ no se eliminan).
 
 - Tabla con el estado en texto, búsqueda parcial sin distinguir mayúsculas en varios campos,
   filtro por estado, paginación de 10 registros que conserva los filtros y total de resultados.
+- Búsqueda en tiempo real: al dejar de escribir (unos 400 ms) o al cambiar el estado, se
+  actualizan solo la tabla, el total y el paginador, en la página 1, y la URL conserva los
+  filtros. Sin JavaScript, el botón Buscar hace la misma búsqueda recargando la página.
 - Mensajes distintos para listado vacío y búsqueda sin coincidencias, estado de carga mientras
   responde el servidor y páginas de error 403, 404 y 500 con la identidad del sistema (la de 500
   es autónoma para mostrarse aunque falle la base de datos).
@@ -224,7 +227,10 @@ no se eliminan).
   creación, edición y cambio de estado queda en `AuditLog` con el valor anterior y el nuevo.
 - La cabecera muestra siempre el usuario, su rol y la delegación activa (código y nombre), cada
   uno con texto e ícono. Si el perfil tiene varias delegaciones, el selector solo ofrece las
-  autorizadas, y la elección se aplica a listas, exportaciones y formularios.
+  autorizadas. La delegación activa filtra las listas y exportaciones de Usuarios y Funcionarios,
+  propone la delegación principal al crear usuarios y funcionarios, y fija la delegación del
+  ingreso de atención; el mantenedor de Delegaciones muestra todas las del ámbito autorizado. Si
+  hay un formulario con cambios sin guardar, cambiar de delegación pide confirmación antes.
 
 ### Reglas de negocio destacadas
 

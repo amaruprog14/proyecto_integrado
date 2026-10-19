@@ -850,6 +850,19 @@ body {
     font-size: var(--font-size-sm);
 }
 
+/* Búsqueda en tiempo real: «Buscando…» y errores de red junto al buscador. */
+.maintainer-live-status {
+    min-height: 1.25rem;
+    margin: 0 0 0.75rem;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.maintainer-live-status.is-error {
+    color: var(--color-primary-dark);
+    font-weight: 700;
+}
+
 /* Confirmación persistente tras registrar una atención, con enlace para consultarla. */
 .attention-entry-result {
     margin-bottom: 1.5rem;

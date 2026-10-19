@@ -20,7 +20,7 @@
                 {% endif %}
             </header>
 
-            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda por código, nombre o descripción</label>
                 <div class="maintainer-controls">
                     <input class="form-control maintainer-search" id="maintainer-search" name="q" type="search" value="{{ query }}" placeholder="Buscar tipos de atención...">
@@ -31,11 +31,12 @@
                         <option value="0"{% if selected_status == "0" %} selected{% endif %}>Inactivo</option>
                     </select>
                     <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
-                    <a class="btn maintainer-export-button" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
+                    <a class="btn maintainer-export-button" data-export-base="{% url 'attention_type_export' %}" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
                 </div>
             </form>
+            <p class="maintainer-live-status" data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap">
+            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table">
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr><th scope="col">Código</th><th scope="col">Nombre</th><th scope="col">Descripción</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr>
@@ -70,7 +71,7 @@
                 </table>
             </div>
 
-            <div class="maintainer-table-footer">
+            <div class="maintainer-table-footer" data-live-region="footer">
                 <p class="maintainer-record-count" aria-live="polite">Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros</p>
                 {% if page_obj.has_other_pages %}
                     <nav aria-label="Paginación de tipos de atención">
