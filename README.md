@@ -112,11 +112,38 @@ Las pantallas de la segunda evaluación están disponibles en estas rutas:
 | C5 | Tipo de Atención y Sub Atención | `/configuration/tipos-atencion/`, `/configuration/subatenciones/` |
 | C6 | Ingreso de atención | `/activities/atenciones/nueva/` |
 
-Los mantenedores muestran registros ficticios y ofrecen búsqueda, filtro, exportación y
-paginación del lado del navegador; las acciones CRUD están deshabilitadas y no hay
-persistencia. El ingreso de atención también es una demostración frontend: no guarda
-atenciones. El formulario de C6 muestra la delegación de referencia y filtra las
-subatenciones por tipo seleccionado en el navegador.
+Los mantenedores de Tipo de Atención y Sub Atención (C5) consultan y guardan registros en
+la base de datos. Permiten crear, consultar, editar, buscar, filtrar, paginar y exportar
+los catálogos; los códigos se generan automáticamente y los cambios de estado son
+desactivaciones lógicas para conservar el historial. Se exige el permiso `view_*` para
+consultar y los permisos `add_*` / `change_*` para crear y modificar. No se permite
+desactivar un tipo que tenga subatenciones activas ni reasignar una subatención vinculada
+a atenciones históricas. Las acciones también se validan en el servidor.
+
+El ingreso de atención (C6) guarda atenciones en la base de datos. El solicitante se identifica
+por RUT u otro identificador: si ya existe una persona activa, se reutiliza su registro y no se
+modifica su nombre; si no existe, se crea junto con la atención. La delegación se elige entre las
+autorizadas para el funcionario, y el responsable y la fecha/hora se asignan en el servidor.
+Los tipos y subatenciones provienen de los catálogos activos; la relación se valida también en
+el servidor. Se aplican el límite de tres gestiones por persona y las reglas del modelo de
+atención. Al guardar, se confirma el identificador de atención y se registra el evento de
+auditoría. Cancelar no crea registros.
+
+### Anexos A1–A3
+
+Los mantenedores de Delegaciones, Roles, Usuarios, Ítems y metas, Tipo de Atención y Sub
+Atención usan registros persistidos y controles de acceso del servidor. Las exportaciones de
+estos catálogos se descargan en formato Excel (`.xlsx`) y respetan los filtros aplicados.
+Cuando un usuario tiene acceso a varias delegaciones activas, puede cambiar la delegación
+activa desde la cabecera; la selección se guarda en la sesión y solo admite delegaciones que
+siguen autorizadas. El contexto se aplica a las listas y exportaciones de usuarios y funcionarios,
+a las opciones iniciales de los formularios y al ingreso de atención. Las asignaciones de acceso
+a varias delegaciones se conservan al editar un funcionario.
+
+El requisito de pruebas de estrés del Anexo A3 sigue pendiente de evidencia verificable. No se
+han inventado métricas ni se ha afirmado una ejecución en AWS: para completar el informe se
+necesitan el entorno AWS de prueba, el alcance de las rutas, la concurrencia y duración previstas,
+y los umbrales de aceptación acordados.
 
 El login, el cierre de sesión, la protección de rutas y la recuperación de contraseña (C1–C2)
 sí están integrados con el backend (ver [Acceso y recuperación de contraseña](#acceso-y-recuperación-de-contraseña)).
@@ -139,7 +166,10 @@ vista valida en el servidor el permiso requerido (ocultar opciones del menú es 
 | Delegaciones, Roles, Cargos, Áreas, Funcionarios | `accounts.view_delegation`, `view_role`, `view_position`, `view_area`, `view_official` |
 | Usuarios, Grupos | `auth.view_user`, `auth.view_group` |
 | Actividades, Ingreso de atención | `activities.view_activity`, `activities.add_socialattention` |
-| Ítems, Períodos, Tipo de Atención, Sub Atención | `configuration.view_item`, `view_period`, `view_attentiontype`, `view_subattentiontype` |
+| Ítems, Períodos | `configuration.view_item`, `view_period` |
+| Consulta de Tipo de Atención y Sub Atención | `configuration.view_attentiontype`, `view_subattentiontype` |
+| Crear Tipo de Atención y Sub Atención | `configuration.add_attentiontype`, `add_subattentiontype` |
+| Editar y activar/desactivar Tipo de Atención y Sub Atención | `configuration.change_attentiontype`, `change_subattentiontype` |
 
 Los permisos provienen del usuario, de sus grupos y de los **roles SGR vigentes** (activos y no
 archivados) de su funcionario (`accounts.backends.SGRAuthBackend`). Salvo el superusuario, se
@@ -275,6 +305,8 @@ en el Admin están en español mediante `verbose_name`.
 | `Official` | `accounts`      | Operativa | Funcionario/a del organismo. Se vincula 1 a 1 con un `User` de Django y pertenece a un `Area` y un `Position`. Incluye `full_name`, `national_id` (único), `email` (único), `phone` y `status` (Activo / Inactivo / Suspendido)                     |
 | `Item`     | `configuration` | Maestra   | Ítems medibles del sistema, usados por `Activity` (`item_name` único, `is_active`)                                                                                                                                                                  |
 | `Period`   | `configuration` | Maestra   | Período de gestión con `start_date`, `end_date` y `status` (Abierto / Cerrado). Valida que no se solape con otros períodos y que la fecha de término no sea anterior a la de inicio (también como `CheckConstraint` en BD). Método `close_period()` |
+| `AttentionType` | `configuration` | Maestra | Tipo de atención con código automático (`TAT-####`), nombre, descripción y estado; no se desactiva mientras tenga subatenciones activas |
+| `SubattentionType` | `configuration` | Maestra | Subatención con código automático (`SAT-####`), nombre, tipo de atención asociado y estado; conserva sus atenciones históricas |
 | `Activity` | `activities`    | Operativa | Actividad realizada por un `Official` sobre un `Item`, con `date`, `record_type` y `action_description`                                                                                                                                             |
 
 Relaciones principales (todas con `on_delete=PROTECT`, salvo `Official.user` que usa `SET_NULL`):

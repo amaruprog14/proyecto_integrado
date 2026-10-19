@@ -1,76 +1,44 @@
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.querySelector("#attention-entry-form");
-    const attentionType = document.querySelector("#attention-type");
-    const subattentionType = document.querySelector("#subattention-type");
-    const registeredAt = document.querySelector("#attention-registered-at");
-    const demoDialog = document.querySelector("#attention-entry-dialog");
-    const closeDialog = document.querySelector("#attention-entry-dialog-close");
+    const attentionType = document.querySelector("#id_attention_type");
+    const subattentionType = document.querySelector("#id_subattention_type");
+    const submitButton = form?.querySelector('button[type="submit"]');
 
     if (
         !(form instanceof HTMLFormElement) ||
         !(attentionType instanceof HTMLSelectElement) ||
         !(subattentionType instanceof HTMLSelectElement) ||
-        !(registeredAt instanceof HTMLElement) ||
-        !(demoDialog instanceof HTMLDialogElement) ||
-        !(closeDialog instanceof HTMLButtonElement)
+        !(submitButton instanceof HTMLButtonElement)
     ) {
         return;
     }
 
-    const updateSubattentionOptions = (clearSelection) => {
-        if (clearSelection) subattentionType.value = "";
+    const updateSubattentionOptions = (clearInvalidSelection) => {
         const selectedType = attentionType.value;
-        let availableOptions = 0;
+        let hasOptions = false;
 
         [...subattentionType.options].forEach((option) => {
-            if (!option.dataset.attentionType) return;
-            const isAvailable = option.dataset.attentionType === selectedType;
+            const optionType = option.dataset.attentionType;
+            if (!optionType) return;
+
+            const isAvailable = optionType === selectedType;
             option.hidden = !isAvailable;
             option.disabled = !isAvailable;
-            if (isAvailable) availableOptions += 1;
+            hasOptions ||= isAvailable;
+
+            if (clearInvalidSelection && !isAvailable && option.selected) {
+                subattentionType.value = "";
+            }
         });
 
-        subattentionType.disabled = !selectedType || availableOptions === 0;
-    };
-
-    const updateRegisteredAt = () => {
-        registeredAt.textContent = new Intl.DateTimeFormat("es-CL", {
-            dateStyle: "short",
-            timeStyle: "short",
-        }).format(new Date());
+        subattentionType.disabled = !selectedType || !hasOptions;
     };
 
     attentionType.addEventListener("change", () => updateSubattentionOptions(true));
-    closeDialog.addEventListener("click", () => demoDialog.close());
-    demoDialog.addEventListener("click", (event) => {
-        if (event.target === demoDialog) demoDialog.close();
-    });
-
-    form.addEventListener("submit", (event) => {
-        event.preventDefault();
-
-        if (!form.reportValidity()) return;
-        if (!attentionType.value || subattentionType.disabled) {
-            subattentionType.setCustomValidity("Seleccione una Sub Atención asociada al tipo elegido.");
-            subattentionType.reportValidity();
-            subattentionType.setCustomValidity("");
-            return;
-        }
-
-        if (window.Swal) {
-            window.Swal.fire({
-                title: "Demostración sin persistencia",
-                text: "Los campos son válidos, pero esta pantalla aún no está conectada al backend. No se creó ni guardó una atención.",
-                icon: "info",
-                confirmButtonText: "Volver al formulario",
-                confirmButtonColor: "#ad0000",
-            });
-        } else {
-            demoDialog.showModal();
-        }
+    form.addEventListener("submit", () => {
+        submitButton.disabled = true;
+        submitButton.textContent = submitButton.dataset.loadingText || "Guardando…";
     });
 
     updateSubattentionOptions(false);
-    updateRegisteredAt();
-    window.setInterval(updateRegisteredAt, 60_000);
 });

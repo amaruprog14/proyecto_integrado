@@ -1,9 +1,12 @@
 from django.core.exceptions import ValidationError
+from django.contrib.auth.models import User
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import Delegation, Official, ServiceRecipient
+from accounts.delegation_context import ACTIVE_DELEGATION_SESSION_KEY
 from activities.models import SocialAttention
-from configuration.models import AttentionType, Item, SubattentionType
+from configuration.models import AttentionType, AuditLog, Item, SubattentionType
 
 
 class SocialAttentionRulesTests(TestCase):
@@ -75,3 +78,218 @@ class CatalogCodesTests(TestCase):
     def test_manual_code_is_respected(self):
         item = Item.objects.create(item_name="Visitas", code="VIS-01")
         self.assertEqual(Item.objects.get(pk=item.pk).code, "VIS-01")
+
+
+class SocialAttentionEntryTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            "attention.admin", "attention.admin@example.test", "Clave-Admin-1"
+        )
+        self.delegation = Delegation.objects.create(
+            delegation_name="Delegación de ingreso",
+            address="Calle 1",
+            commune="La Serena",
+        )
+        self.official = Official.objects.create(
+            user=self.user,
+            full_name="Funcionario responsable",
+            national_id="RUT-ATTENTION-OFFICIAL",
+            email="attention.official@example.test",
+            delegation=self.delegation,
+        )
+        self.attention_type = AttentionType.objects.create(
+            name="Orientación ciudadana"
+        )
+        self.subattention_type = SubattentionType.objects.create(
+            name="Orientación general",
+            attention_type=self.attention_type,
+        )
+        self.client.force_login(self.user)
+
+    def payload(self, **overrides):
+        data = {
+            "recipient_national_id": "RUT-RECIPIENT-001",
+            "recipient_full_name": "Persona solicitante real",
+            "delegation": self.delegation.pk,
+            "attention_type": self.attention_type.pk,
+            "subattention_type": self.subattention_type.pk,
+            "description": "Solicitud ingresada por ventanilla.",
+        }
+        data.update(overrides)
+        return data
+
+    def test_get_uses_active_database_catalogues_and_no_hardcoded_people(self):
+        response = self.client.get(reverse("attention_entry"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.attention_type.code)
+        self.assertContains(response, self.subattention_type.code)
+        self.assertContains(response, "No se registra a la persona hasta guardar la atención.")
+        self.assertNotContains(response, "Ana Ejemplo")
+        self.assertNotContains(response, "Seleccione una persona de ejemplo")
+
+    def test_post_creates_recipient_and_persists_attention_with_server_context(self):
+        response = self.client.post(
+            reverse("attention_entry"), self.payload(), follow=True
+        )
+
+        recipient = ServiceRecipient.objects.get(national_id="RUT-RECIPIENT-001")
+        attention = SocialAttention.objects.get(recipient=recipient)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(recipient.full_name, "Persona solicitante real")
+        self.assertEqual(attention.responsible, self.official)
+        self.assertEqual(attention.delegation, self.delegation)
+        self.assertEqual(attention.attention_type, self.attention_type)
+        self.assertEqual(attention.subattention_type, self.subattention_type)
+        self.assertEqual(attention.description, "Solicitud ingresada por ventanilla.")
+        self.assertTrue(attention.identifier.startswith("AS-"))
+        self.assertIsNotNone(attention.date)
+        self.assertIsNotNone(attention.registered_at)
+        self.assertContains(response, f"La atención {attention.identifier} se registró correctamente.")
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="Creación de atención",
+                affected_record_id=attention.pk,
+            ).exists()
+        )
+
+    def test_post_reuses_existing_recipient_by_identifier(self):
+        recipient = ServiceRecipient.objects.create(
+            full_name="Persona ya registrada",
+            national_id="RUT-RECIPIENT-001",
+        )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(recipient_full_name=""),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ServiceRecipient.objects.count(), 1)
+        self.assertTrue(SocialAttention.objects.filter(recipient=recipient).exists())
+
+    def test_entry_form_and_post_follow_the_active_delegation_in_session(self):
+        second_delegation = Delegation.objects.create(
+            delegation_name="Delegación activa seleccionada",
+            address="Calle 2",
+            commune="La Serena",
+        )
+        self.official.authorized_delegations.add(second_delegation)
+        session = self.client.session
+        session[ACTIVE_DELEGATION_SESSION_KEY] = second_delegation.pk
+        session.save()
+
+        form_response = self.client.get(reverse("attention_entry"))
+        form = form_response.context["form"]
+
+        self.assertEqual(
+            list(form.fields["delegation"].queryset), [second_delegation]
+        )
+        self.assertEqual(
+            form.fields["delegation"].initial, second_delegation.pk
+        )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(delegation=second_delegation.pk),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            SocialAttention.objects.filter(delegation=second_delegation).exists()
+        )
+
+    def test_existing_recipient_name_cannot_be_overwritten_by_intake(self):
+        recipient = ServiceRecipient.objects.create(
+            full_name="Nombre registrado",
+            national_id="RUT-RECIPIENT-001",
+        )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(recipient_full_name="Nombre distinto"),
+        )
+
+        recipient.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "El identificador ya está asociado a otro nombre.")
+        self.assertEqual(recipient.full_name, "Nombre registrado")
+        self.assertFalse(SocialAttention.objects.exists())
+
+    def test_post_rejects_subattention_from_another_type(self):
+        other_type = AttentionType.objects.create(name="Atención jurídica")
+        other_subattention = SubattentionType.objects.create(
+            name="Derivación jurídica",
+            attention_type=other_type,
+        )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(subattention_type=other_subattention.pk),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "asociada al Tipo de Atención elegido")
+        self.assertFalse(ServiceRecipient.objects.exists())
+        self.assertFalse(SocialAttention.objects.exists())
+
+    def test_post_rejects_delegation_outside_official_scope(self):
+        other_delegation = Delegation.objects.create(
+            delegation_name="Otra delegación",
+            address="Calle 2",
+            commune="La Serena",
+        )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(delegation=other_delegation.pk),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].has_error("delegation"))
+        self.assertFalse(ServiceRecipient.objects.exists())
+        self.assertFalse(SocialAttention.objects.exists())
+
+    def test_post_rejects_inactive_catalogue_entries(self):
+        self.subattention_type.is_active = False
+        self.subattention_type.save(update_fields=("is_active", "updated_at"))
+
+        response = self.client.post(reverse("attention_entry"), self.payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].has_error("subattention_type"))
+        self.assertFalse(ServiceRecipient.objects.exists())
+        self.assertFalse(SocialAttention.objects.exists())
+
+    def test_post_enforces_maximum_of_three_attentions_for_recipient(self):
+        recipient = ServiceRecipient.objects.create(
+            full_name="Persona con atenciones",
+            national_id="RUT-RECIPIENT-001",
+        )
+        for _ in range(SocialAttention.MAX_ATTENTIONS_PER_RECIPIENT):
+            SocialAttention.objects.create(
+                recipient=recipient,
+                attention_type=self.attention_type,
+                subattention_type=self.subattention_type,
+                description="Atención previa",
+                delegation=self.delegation,
+                responsible=self.official,
+            )
+
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(recipient_full_name=""),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ya tiene 3 gestiones registradas")
+        self.assertEqual(SocialAttention.objects.filter(recipient=recipient).count(), 3)
+
+    def test_opening_form_does_not_create_recipient_or_attention(self):
+        response = self.client.get(reverse("attention_entry"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ServiceRecipient.objects.exists())
+        self.assertFalse(SocialAttention.objects.exists())

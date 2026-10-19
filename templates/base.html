@@ -188,12 +188,25 @@
                                 <strong>
                                     {% if active_delegation %}
                                         {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                                    {% elif user.official.delegation %}
-                                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
                                     {% else %}
                                         Sin delegación asignada
                                     {% endif %}
                                 </strong>
+                                {% if can_select_active_delegation %}
+                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2" method="post" action="{% url 'active_delegation_select' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <label class="visually-hidden" for="active-delegation-select">Cambiar delegación activa</label>
+                                        <select class="form-select form-select-sm" id="active-delegation-select" name="delegation_id">
+                                            {% for delegation in authorized_active_delegations %}
+                                                <option value="{{ delegation.pk }}"{% if active_delegation.pk == delegation.pk %} selected{% endif %}>
+                                                    {{ delegation.code }} · {{ delegation.delegation_name }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                        <button class="btn btn-sm btn-outline-light" type="submit">Cambiar</button>
+                                    </form>
+                                {% endif %}
                             </span>
                         </div>
                     </div>

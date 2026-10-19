@@ -27,10 +27,8 @@
                 <strong>
                     {% if active_delegation %}
                         {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% elif user.official.delegation %}
-                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
                     {% else %}
-                        DEL01 · Delegación Centro (referencia)
+                        Sin delegación asignada
                     {% endif %}
                 </strong>
             </div>

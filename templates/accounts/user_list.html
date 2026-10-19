@@ -27,10 +27,8 @@
                 <strong>
                     {% if active_delegation %}
                         {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% elif user.official.delegation %}
-                        {{ user.official.delegation.code }} · {{ user.official.delegation.delegation_name }}
                     {% else %}
-                        DEL01 · Delegación Centro (referencia)
+                        Sin delegación asignada
                     {% endif %}
                 </strong>
             </div>
@@ -52,7 +50,7 @@
                         <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" value="{{ query }}" placeholder="Buscar por nombre, usuario, correo, rol o delegación..." autocomplete="off">
                         <button class="btn btn-primary" type="submit">Buscar</button>
                     </div>
-                    <a class="btn maintainer-export-button" href="{% url 'user_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar CSV para Excel</a>
+                    <a class="btn maintainer-export-button" href="{% url 'user_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar Excel</a>
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
                         <option value="">Filtrar estado</option>
                         {% for value, label in status_choices %}

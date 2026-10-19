@@ -3,14 +3,17 @@ Pruebas del CRUD de Usuarios (auth.User + accounts.Official).
 
 Cubren creación con y sin perfil de funcionario, consulta, edición, contraseñas,
 sincronización de estado, validaciones y duplicados, permisos, búsqueda, filtros,
-paginación, exportación CSV sin datos sensibles y el ámbito por delegación.
+paginación, exportación Excel sin datos sensibles y el ámbito por delegación.
 """
+
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django import forms
 from django.test import TestCase
 from django.urls import reverse
+from openpyxl import load_workbook
 
 from accounts.backends import SGRAuthBackend
 from accounts.forms import OfficialUserForm
@@ -373,14 +376,15 @@ class UserCrudAdminTests(TestCase):
         response = self.client.get(reverse("user_export"), {"q": "Exporta"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('attachment; filename="usuarios.csv"', response["Content-Disposition"])
+        self.assertIn('attachment; filename="usuarios.xlsx"', response["Content-Disposition"])
 
-        content = response.content.decode("utf-8-sig")
-        rows = [line for line in content.strip().splitlines() if line]
+        sheet = load_workbook(BytesIO(response.content), read_only=True).active
+        rows = list(sheet.values)
         self.assertEqual(len(rows), 13)
-        self.assertNotIn("password", content.lower())
-        self.assertNotIn("pbkdf2", content.lower())
-        self.assertNotIn(PASSWORD, content)
+        content = str(rows).lower()
+        self.assertNotIn("password", content)
+        self.assertNotIn("pbkdf2", content)
+        self.assertNotIn(PASSWORD.lower(), content)
 
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
@@ -557,7 +561,9 @@ class UserScopeTests(TestCase):
         self.assertTrue(self.foreign_user.is_active)
 
     def test_export_only_includes_authorized_users(self):
-        content = self.client.get(reverse("user_export")).content.decode("utf-8-sig")
+        response = self.client.get(reverse("user_export"))
+        rows = list(load_workbook(BytesIO(response.content), read_only=True).active.values)
+        content = str(rows)
 
         self.assertIn("pertenece.propia", content)
         self.assertNotIn("pertenece.ajena", content)
