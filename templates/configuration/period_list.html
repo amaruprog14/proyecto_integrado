@@ -1,45 +1,29 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+{% block title %}{{ maintainer_title }} (datos de demostración) · SGR{% endblock %}
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url 'period_maintainer' %}" aria-current="page">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="periods" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
-                    <h1 id="maintainer-title">{{ maintainer_title }}</h1>
+                    <h1 id="maintainer-title">{{ maintainer_title }} <span class="maintainer-demo-badge">Demostración</span></h1>
                 </div>
                 <button class="btn btn-primary maintainer-new-button" type="button" disabled>+ Nuevo registro</button>
             </header>
+
+            <div class="maintainer-demo-banner" role="note">
+                <strong>Datos de demostración.</strong>
+                Esta pantalla es una maqueta: los registros son ficticios y no se guardan. La búsqueda y la
+                paginación solo recorren estos datos de ejemplo; crear, editar, eliminar y exportar no están
+                disponibles en esta entrega.
+            </div>
 
             <section class="maintainer-tools" aria-label="Búsqueda y filtros">
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
@@ -84,7 +68,7 @@
                 <p class="maintainer-record-count" id="maintainer-record-count" aria-live="polite"></p>
                 <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination" id="maintainer-pagination"></ul></nav>
             </div>
-            <p class="maintainer-demo-note">Diseño referencial <span aria-hidden="true">·</span> Datos ficticios <span aria-hidden="true">·</span> Acciones visuales sin persistencia</p>
+            <p class="maintainer-demo-note">Datos de demostración <span aria-hidden="true">·</span> Maqueta sin persistencia <span aria-hidden="true">·</span> Acciones no disponibles</p>
         </section>
     </div>
 {% endblock %}

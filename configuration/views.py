@@ -278,6 +278,9 @@ class CatalogSetActiveView(ProtectedViewMixin, View):
     model = None
     list_url = ""
     audit_label = ""
+    # Sujeto con artículo para el mensaje de resultado, p. ej. "La subatención".
+    record_label = ""
+    feminine = False
     target_active = False
 
     def post(self, request, pk):
@@ -316,9 +319,10 @@ class CatalogSetActiveView(ProtectedViewMixin, View):
             new_value=current,
             origin_ip=request.META.get("REMOTE_ADDR") or None,
         )
+        state = "activad" if self.target_active else "desactivad"
         messages.success(
             request,
-            f"{self.audit_label} fue {'activado' if self.target_active else 'desactivado'} correctamente.",
+            f"{self.record_label} {record.name} fue {state}{'a' if self.feminine else 'o'} correctamente.",
         )
         return redirect(self.list_url)
 
@@ -362,6 +366,7 @@ class AttentionTypeActivateView(CatalogSetActiveView):
     model = AttentionType
     list_url = "attention_type_maintainer"
     audit_label = "tipo de atención"
+    record_label = "El tipo de atención"
     target_active = True
 
 
@@ -370,6 +375,7 @@ class AttentionTypeDeactivateView(CatalogSetActiveView):
     model = AttentionType
     list_url = "attention_type_maintainer"
     audit_label = "tipo de atención"
+    record_label = "El tipo de atención"
 
 
 class SubattentionTypeCreateView(CatalogCreateView):
@@ -411,6 +417,8 @@ class SubattentionTypeActivateView(CatalogSetActiveView):
     model = SubattentionType
     list_url = "subattention_type_maintainer"
     audit_label = "subatención"
+    record_label = "La subatención"
+    feminine = True
     target_active = True
 
 
@@ -419,6 +427,8 @@ class SubattentionTypeDeactivateView(CatalogSetActiveView):
     model = SubattentionType
     list_url = "subattention_type_maintainer"
     audit_label = "subatención"
+    record_label = "La subatención"
+    feminine = True
 
 
 class SubattentionTypeExportView(CatalogExportView):

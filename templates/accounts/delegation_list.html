@@ -5,33 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link is-active" href="{% url 'delegation_list' %}" aria-current="page">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
-                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="delegations" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -43,12 +20,12 @@
                 {% endif %}
             </header>
 
-            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap">
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls">
                     <div class="input-group">
                         <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" value="{{ query }}" placeholder="Buscar por código, nombre, dirección o comuna..." autocomplete="off">
-                        <button class="btn btn-primary" type="submit">Buscar</button>
+                        <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
                     </div>
                     <a class="btn maintainer-export-button" href="{% url 'delegation_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar a Excel</a>
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
@@ -60,7 +37,7 @@
                 </div>
             </form>
 
-            <div class="table-responsive maintainer-table-wrap">
+            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap">
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>
@@ -132,7 +109,7 @@
                             {% for number in page_obj.paginator.page_range %}
                                 <li class="page-item{% if number == page_obj.number %} active{% endif %}">
                                     {% if number == page_obj.number %}
-                                        <span class="page-link">{{ number }}</span>
+                                        <span class="page-link" aria-current="page">{{ number }}</span>
                                     {% else %}
                                         <a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ number }}">{{ number }}</a>
                                     {% endif %}
@@ -157,4 +134,5 @@
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
     <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

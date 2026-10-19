@@ -88,11 +88,11 @@
                                     <ul class="dropdown-menu">
                                         {% if perms.accounts.view_delegation %}<li><a class="dropdown-item" href="{% url 'delegation_list' %}">Delegaciones</a></li>{% endif %}
                                         {% if perms.accounts.view_role %}<li><a class="dropdown-item" href="{% url 'role_list' %}">Roles</a></li>{% endif %}
-                                        {% if perms.accounts.view_position %}<li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos</a></li>{% endif %}
-                                        {% if perms.accounts.view_area %}<li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas</a></li>{% endif %}
+                                        {% if perms.accounts.view_position %}<li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos · demostración</a></li>{% endif %}
+                                        {% if perms.accounts.view_area %}<li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas · demostración</a></li>{% endif %}
                                         {% if perms.accounts.view_official %}<li><a class="dropdown-item" href="{% url 'official_maintainer' %}">Funcionarios</a></li>{% endif %}
                                         {% if perms.auth.view_user %}<li><a class="dropdown-item" href="{% url 'user_maintainer' %}">Usuarios</a></li>{% endif %}
-                                        {% if perms.auth.view_group %}<li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos</a></li>{% endif %}
+                                        {% if perms.auth.view_group %}<li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos · demostración</a></li>{% endif %}
                                     </ul>
                                 </li>
                             {% endif %}
@@ -102,7 +102,7 @@
                                         Operación
                                     </a>
                                     <ul class="dropdown-menu">
-                                        {% if perms.activities.view_activity %}<li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades</a></li>{% endif %}
+                                        {% if perms.activities.view_activity %}<li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades · demostración</a></li>{% endif %}
                                         {% if perms.activities.add_socialattention %}<li><a class="dropdown-item" href="{% url 'attention_entry' %}">Ingreso de atención</a></li>{% endif %}
                                     </ul>
                                 </li>
@@ -114,7 +114,7 @@
                                     </a>
                                     <ul class="dropdown-menu">
                                         {% if perms.configuration.view_item %}<li><a class="dropdown-item" href="{% url 'item_maintainer' %}">Ítems y metas</a></li>{% endif %}
-                                        {% if perms.configuration.view_period %}<li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos</a></li>{% endif %}
+                                        {% if perms.configuration.view_period %}<li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos · demostración</a></li>{% endif %}
                                         {% if perms.configuration.view_attentiontype %}<li><a class="dropdown-item" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a></li>{% endif %}
                                         {% if perms.configuration.view_subattentiontype %}<li><a class="dropdown-item" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a></li>{% endif %}
                                     </ul>
@@ -154,8 +154,13 @@
             {% if user.is_authenticated %}
                 <section class="municipal-context" aria-label="Usuario y delegación activa">
                     <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        {% comment %}
+                            Distintivos con texto e ícono: el color nunca es la única señal del contexto.
+                        {% endcomment %}
                         <div class="municipal-context-item">
-                            <span class="municipal-context-icon" aria-hidden="true">U</span>
+                            <span class="municipal-context-icon" aria-hidden="true">
+                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
+                            </span>
                             <span>
                                 <span class="municipal-context-label">Usuario</span>
                                 <strong>
@@ -165,24 +170,33 @@
                                         {{ user.get_full_name|default:user.username }}
                                     {% endif %}
                                 </strong>
-                                <span class="municipal-context-detail">
-                                    Rol:
+                            </span>
+                        </div>
+                        <div class="municipal-context-item">
+                            <span class="municipal-context-icon" aria-hidden="true">
+                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path d="M8 1 2 3.5V8c0 3.5 2.6 6 6 7 3.4-1 6-3.5 6-7V3.5z"/></svg>
+                            </span>
+                            <span>
+                                <span class="municipal-context-label">Rol</span>
+                                <strong>
                                     {% if user.is_superuser %}
                                         Administrador del sistema
                                     {% elif user.official %}
                                         {% for role in user.official.roles.all %}
-                                            {{ role.role_name }}{% if not forloop.last %}, {% endif %}
+                                            {{ role.role_name }}{% if not role.is_active %} (inactivo){% endif %}{% if not forloop.last %}, {% endif %}
                                         {% empty %}
                                             Sin rol asignado
                                         {% endfor %}
                                     {% else %}
                                         Sin perfil asignado
                                     {% endif %}
-                                </span>
+                                </strong>
                             </span>
                         </div>
                         <div class="municipal-context-item">
-                            <span class="municipal-context-icon" aria-hidden="true">D</span>
+                            <span class="municipal-context-icon" aria-hidden="true">
+                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path fill-rule="evenodd" d="M8 1a5 5 0 0 0-5 5c0 3.8 5 9 5 9s5-5.2 5-9a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>
+                            </span>
                             <span>
                                 <span class="municipal-context-label">Delegación activa</span>
                                 <strong>

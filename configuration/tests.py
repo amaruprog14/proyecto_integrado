@@ -271,7 +271,7 @@ class AttentionCatalogCrudTests(TestCase):
         subattention.refresh_from_db()
         self.assertFalse(subattention.is_active)
         self.assertTrue(SubattentionType.objects.filter(pk=subattention.pk).exists())
-        self.assertContains(response, "fue desactivado correctamente")
+        self.assertContains(response, "La subatención Orientación fue desactivada correctamente.")
         self.assertTrue(AuditLog.objects.filter(action="Desactivación de subatención").exists())
 
     def test_subattention_cannot_be_activated_while_parent_is_inactive(self):

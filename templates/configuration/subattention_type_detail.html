@@ -5,19 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems y metas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url list_url %}">Sub Atención</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="subattention_types" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
+            {% include "includes/active_delegation_strip.html" %}
             <header class="maintainer-heading">
                 <div>
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> <a class="auth-text-link" href="{% url list_url %}">Sub Atención</a> <span aria-hidden="true">/</span> {{ record.code }}</p>
