@@ -128,6 +128,10 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Bloqueo temporal tras intentos fallidos de inicio de sesión (accounts.login_security).
+LOGIN_MAX_FAILED_ATTEMPTS = int(os.getenv('LOGIN_MAX_FAILED_ATTEMPTS', '5'))
+LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '10'))
+
 # Recuperación de contraseña con código (valores referenciales del diseño: 10 min y 45 s).
 PASSWORD_RESET_CODE_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_CODE_TTL_MINUTES', '10'))
 PASSWORD_RESET_RESEND_WAIT_SECONDS = int(os.getenv('PASSWORD_RESET_RESEND_WAIT_SECONDS', '45'))

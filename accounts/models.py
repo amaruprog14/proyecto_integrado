@@ -264,6 +264,27 @@ class ServiceRecipient(BaseModel):
         return self.full_name
 
 
+class LoginThrottle(BaseModel):
+    """
+    Tabla operativa: intentos fallidos de inicio de sesión para el bloqueo temporal
+    (accounts.login_security). `key` es "user:<id>" si la cuenta existe (usuario y correo
+    comparten contador) o "login:<identificador>" si no existe, que se bloquea igual.
+    """
+
+    key = models.CharField(max_length=191, unique=True, verbose_name="Clave de intentos")
+    failed_attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Intentos fallidos")
+    last_failure_at = models.DateTimeField(null=True, blank=True, db_index=True, verbose_name="Último intento fallido")
+    locked_until = models.DateTimeField(null=True, blank=True, verbose_name="Bloqueado hasta")
+
+    class Meta:
+        verbose_name = "Bloqueo de inicio de sesión"
+        verbose_name_plural = "Bloqueos de inicio de sesión"
+        ordering = ["-last_failure_at"]
+
+    def __str__(self):
+        return f"{self.key} ({self.failed_attempts} intentos fallidos)"
+
+
 class PasswordResetCode(BaseModel):
     """
     Tabla operativa: código de un solo uso para recuperar la contraseña.

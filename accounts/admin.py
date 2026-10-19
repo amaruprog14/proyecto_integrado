@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from activities.models import Activity
 from common.admin_utils import get_user_area
-from .models import Area, Official, Position
+from .models import Area, LoginThrottle, Official, Position
 
 
 class ActivityInline(admin.TabularInline):
@@ -72,3 +72,21 @@ class OfficialAdmin(admin.ModelAdmin):
         if not request.user.is_superuser:
             obj.area = get_user_area(request)
         super().save_model(request, obj, form, change)
+
+
+@admin.register(LoginThrottle)
+class LoginThrottleAdmin(admin.ModelAdmin):
+    """Consulta de bloqueos de inicio de sesión; borrar un registro desbloquea el identificador."""
+
+    list_display = ("key", "failed_attempts", "last_failure_at", "locked_until")
+    search_fields = ("key",)
+    readonly_fields = ("key", "failed_attempts", "last_failure_at", "locked_until")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser

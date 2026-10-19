@@ -67,7 +67,11 @@ class RoleMultipleChoiceField(forms.ModelMultipleChoiceField):
 
 
 class SGRAuthenticationForm(AuthenticationForm):
-    """Login con usuario o correo. El error es genérico para no revelar qué dato falló."""
+    """
+    Login con usuario o correo. El error es genérico para no revelar qué dato falló. Durante un
+    bloqueo temporal (accounts.login_security) se informa que hay que esperar; el mensaje es el
+    mismo exista o no la cuenta.
+    """
 
     error_messages = {
         "invalid_login": GENERIC_LOGIN_ERROR,
@@ -80,6 +84,13 @@ class SGRAuthenticationForm(AuthenticationForm):
         username.label = "Usuario o correo"
         username.max_length = 254
         username.widget.attrs.update({"maxlength": 254, "autocomplete": "username"})
+
+    def get_invalid_login_error(self):
+        from accounts import login_security
+
+        if getattr(self.request, login_security.LOCKED_REQUEST_FLAG, False):
+            return ValidationError(login_security.locked_message(), code="locked")
+        return super().get_invalid_login_error()
 
 
 class RecoveryRequestForm(forms.Form):
