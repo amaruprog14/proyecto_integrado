@@ -57,6 +57,8 @@ RESEND_ERROR_MESSAGES = {
     'resend_too_soon': 'Debes esperar antes de solicitar un nuevo código.',
     'resend_limit': 'Alcanzaste el máximo de reenvíos. Podrás pedir otro código cuando venza el actual.',
 }
+# Columnas visibles del listado de funcionarios; la exportación usa las mismas.
+OFFICIAL_COLUMNS = ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado']
 
 
 class MaintainerListView(ProtectedViewMixin, TemplateView):
@@ -359,49 +361,17 @@ class OfficialMaintainerView(MaintainerListView):
     extra_context = {
         'maintainer_title': 'Funcionarios',
         'maintainer_kind': 'officials',
-        'columns': ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado'],
+        'columns': OFFICIAL_COLUMNS,
         'statuses': Official.Status.choices,
     }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        officials = (
-            scoped_officials(self.request.user)
-            .select_related("area", "position", "delegation", "user")
-            .order_by("full_name")
-        )
-        active_delegation = get_active_delegation(self.request)
-        if active_delegation is not None:
-            officials = officials.filter(
-                Q(delegation=active_delegation)
-                | Q(authorized_delegations=active_delegation)
-            ).distinct()
-
-        query = (self.request.GET.get("q") or "").strip()
-        status = (self.request.GET.get("status") or "").strip()
-        if query:
-            officials = officials.filter(
-                Q(full_name__icontains=query)
-                | Q(national_id__icontains=query)
-                | Q(email__icontains=query)
-                | Q(area__area_name__icontains=query)
-                | Q(position__position_name__icontains=query)
-            )
-        if status in Official.Status.values:
-            officials = officials.filter(status=status)
-
         records = []
-        for official in officials:
+        for official in listed_officials(self.request):
             records.append(
                 {
-                    "cells": [
-                        official.full_name,
-                        official.national_id,
-                        official.email,
-                        official.area.area_name if official.area else "—",
-                        official.position.position_name if official.position else "—",
-                        official.get_status_display(),
-                    ],
+                    "cells": official_cells(official),
                     "pk": official.pk,
                     "is_self": is_same_identity(
                         self.request.user, target_official=official
@@ -557,6 +527,56 @@ def filter_users(queryset, params):
     elif status == Official.Status.SUSPENDED:
         queryset = queryset.filter(official__status=Official.Status.SUSPENDED)
     return queryset
+
+
+def filter_officials(queryset, params):
+    """
+    Búsqueda parcial en las columnas visibles (nombre, RUT, correo, área, cargo o estado) y
+    filtro por estado: la misma coincidencia que aplica la tabla en el navegador.
+    """
+    query = (params.get("q") or "").strip()
+    status = (params.get("status") or "").strip()
+    if query:
+        statuses = [value for value, label in Official.Status.choices if query.lower() in label.lower()]
+        queryset = queryset.filter(
+            Q(full_name__icontains=query)
+            | Q(national_id__icontains=query)
+            | Q(email__icontains=query)
+            | Q(area__area_name__icontains=query)
+            | Q(position__position_name__icontains=query)
+            | Q(status__in=statuses)
+        )
+    if status in Official.Status.values:
+        queryset = queryset.filter(status=status)
+    return queryset
+
+
+def listed_officials(request):
+    """Funcionarios del ámbito y de la delegación activa, con la búsqueda y el estado pedidos."""
+    officials = (
+        scoped_officials(request.user)
+        .select_related("area", "position", "delegation", "user")
+        .order_by("full_name")
+    )
+    active_delegation = get_active_delegation(request)
+    if active_delegation is not None:
+        officials = officials.filter(
+            Q(delegation=active_delegation)
+            | Q(authorized_delegations=active_delegation)
+        ).distinct()
+    return filter_officials(officials, request.GET)
+
+
+def official_cells(official):
+    """Valores de las columnas OFFICIAL_COLUMNS para la tabla y la exportación."""
+    return [
+        official.full_name,
+        official.national_id,
+        official.email,
+        official.area.area_name if official.area else "—",
+        official.position.position_name if official.position else "—",
+        official.get_status_display(),
+    ]
 
 
 def display_status(user):
@@ -799,6 +819,20 @@ class DelegationActivateView(ProtectedViewMixin, View):
             request, f"La delegación {delegation.delegation_name} fue activada correctamente."
         )
         return redirect("delegation_list")
+
+
+class OfficialExportView(ProtectedViewMixin, View):
+    """Exporta a Excel los funcionarios del ámbito con los mismos filtros y columnas de la tabla."""
+
+    permission_required = "accounts.view_official"
+
+    def get(self, request):
+        return xlsx_response(
+            "funcionarios",
+            OFFICIAL_COLUMNS,
+            (official_cells(official) for official in listed_officials(request)),
+            sheet_title="Funcionarios",
+        )
 
 
 class OfficialCreateView(ProtectedViewMixin, FormView):

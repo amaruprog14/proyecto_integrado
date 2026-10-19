@@ -48,7 +48,7 @@ class ConfigurationFrontendRouteTests(TestCase):
         response = self.client.get(reverse("attention_type_maintainer"))
 
         self.assertContains(response, f'href="{reverse("attention_type_create")}"')
-        self.assertContains(response, "Exportar Excel")
+        self.assertContains(response, "Exportar a Excel")
 
 
 class AttentionCatalogCrudTests(TestCase):

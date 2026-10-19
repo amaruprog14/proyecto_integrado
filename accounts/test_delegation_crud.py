@@ -245,6 +245,45 @@ class DelegationCrudAdminTests(TestCase):
         self.assertEqual(rows[0], ("Código", "Nombre", "Dirección", "Comuna", "Estado"))
         self.assertNotIn("password", str(rows).lower())
 
+    def test_export_rows_follow_search_and_status_without_internal_fields(self):
+        expected = Delegation.objects.create(
+            delegation_name="Zona Costera Sur", address="Avenida del Mar 200", commune="Coquimbo"
+        )
+        Delegation.objects.create(
+            delegation_name="Zona Costera Norte",
+            address="Avenida del Mar 300",
+            commune="La Serena",
+            status=Delegation.Status.INACTIVE,
+        )
+
+        response = self.client.get(
+            reverse("delegation_export"), {"q": "COSTERA", "status": Delegation.Status.ACTIVE}
+        )
+
+        rows = list(load_workbook(BytesIO(response.content), read_only=True).active.values)
+        # Solo las columnas visibles: sin id interno, fechas de auditoría ni borrado lógico.
+        self.assertEqual(
+            rows,
+            [
+                ("Código", "Nombre", "Dirección", "Comuna", "Estado"),
+                (expected.code, "Zona Costera Sur", "Avenida del Mar 200", "Coquimbo", "Activa"),
+            ],
+        )
+
+    def test_export_contains_every_filtered_record_shown_across_pages(self):
+        for index in range(23):
+            Delegation.objects.create(
+                delegation_name=f"Sector Exportable {index:02d}", address="Calle Larga", commune="La Serena"
+            )
+
+        listed = self.client.get(reverse("delegation_list"), {"q": "exportable"})
+        export = self.client.get(reverse("delegation_export"), {"q": "exportable"})
+
+        self.assertEqual(listed.context["total"], 23)
+        self.assertEqual(listed.context["paginator"].num_pages, 3)
+        names = [row[1] for row in load_workbook(BytesIO(export.content), read_only=True).active.values][1:]
+        self.assertEqual(names, [f"Sector Exportable {index:02d}" for index in range(23)])
+
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
         url = reverse("delegation_list")

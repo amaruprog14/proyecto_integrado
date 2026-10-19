@@ -50,7 +50,7 @@
                         <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" value="{{ query }}" placeholder="Buscar por nombre, usuario, correo, rol o delegación..." autocomplete="off">
                         <button class="btn btn-primary" type="submit">Buscar</button>
                     </div>
-                    <a class="btn maintainer-export-button" href="{% url 'user_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar Excel</a>
+                    <a class="btn maintainer-export-button" href="{% url 'user_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar a Excel</a>
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
                         <option value="">Filtrar estado</option>
                         {% for value, label in status_choices %}
@@ -61,7 +61,7 @@
             </form>
 
             <div class="table-responsive maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-export-filename="{{ maintainer_kind }}">
+                <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>
                             <th scope="col">Nombre</th>

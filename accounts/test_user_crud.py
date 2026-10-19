@@ -386,6 +386,69 @@ class UserCrudAdminTests(TestCase):
         self.assertNotIn("pbkdf2", content)
         self.assertNotIn(PASSWORD.lower(), content)
 
+    def test_export_columns_and_rows_follow_search_and_status(self):
+        delegation = Delegation.objects.create(
+            delegation_name="Zona Exportación", address="Calle Uno", commune="La Serena"
+        )
+        role = Role.objects.create(role_name="Rol Exportable")
+        active = User.objects.create_user("export.activo", "export.activo@example.test", PASSWORD)
+        make_official(
+            active, delegation=delegation, full_name="Persona Exportada Activa", national_id="RUT-EXP-ACT"
+        ).roles.add(role)
+        inactive = User.objects.create_user(
+            "export.inactivo", "export.inactivo@example.test", PASSWORD, is_active=False
+        )
+        make_official(
+            inactive,
+            delegation=delegation,
+            status=Official.Status.INACTIVE,
+            full_name="Persona Exportada Inactiva",
+            national_id="RUT-EXP-INA",
+        )
+
+        response = self.client.get(
+            reverse("user_export"), {"q": "EXPORTADA", "status": Official.Status.ACTIVE}
+        )
+
+        rows = list(load_workbook(BytesIO(response.content), read_only=True).active.values)
+        # Columnas visibles únicamente: sin id, hash de contraseña, is_staff ni último acceso.
+        self.assertEqual(
+            rows,
+            [
+                (
+                    "Nombre de usuario",
+                    "Nombre",
+                    "Correo electrónico",
+                    "RUT / identificador",
+                    "Rol",
+                    "Delegación",
+                    "Estado",
+                ),
+                (
+                    "export.activo",
+                    "Persona Exportada Activa",
+                    "export.activo@example.test",
+                    "RUT-EXP-ACT",
+                    "Rol Exportable",
+                    "Zona Exportación",
+                    "Activo",
+                ),
+            ],
+        )
+
+    def test_export_contains_every_filtered_account_shown_across_pages(self):
+        for index in range(23):
+            user = User.objects.create_user(f"pagina{index:02d}", f"pagina{index:02d}@example.test", PASSWORD)
+            make_official(user, full_name=f"Funcionario Página {index:02d}", national_id=f"RUT-P{index:02d}")
+
+        listed = self.client.get(reverse("user_maintainer"), {"q": "pagina"})
+        export = self.client.get(reverse("user_export"), {"q": "pagina"})
+
+        self.assertEqual(listed.context["total"], 23)
+        self.assertEqual(listed.context["paginator"].num_pages, 3)
+        usernames = [row[0] for row in load_workbook(BytesIO(export.content), read_only=True).active.values][1:]
+        self.assertEqual(usernames, [f"pagina{index:02d}" for index in range(23)])
+
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
         url = reverse("user_maintainer")

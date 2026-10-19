@@ -45,7 +45,7 @@
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
                     <input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off">
-                    <button class="btn maintainer-export-button" id="maintainer-export" type="button">Exportar CSV para Excel</button>
+                    <button class="btn maintainer-export-button" type="button" disabled>Exportar a Excel</button>
                     {% if statuses %}
                         <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
                         <select class="form-select maintainer-status-filter" id="maintainer-status">
@@ -57,7 +57,7 @@
             </section>
 
             <div class="table-responsive maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-page-size="3" data-export-filename="{{ maintainer_kind }}">
+                <table class="table maintainer-table" id="maintainer-table" data-page-size="3">
                     <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th scope="col">Acciones</th></tr></thead>
                     <tbody>
                         {% for record in records %}

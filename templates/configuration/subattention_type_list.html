@@ -51,7 +51,7 @@
                         <option value="0"{% if selected_status == "0" %} selected{% endif %}>Inactivo</option>
                     </select>
                     <button class="btn btn-primary" type="submit">Buscar</button>
-                    <a class="btn maintainer-export-button" href="{% url 'subattention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar Excel</a>
+                    <a class="btn maintainer-export-button" href="{% url 'subattention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
                 </div>
             </form>
 
