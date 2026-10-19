@@ -7,15 +7,15 @@ forman parte de este mantenedor.
 """
 
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db.models.functions import Lower
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
-from accounts.views import ClampedPaginationMixin
 from common.access import ProtectedViewMixin
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
 from .forms import ITEM_STATUS_CHOICES, ItemForm, item_snapshot
@@ -36,6 +36,15 @@ def register_item_audit(request, action, item, previous="", new=""):
 
 def items_queryset():
     return Item.objects.filter(deleted_at__isnull=True)
+
+
+def item_activities(item):
+    """Actividades vigentes (no archivadas) registradas con el ítem."""
+    return item.activities.filter(deleted_at__isnull=True)
+
+
+def activities_phrase(count):
+    return f"{count} actividad registrada" if count == 1 else f"{count} actividades registradas"
 
 
 def filter_items(queryset, params):
@@ -69,7 +78,9 @@ class ItemListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     paginate_by = 10
 
     def get_queryset(self):
-        return listed_items(self.request.GET)
+        return listed_items(self.request.GET).annotate(
+            activity_count=Count("activities", filter=Q(activities__deleted_at__isnull=True))
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -116,6 +127,7 @@ class ItemDetailView(ProtectedViewMixin, DetailView):
         context.update(
             maintainer_title="Detalle de ítem",
             can_change=self.request.user.has_perm("configuration.change_item"),
+            activity_count=item_activities(self.object).count(),
         )
         return context
 
@@ -179,6 +191,12 @@ class ItemUpdateView(ProtectedViewMixin, UpdateView):
 
 
 class ItemDeactivateView(ProtectedViewMixin, View):
+    """
+    Igual que en Roles: la confirmación informa cuántas actividades usan el ítem y envía esa
+    cifra; si cambió entre tanto, no se desactiva y se vuelve a advertir con la cifra actual.
+    Las actividades no cambian: conservan su ítem en el historial.
+    """
+
     permission_required = "configuration.change_item"
 
     def post(self, request, pk):
@@ -186,10 +204,29 @@ class ItemDeactivateView(ProtectedViewMixin, View):
         if not item.is_active:
             messages.info(request, f"El ítem {item.item_name} ya estaba inactivo.")
             return redirect("item_maintainer")
+
+        affected = item_activities(item).count()
+        if affected and request.POST.get("affected_activities") != str(affected):
+            messages.warning(
+                request,
+                f"El ítem {item.item_name} tiene {activities_phrase(affected)}. Revisa la cifra y "
+                "confirma nuevamente la desactivación.",
+            )
+            return redirect("item_maintainer")
+
         item.is_active = False
         item.save(update_fields=["is_active", "updated_at"])
-        register_item_audit(request, "Desactivación de ítem", item, previous="Estado: Activo", new="Estado: Inactivo")
-        messages.success(request, f"El ítem {item.item_name} fue desactivado correctamente.")
+        register_item_audit(
+            request,
+            "Desactivación de ítem",
+            item,
+            previous="Estado: Activo",
+            new=f"Estado: Inactivo\nActividades registradas con el ítem: {affected}",
+        )
+        message = f"El ítem {item.item_name} fue desactivado correctamente."
+        if affected:
+            message += f" Sus {activities_phrase(affected)} conservan el ítem en su historial."
+        messages.success(request, message)
         return redirect("item_maintainer")
 
 

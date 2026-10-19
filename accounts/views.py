@@ -11,7 +11,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -26,8 +26,15 @@ from django.views.generic import (
     View,
 )
 
-from common.access import ProtectedViewMixin
+from common.access import (
+    ProtectedViewMixin,
+    ScopedObjectMixin,
+    get_scoped_object_or_404,
+    register_denied_access,
+)
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
+from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
 
 from .backends import SGRAuthBackend, find_user_by_email
@@ -45,6 +52,12 @@ from .forms import (
     RecoveryRequestForm,
 )
 from .models import Delegation, Official, PasswordResetCode, Role
+from .role_forms import (
+    active_officials,
+    last_global_administrator,
+    sole_global_administrator_message,
+    sole_global_administrator_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +70,8 @@ RESEND_ERROR_MESSAGES = {
     'resend_too_soon': 'Debes esperar antes de solicitar un nuevo código.',
     'resend_limit': 'Alcanzaste el máximo de reenvíos. Podrás pedir otro código cuando venza el actual.',
 }
+# Columnas visibles del listado de funcionarios; la exportación usa las mismas.
+OFFICIAL_COLUMNS = ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado']
 
 
 class MaintainerListView(ProtectedViewMixin, TemplateView):
@@ -359,49 +374,17 @@ class OfficialMaintainerView(MaintainerListView):
     extra_context = {
         'maintainer_title': 'Funcionarios',
         'maintainer_kind': 'officials',
-        'columns': ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado'],
+        'columns': OFFICIAL_COLUMNS,
         'statuses': Official.Status.choices,
     }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        officials = (
-            scoped_officials(self.request.user)
-            .select_related("area", "position", "delegation", "user")
-            .order_by("full_name")
-        )
-        active_delegation = get_active_delegation(self.request)
-        if active_delegation is not None:
-            officials = officials.filter(
-                Q(delegation=active_delegation)
-                | Q(authorized_delegations=active_delegation)
-            ).distinct()
-
-        query = (self.request.GET.get("q") or "").strip()
-        status = (self.request.GET.get("status") or "").strip()
-        if query:
-            officials = officials.filter(
-                Q(full_name__icontains=query)
-                | Q(national_id__icontains=query)
-                | Q(email__icontains=query)
-                | Q(area__area_name__icontains=query)
-                | Q(position__position_name__icontains=query)
-            )
-        if status in Official.Status.values:
-            officials = officials.filter(status=status)
-
         records = []
-        for official in officials:
+        for official in listed_officials(self.request):
             records.append(
                 {
-                    "cells": [
-                        official.full_name,
-                        official.national_id,
-                        official.email,
-                        official.area.area_name if official.area else "—",
-                        official.position.position_name if official.position else "—",
-                        official.get_status_display(),
-                    ],
+                    "cells": official_cells(official),
                     "pk": official.pk,
                     "is_self": is_same_identity(
                         self.request.user, target_official=official
@@ -559,6 +542,56 @@ def filter_users(queryset, params):
     return queryset
 
 
+def filter_officials(queryset, params):
+    """
+    Búsqueda parcial en las columnas visibles (nombre, RUT, correo, área, cargo o estado) y
+    filtro por estado: la misma coincidencia que aplica la tabla en el navegador.
+    """
+    query = (params.get("q") or "").strip()
+    status = (params.get("status") or "").strip()
+    if query:
+        statuses = [value for value, label in Official.Status.choices if query.lower() in label.lower()]
+        queryset = queryset.filter(
+            Q(full_name__icontains=query)
+            | Q(national_id__icontains=query)
+            | Q(email__icontains=query)
+            | Q(area__area_name__icontains=query)
+            | Q(position__position_name__icontains=query)
+            | Q(status__in=statuses)
+        )
+    if status in Official.Status.values:
+        queryset = queryset.filter(status=status)
+    return queryset
+
+
+def listed_officials(request):
+    """Funcionarios del ámbito y de la delegación activa, con la búsqueda y el estado pedidos."""
+    officials = (
+        scoped_officials(request.user)
+        .select_related("area", "position", "delegation", "user")
+        .order_by("full_name")
+    )
+    active_delegation = get_active_delegation(request)
+    if active_delegation is not None:
+        officials = officials.filter(
+            Q(delegation=active_delegation)
+            | Q(authorized_delegations=active_delegation)
+        ).distinct()
+    return filter_officials(officials, request.GET)
+
+
+def official_cells(official):
+    """Valores de las columnas OFFICIAL_COLUMNS para la tabla y la exportación."""
+    return [
+        official.full_name,
+        official.national_id,
+        official.email,
+        official.area.area_name if official.area else "—",
+        official.position.position_name if official.position else "—",
+        official.get_status_display(),
+    ]
+
+
 def display_status(user):
     """Estado mostrado de la cuenta: combina User.is_active con Official.status."""
     official = getattr(user, "official", None)
@@ -592,6 +625,84 @@ def decorate_user(user):
     return user
 
 
+def sole_global_administrator_user_pk():
+    """Cuenta del único titular activo del último rol Administrador global, si la hay."""
+    role = last_global_administrator()
+    if role is None:
+        return None
+    holders = list(active_officials(role).values_list("user_id", flat=True)[:2])
+    return holders[0] if len(holders) == 1 else None
+
+
+def deny_privileged_role_assignment(request, form):
+    """
+    Responde 403 con auditoría si el formulario pidió roles privilegiados sin accounts.change_role,
+    igual que el mantenedor de Roles con los permisos privilegiados. Las casillas ya se muestran
+    bloqueadas, de modo que solo una petición manipulada llega aquí.
+    """
+    denied = getattr(form, "denied_privileged_roles", None)
+    if denied:
+        register_denied_access(request, ["accounts.change_role"])
+        names = ", ".join(role.role_name for role in denied)
+        raise PermissionDenied(f"Asignar roles privilegiados ({names}) requiere accounts.change_role.")
+
+
+def delegation_label(delegation):
+    return f"{delegation.code} · {delegation.delegation_name}" if delegation else "—"
+
+
+def delegation_snapshot(delegation):
+    """Valores auditables de la delegación."""
+    return {
+        "Código": delegation.code,
+        "Nombre": delegation.delegation_name,
+        "Dirección": delegation.address,
+        "Comuna": delegation.commune,
+        "Estado": delegation.get_status_display(),
+    }
+
+
+def official_snapshot(official):
+    """Valores auditables del perfil de funcionario, leídos de la base (roles y delegaciones al día)."""
+    return {
+        "Nombre completo": official.full_name,
+        "RUT / identificador": official.national_id,
+        "Correo de contacto": official.email,
+        "Teléfono": official.phone or "—",
+        "Área": official.area.area_name if official.area else "—",
+        "Cargo": official.position.position_name if official.position else "—",
+        "Delegación principal": delegation_label(official.delegation),
+        "Delegaciones autorizadas": ", ".join(
+            sorted(delegation_label(item) for item in official.authorized_delegations.all())
+        ) or "—",
+        "Roles": ", ".join(sorted(role.role_name for role in official.roles.all())) or "Sin rol",
+        "Estado": official.get_status_display(),
+    }
+
+
+def user_snapshot(user):
+    """Valores auditables de la cuenta y de su perfil de funcionario; nunca la contraseña ni su hash."""
+    snapshot = {
+        "Usuario": user.username,
+        "Nombres": user.first_name or "—",
+        "Apellidos": user.last_name or "—",
+        "Correo": user.email or "—",
+        "Acceso al Admin": "Sí" if user.is_staff else "No",
+        "Cuenta activa": "Sí" if user.is_active else "No",
+    }
+    official = Official.objects.filter(user=user).first()
+    if official is not None:
+        snapshot.update(official_snapshot(official))
+    return snapshot
+
+
+def password_change_note(snapshot, form):
+    """Si se cambió la contraseña, lo deja en el valor nuevo sin registrar la clave."""
+    if form.cleaned_data.get("password1"):
+        snapshot["Contraseña"] = "Actualizada (no se registra su valor)"
+    return snapshot
+
+
 def _actor_official(request):
     return getattr(request.user, "official", None)
 
@@ -605,31 +716,6 @@ def _registrar_auditoria(request, action, instance, previous="", new=""):
         new_value=new,
         origin_ip=request.META.get("REMOTE_ADDR") or None,
     )
-
-
-class ClampedPaginationMixin:
-    """
-    Paginación que ajusta la página al último disponible.
-
-    Si un filtro reduce los resultados y la página solicitada deja de existir, se muestra la
-    última página válida en lugar de responder 404.
-    """
-
-    def paginate_queryset(self, queryset, page_size):
-        paginator = self.get_paginator(
-            queryset,
-            page_size,
-            orphans=self.get_paginate_orphans(),
-            allow_empty_first_page=self.get_allow_empty(),
-        )
-        page = self.kwargs.get(self.page_kwarg) or self.request.GET.get(self.page_kwarg) or 1
-        try:
-            page_number = int(page)
-        except (TypeError, ValueError):
-            page_number = 1
-        page_number = max(1, min(page_number, paginator.num_pages))
-        page = paginator.page(page_number)
-        return paginator, page, page.object_list, page.has_other_pages()
 
 
 class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
@@ -699,7 +785,12 @@ class DelegationCreateView(ProtectedViewMixin, CreateView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        _registrar_auditoria(self.request, "Creación de delegación", self.object, new=str(self.object))
+        _registrar_auditoria(
+            self.request,
+            "Creación de delegación",
+            self.object,
+            new=format_snapshot(delegation_snapshot(self.object)),
+        )
         messages.success(
             self.request,
             f"La delegación {self.object.delegation_name} fue creada correctamente.",
@@ -711,7 +802,7 @@ class DelegationCreateView(ProtectedViewMixin, CreateView):
         return super().form_invalid(form)
 
 
-class DelegationUpdateView(ProtectedViewMixin, UpdateView):
+class DelegationUpdateView(ScopedObjectMixin, ProtectedViewMixin, UpdateView):
     permission_required = "accounts.change_delegation"
     model = Delegation
     form_class = DelegationForm
@@ -727,10 +818,12 @@ class DelegationUpdateView(ProtectedViewMixin, UpdateView):
         return context
 
     def form_valid(self, form):
-        previous = str(type(self.object).objects.get(pk=self.object.pk))
+        # self.object ya trae los valores del formulario: el anterior se lee de la base.
+        previous_snapshot = delegation_snapshot(type(self.object).objects.get(pk=self.object.pk))
         response = super().form_valid(form)
+        previous, new = describe_changes(previous_snapshot, delegation_snapshot(self.object))
         _registrar_auditoria(
-            self.request, "Actualización de delegación", self.object, previous=previous, new=str(self.object)
+            self.request, "Actualización de delegación", self.object, previous=previous, new=new
         )
         messages.success(
             self.request,
@@ -743,7 +836,7 @@ class DelegationUpdateView(ProtectedViewMixin, UpdateView):
         return super().form_invalid(form)
 
 
-class DelegationDetailView(ProtectedViewMixin, DetailView):
+class DelegationDetailView(ScopedObjectMixin, ProtectedViewMixin, DetailView):
     permission_required = "accounts.view_delegation"
     model = Delegation
     template_name = "accounts/delegation_detail.html"
@@ -769,13 +862,13 @@ class DelegationDeactivateView(ProtectedViewMixin, View):
     permission_required = "accounts.change_delegation"
 
     def post(self, request, pk):
-        delegation = get_object_or_404(scoped_delegations(request.user), pk=pk)
+        delegation = get_scoped_object_or_404(request, scoped_delegations(request.user), pk=pk)
         if delegation.status == Delegation.Status.INACTIVE:
             messages.info(request, "La delegación ya estaba inactiva.")
             return redirect("delegation_list")
         delegation.deactivate()
         _registrar_auditoria(
-            request, "Desactivación de delegación", delegation, previous=str(delegation), new=str(delegation)
+            request, "Desactivación de delegación", delegation, previous="Estado: Activa", new="Estado: Inactiva"
         )
         messages.success(
             request, f"La delegación {delegation.delegation_name} fue desactivada correctamente."
@@ -787,18 +880,32 @@ class DelegationActivateView(ProtectedViewMixin, View):
     permission_required = "accounts.change_delegation"
 
     def post(self, request, pk):
-        delegation = get_object_or_404(scoped_delegations(request.user), pk=pk)
+        delegation = get_scoped_object_or_404(request, scoped_delegations(request.user), pk=pk)
         if delegation.status == Delegation.Status.ACTIVE:
             messages.info(request, "La delegación ya estaba activa.")
             return redirect("delegation_list")
         delegation.activate()
         _registrar_auditoria(
-            request, "Activación de delegación", delegation, previous=str(delegation), new=str(delegation)
+            request, "Activación de delegación", delegation, previous="Estado: Inactiva", new="Estado: Activa"
         )
         messages.success(
             request, f"La delegación {delegation.delegation_name} fue activada correctamente."
         )
         return redirect("delegation_list")
+
+
+class OfficialExportView(ProtectedViewMixin, View):
+    """Exporta a Excel los funcionarios del ámbito con los mismos filtros y columnas de la tabla."""
+
+    permission_required = "accounts.view_official"
+
+    def get(self, request):
+        return xlsx_response(
+            "funcionarios",
+            OFFICIAL_COLUMNS,
+            (official_cells(official) for official in listed_officials(request)),
+            sheet_title="Funcionarios",
+        )
 
 
 class OfficialCreateView(ProtectedViewMixin, FormView):
@@ -829,12 +936,13 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             return context
 
     def form_valid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             official = form.save()
             _registrar_auditoria(
                 self.request,
                 "Creación de funcionario",
                 official,
-                new=official.full_name,
+                new=format_snapshot(official_snapshot(official)),
             )
             messages.success(
                 self.request,
@@ -843,6 +951,7 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo guardar el funcionario. Revisa los datos ingresados.",
@@ -858,7 +967,8 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
 
     def get_official(self):
             if not hasattr(self, "_official"):
-                self._official = get_object_or_404(
+                self._official = get_scoped_object_or_404(
+                    self.request,
                     scoped_officials(self.request.user)
                     .select_related("user", "area", "position", "delegation"),
                     pk=self.kwargs["pk"],
@@ -893,12 +1003,16 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
             return context
 
     def form_valid(self, form):
+            deny_privileged_role_assignment(self.request, form)
+            previous_snapshot = official_snapshot(self.get_official())
             official = form.save()
+            previous, new = describe_changes(previous_snapshot, official_snapshot(official))
             _registrar_auditoria(
                 self.request,
                 "Actualización de funcionario",
                 official,
-                new=official.full_name,
+                previous=previous,
+                new=new,
             )
             messages.success(
                 self.request,
@@ -907,6 +1021,7 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo actualizar el funcionario. Revisa los datos ingresados.",
@@ -942,6 +1057,7 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
             decorate_user(user)
         params = self.request.GET.copy()
         params.pop(self.page_kwarg, None)
+        can_change = self.request.user.has_perm("auth.change_user")
         context.update(
             maintainer_title="Usuarios del sistema",
             maintainer_kind="users",
@@ -951,12 +1067,13 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
             querystring=params.urlencode(),
             total=context["paginator"].count,
             can_add=self.request.user.has_perm("auth.add_user"),
-            can_change=self.request.user.has_perm("auth.change_user"),
+            can_change=can_change,
+            protected_user_pk=sole_global_administrator_user_pk() if can_change else None,
         )
         return context
 
 
-class UserDetailView(ProtectedViewMixin, DetailView):
+class UserDetailView(ScopedObjectMixin, ProtectedViewMixin, DetailView):
     permission_required = "auth.view_user"
     template_name = "accounts/user_detail.html"
     context_object_name = "account"
@@ -1059,12 +1176,16 @@ class UserCreateView(ProtectedViewMixin, FormView):
         return context
 
     def form_valid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         user = form.save()
-        _registrar_auditoria(self.request, "Creación de usuario", user, new=user.username)
+        _registrar_auditoria(
+            self.request, "Creación de usuario", user, new=format_snapshot(user_snapshot(user))
+        )
         messages.success(self.request, f"El usuario {user.username} fue creado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
@@ -1120,8 +1241,8 @@ class UserUpdateView(ProtectedViewMixin, FormView):
 
     def get_edited_user(self):
         if not hasattr(self, "_edited_user"):
-            self._edited_user = get_object_or_404(
-                scoped_users(self.request.user), pk=self.kwargs["pk"]
+            self._edited_user = get_scoped_object_or_404(
+                self.request, scoped_users(self.request.user), pk=self.kwargs["pk"]
             )
         return self._edited_user
 
@@ -1149,12 +1270,18 @@ class UserUpdateView(ProtectedViewMixin, FormView):
         return context
 
     def form_valid(self, form):
+        deny_privileged_role_assignment(self.request, form)
+        previous_snapshot = user_snapshot(self.get_edited_user())
         user = form.save()
-        _registrar_auditoria(self.request, "Actualización de usuario", user, new=user.username)
+        previous, new = describe_changes(
+            previous_snapshot, password_change_note(user_snapshot(user), form)
+        )
+        _registrar_auditoria(self.request, "Actualización de usuario", user, previous=previous, new=new)
         messages.success(self.request, f"El usuario {user.username} fue actualizado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
@@ -1163,20 +1290,33 @@ class UserDeactivateView(ProtectedViewMixin, View):
     permission_required = "auth.change_user"
 
     def post(self, request, pk):
-        target = get_object_or_404(scoped_users(request.user), pk=pk)
+        target = get_scoped_object_or_404(request, scoped_users(request.user), pk=pk)
         if is_same_identity(request.user, target_user=target):
             messages.error(request, "No puedes desactivar tu propia cuenta.")
             return redirect("user_maintainer")
         if not target.is_active and display_status(target) != Official.Status.ACTIVE:
             messages.info(request, f"El usuario {target.username} ya estaba inactivo.")
             return redirect("user_maintainer")
+        protected_role = sole_global_administrator_role(getattr(target, "official", None))
+        if protected_role is not None:
+            messages.error(
+                request, sole_global_administrator_message(target.official, protected_role, "desactivar a")
+            )
+            return redirect("user_maintainer")
+        previous_status = Official.Status(display_status(target)).label
         target.is_active = False
         target.save(update_fields=["is_active"])
         official = getattr(target, "official", None)
         if official is not None and official.status == Official.Status.ACTIVE:
             official.status = Official.Status.INACTIVE
             official.save(update_fields=["status", "updated_at"])
-        _registrar_auditoria(request, "Desactivación de usuario", target, new=target.username)
+        _registrar_auditoria(
+            request,
+            "Desactivación de usuario",
+            target,
+            previous=f"Usuario: {target.username}\nEstado: {previous_status}",
+            new=f"Usuario: {target.username}\nEstado: {Official.Status.INACTIVE.label}",
+        )
         messages.success(request, f"El usuario {target.username} fue desactivado correctamente.")
         return redirect("user_maintainer")
 
@@ -1185,19 +1325,26 @@ class UserActivateView(ProtectedViewMixin, View):
     permission_required = "auth.change_user"
 
     def post(self, request, pk):
-        target = get_object_or_404(scoped_users(request.user), pk=pk)
+        target = get_scoped_object_or_404(request, scoped_users(request.user), pk=pk)
         if is_same_identity(request.user, target_user=target):
             messages.error(request, "No puedes cambiar el estado de tu propia cuenta desde la administración.")
             return redirect("user_maintainer")
         if target.is_active and display_status(target) == Official.Status.ACTIVE:
             messages.info(request, f"El usuario {target.username} ya estaba activo.")
             return redirect("user_maintainer")
+        previous_status = Official.Status(display_status(target)).label
         target.is_active = True
         target.save(update_fields=["is_active"])
         official = getattr(target, "official", None)
         if official is not None and official.status != Official.Status.ACTIVE:
             official.status = Official.Status.ACTIVE
             official.save(update_fields=["status", "updated_at"])
-        _registrar_auditoria(request, "Activación de usuario", target, new=target.username)
+        _registrar_auditoria(
+            request,
+            "Activación de usuario",
+            target,
+            previous=f"Usuario: {target.username}\nEstado: {previous_status}",
+            new=f"Usuario: {target.username}\nEstado: {Official.Status.ACTIVE.label}",
+        )
         messages.success(request, f"El usuario {target.username} fue activado correctamente.")
         return redirect("user_maintainer")

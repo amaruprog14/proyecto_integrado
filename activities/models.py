@@ -78,6 +78,16 @@ class SocialAttention(BaseModel):
     )
     date = models.DateField(default=timezone.localdate, verbose_name="Fecha")
     registered_at = models.DateTimeField(default=timezone.now, verbose_name="Fecha y hora de registro")
+    # Token de un solo uso del formulario de ingreso: la restricción única impide que un doble
+    # envío (doble clic, reintento o Atrás) cree dos atenciones, incluso si llegan a la vez.
+    submission_token = models.CharField(
+        max_length=32,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Token de envío",
+    )
 
     class Meta:
         verbose_name = "Atención social"

@@ -5,33 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url 'item_maintainer' %}" aria-current="page">Ítems</a>
-                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="items" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -55,9 +32,13 @@
 
                 <div class="attention-entry-grid">
                     <div class="attention-entry-field">
-                        <label for="{{ form.code.id_for_label }}">Código</label>
+                        <label for="{{ form.code.id_for_label }}">Código{% if form_mode == 'edit' %} <span aria-hidden="true">*</span>{% endif %}</label>
                         {{ form.code }}
-                        <p class="attention-entry-hint">Opcional. Si lo dejas vacío se genera automáticamente (por ejemplo, ITM-0006). Se guarda en mayúsculas.</p>
+                        {% if form_mode == 'edit' %}
+                            <p class="attention-entry-hint">Puedes cambiarlo, pero no dejarlo vacío. Se guarda en mayúsculas.</p>
+                        {% else %}
+                            <p class="attention-entry-hint">Opcional. Si lo dejas vacío se genera automáticamente (por ejemplo, ITM-0006). Se guarda en mayúsculas.</p>
+                        {% endif %}
                         {% for error in form.code.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </div>
 

@@ -8,7 +8,9 @@ Mantenedor de Roles: formulario y reglas que lo mantienen coherente con el CRUD 
 - Asignar permisos privilegiados exige accounts.change_role, igual que asignar roles
   privilegiados a un usuario.
 - El sistema nunca queda sin administrador: el último rol Administrador global vigente con
-  funcionarios activos no puede desactivarse, perder sus permisos privilegiados ni su alcance.
+  funcionarios activos no puede desactivarse, perder sus permisos privilegiados ni su alcance,
+  y desde Usuarios y Funcionarios no se puede desactivar ni quitar ese rol a su único titular
+  activo (sole_global_administrator_role()).
 - El Administrador global no se combina con otros roles, por lo que un rol no puede pasar a
   serlo (ni reactivarse como tal) si algún funcionario lo tiene junto con otro rol vigente.
 """
@@ -97,6 +99,31 @@ def last_global_administrator_message(role, action):
         f"No se puede {action} {role.role_name}: es el último rol Administrador global con "
         "funcionarios activos y el sistema quedaría sin administrador. Asigna primero otro "
         "rol Administrador global a un funcionario activo."
+    )
+
+
+def sole_global_administrator_role(official):
+    """
+    El último rol Administrador global, si `official` es su único funcionario activo: en ese
+    caso desactivarlo, suspenderlo o quitarle el rol dejaría al sistema sin administrador.
+    """
+    if official is None or official.pk is None:
+        return None
+    role = last_global_administrator()
+    if role is None:
+        return None
+    holders = active_officials(role)
+    if holders.filter(pk=official.pk).exists() and not holders.exclude(pk=official.pk).exists():
+        return role
+    return None
+
+
+def sole_global_administrator_message(official, role, action):
+    """`action` completa la frase, p. ej. "desactivar a"."""
+    return (
+        f"No se puede {action} {official.full_name}: es el único funcionario activo con el rol "
+        f"{role.role_name}, el último Administrador global, y el sistema quedaría sin administrador. "
+        "Asigna primero un rol Administrador global a otro funcionario activo."
     )
 
 

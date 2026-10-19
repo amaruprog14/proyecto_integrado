@@ -32,7 +32,15 @@ def privileged_permission_query():
 
 
 class RoleCheckboxSelectMultiple(forms.CheckboxSelectMultiple):
-    """Checkboxes with metadata used by the role-selection behavior."""
+    """
+    Checkboxes with metadata used by the role-selection behavior.
+
+    `locked_ids` are privileged roles the actor cannot assign: they render disabled, and those in
+    `kept_ids` (already assigned) stay checked even after a submission with errors.
+    """
+
+    locked_ids = frozenset()
+    kept_ids = frozenset()
 
     def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
@@ -43,6 +51,13 @@ class RoleCheckboxSelectMultiple(forms.CheckboxSelectMultiple):
                 role.permissions.filter(privileged_permission_query()).exists()
                 and role.scope == Role.Scope.ALL
             ).lower()
+            if role.pk in self.locked_ids:
+                option["attrs"]["disabled"] = True
+                option["attrs"]["data-role-locked"] = "true"
+                option["selected"] = role.pk in self.kept_ids
+                option["attrs"].pop("checked", None)
+                if option["selected"]:
+                    option["attrs"]["checked"] = True
         return option
 
 
@@ -52,7 +67,11 @@ class RoleMultipleChoiceField(forms.ModelMultipleChoiceField):
 
 
 class SGRAuthenticationForm(AuthenticationForm):
-    """Login con usuario o correo. El error es genérico para no revelar qué dato falló."""
+    """
+    Login con usuario o correo. El error es genérico para no revelar qué dato falló. Durante un
+    bloqueo temporal (accounts.login_security) se informa que hay que esperar; el mensaje es el
+    mismo exista o no la cuenta.
+    """
 
     error_messages = {
         "invalid_login": GENERIC_LOGIN_ERROR,
@@ -65,6 +84,13 @@ class SGRAuthenticationForm(AuthenticationForm):
         username.label = "Usuario o correo"
         username.max_length = 254
         username.widget.attrs.update({"maxlength": 254, "autocomplete": "username"})
+
+    def get_invalid_login_error(self):
+        from accounts import login_security
+
+        if getattr(self.request, login_security.LOCKED_REQUEST_FLAG, False):
+            return ValidationError(login_security.locked_message(), code="locked")
+        return super().get_invalid_login_error()
 
 
 class RecoveryRequestForm(forms.Form):
@@ -99,6 +125,92 @@ def get_user_model_class():
     from django.contrib.auth import get_user_model
 
     return get_user_model()
+
+
+def assigned_roles_not_offered(official, offered_roles):
+    """
+    Roles asignados al funcionario que el formulario no ofrece (inactivos o archivados). Se
+    muestran bloqueados y se conservan al guardar, para no quitarlos sin que nadie lo decida.
+    """
+    if official is None or not official.pk:
+        return []
+    return list(official.roles.exclude(pk__in=offered_roles.values("pk")).order_by("role_name"))
+
+
+def sole_global_administrator_errors(official, status, roles):
+    """
+    Errores por campo si el cambio dejaría al sistema sin Administrador global: el funcionario
+    es el único titular activo del último rol de ese tipo (misma regla que el mantenedor de Roles).
+    """
+    # Importación local: accounts.role_forms importa este módulo.
+    from accounts.role_forms import sole_global_administrator_message, sole_global_administrator_role
+
+    role = sole_global_administrator_role(official)
+    if role is None:
+        return {}
+    errors = {}
+    if status and status != Official.Status.ACTIVE:
+        errors["status"] = sole_global_administrator_message(official, role, "desactivar ni suspender a")
+    if roles is not None and role not in roles:
+        errors["roles"] = sole_global_administrator_message(official, role, f"quitar el rol {role.role_name} a")
+    return errors
+
+
+def can_assign_privileged_roles(actor):
+    """Asignar o quitar roles privilegiados exige accounts.change_role, igual que en Roles."""
+    return actor is None or actor.is_superuser or actor.has_perm("accounts.change_role")
+
+
+def is_privileged_role(role):
+    return role.permissions.filter(privileged_permission_query()).exists()
+
+
+class RoleAssignmentMixin:
+    """
+    Reglas de asignación de roles comunes a OfficialUserForm y OfficialForm.
+
+    - Solo se ofrecen roles vigentes; los inactivos ya asignados se conservan (kept_roles).
+    - Sin accounts.change_role, los roles privilegiados se muestran bloqueados: los que el
+      funcionario ya tiene se conservan (locked_roles) y pedir uno nuevo queda en
+      denied_privileged_roles para que la vista responda 403 con auditoría.
+    - El Administrador global no se combina con otros roles vigentes.
+    """
+
+    def setup_roles(self, actor, official):
+        field = self.fields["roles"]
+        field.queryset = Role.objects.filter(is_active=True, deleted_at__isnull=True).order_by("role_name")
+        self.kept_roles = assigned_roles_not_offered(official, field.queryset)
+        self.locked_roles = []
+        self.denied_privileged_roles = []
+        if can_assign_privileged_roles(actor):
+            return
+        field.widget.locked_ids = frozenset(role.pk for role in field.queryset if is_privileged_role(role))
+        if official is not None and official.pk:
+            self.locked_roles = list(official.roles.filter(pk__in=field.widget.locked_ids))
+        field.widget.kept_ids = frozenset(role.pk for role in self.locked_roles)
+        field.help_text += (
+            " Los roles privilegiados aparecen bloqueados: asignarlos o quitarlos requiere el permiso"
+            " para administrar roles."
+        )
+
+    def final_roles(self, roles):
+        """Roles que quedarán asignados: los elegidos más los conservados, sin repetir."""
+        merged = {role.pk: role for role in [*(roles or []), *self.locked_roles, *self.kept_roles]}
+        return list(merged.values())
+
+    def clean_roles(self):
+        roles = self.cleaned_data.get("roles")
+        selected = list(roles or [])
+        assigned_ids = {role.pk for role in self.locked_roles}
+        self.denied_privileged_roles = [
+            role
+            for role in selected
+            if role.pk in self.fields["roles"].widget.locked_ids and role.pk not in assigned_ids
+        ]
+        current = {role.pk: role for role in [*selected, *self.locked_roles]}.values()
+        if len(current) > 1 and any(role.scope == Role.Scope.ALL and is_privileged_role(role) for role in current):
+            raise ValidationError("El rol Administrador global no puede combinarse con otros roles.")
+        return roles
 
 
 class DelegationForm(forms.ModelForm):
@@ -150,7 +262,7 @@ class DelegationForm(forms.ModelForm):
         return (self.cleaned_data.get("commune") or "").strip()
 
 
-class OfficialUserForm(forms.Form):
+class OfficialUserForm(RoleAssignmentMixin, forms.Form):
     """
     Administra la relación entre auth.User y accounts.Official.
 
@@ -293,9 +405,7 @@ class OfficialUserForm(forms.Form):
                 pk=active_delegation.pk
             )
             self.initial.setdefault("delegation", active_delegation.pk)
-        self.fields["roles"].queryset = Role.objects.filter(
-            is_active=True, deleted_at__isnull=True
-        ).order_by("role_name")
+        self.setup_roles(actor, self.official_instance)
         self.fields["area"].queryset = Area.objects.order_by("area_name")
         self.fields["position"].queryset = Position.objects.order_by("position_name")
 
@@ -441,7 +551,7 @@ class OfficialUserForm(forms.Form):
                     protected_changes.append("delegation")
                 if cleaned.get("status") != official.status:
                     protected_changes.append("status")
-                if set(cleaned.get("roles") or []) != set(official.roles.all()):
+                if set(self.final_roles(cleaned.get("roles"))) != set(official.roles.all()):
                     protected_changes.append("roles")
                 if set(cleaned.get("authorized_delegations") or []) != set(
                     official.authorized_delegations.all()
@@ -456,38 +566,14 @@ class OfficialUserForm(forms.Form):
                         "La administración de tu propia cuenta debe realizarse mediante el perfil personal.",
                     )
 
+        if official is not None:
+            roles = cleaned.get("roles")
+            for field, message in sole_global_administrator_errors(
+                official, cleaned.get("status"), None if roles is None else self.final_roles(roles)
+            ).items():
+                self.add_error(field, message)
+
         return cleaned
-
-    def clean_roles(self):
-        roles = self.cleaned_data.get("roles")
-        if not roles:
-            return roles
-
-        privileged_roles = [
-            role
-            for role in roles
-            if role.permissions.filter(privileged_permission_query()).exists()
-        ]
-        global_administrator = [
-            role
-            for role in privileged_roles
-            if role.scope == Role.Scope.ALL
-        ]
-        if global_administrator and len(roles) > len(global_administrator):
-            raise ValidationError(
-                "El rol Administrador global no puede combinarse con otros roles."
-            )
-        if (
-            privileged_roles
-            and self.actor is not None
-            and not getattr(self.actor, "is_superuser", False)
-            and not self.actor.has_perm("accounts.change_role")
-        ):
-            names = ", ".join(role.role_name for role in privileged_roles)
-            raise ValidationError(
-                f"No tienes permisos para asignar roles privilegiados: {names}."
-            )
-        return roles
 
     def clean_authorized_delegations(self):
         delegations = self.cleaned_data.get("authorized_delegations")
@@ -527,13 +613,13 @@ class OfficialUserForm(forms.Form):
                 official.delegation = cleaned.get("delegation")
                 official.status = status
                 official.save()
-                official.roles.set(cleaned.get("roles") or [])
+                official.roles.set(self.final_roles(cleaned.get("roles")))
                 official.authorized_delegations.set(cleaned.get("authorized_delegations") or [])
 
             return user
 
 
-class OfficialForm(forms.Form):
+class OfficialForm(RoleAssignmentMixin, forms.Form):
     """Administra el perfil Official y, opcionalmente, crea su cuenta de acceso."""
 
     full_name = forms.CharField(
@@ -648,9 +734,7 @@ class OfficialForm(forms.Form):
         self.fields["status"].initial = Official.Status.ACTIVE
         self.fields["area"].queryset = Area.objects.order_by("area_name")
         self.fields["position"].queryset = Position.objects.order_by("position_name")
-        self.fields["roles"].queryset = Role.objects.filter(
-            is_active=True, deleted_at__isnull=True
-        ).order_by("role_name")
+        self.setup_roles(actor, instance)
         if delegation_queryset is not None:
             self.fields["delegation"].queryset = delegation_queryset
             self.fields["authorized_delegations"].queryset = delegation_queryset
@@ -705,29 +789,6 @@ class OfficialForm(forms.Form):
             raise ValidationError("Ya existe una cuenta con este nombre de usuario.")
         return value
 
-    def clean_roles(self):
-        roles = self.cleaned_data.get("roles")
-        if not roles:
-            return roles
-        privileged_roles = [
-            role for role in roles if role.permissions.filter(privileged_permission_query()).exists()
-        ]
-        if any(role.scope == Role.Scope.ALL for role in privileged_roles) and len(roles) > 1:
-            raise ValidationError(
-                "El rol Administrador global no puede combinarse con otros roles."
-            )
-        if (
-            privileged_roles
-            and self.actor is not None
-            and not self.actor.is_superuser
-            and not self.actor.has_perm("accounts.change_role")
-        ):
-            names = ", ".join(role.role_name for role in privileged_roles)
-            raise ValidationError(
-                f"No tienes permisos para asignar roles privilegiados: {names}."
-            )
-        return roles
-
     def clean_authorized_delegations(self):
         delegations = self.cleaned_data.get("authorized_delegations")
         principal = self.cleaned_data.get("delegation")
@@ -748,6 +809,12 @@ class OfficialForm(forms.Form):
                 None,
                 "No puedes administrar tu propio perfil desde el mantenedor de funcionarios.",
             )
+        if self.instance is not None and self.instance.pk:
+            roles = cleaned.get("roles")
+            for field, message in sole_global_administrator_errors(
+                self.instance, cleaned.get("status"), None if roles is None else self.final_roles(roles)
+            ).items():
+                self.add_error(field, message)
         if not cleaned.get("create_account") or (self.instance is not None and self.instance.pk):
             return cleaned
         username = cleaned.get("username")
@@ -803,7 +870,7 @@ class OfficialForm(forms.Form):
                 user.save()
                 official.user = user
             official.save()
-            official.roles.set(cleaned.get("roles") or [])
+            official.roles.set(self.final_roles(cleaned.get("roles")))
             official.authorized_delegations.set(cleaned.get("authorized_delegations") or [])
             return official
 

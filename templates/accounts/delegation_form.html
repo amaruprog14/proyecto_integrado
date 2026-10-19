@@ -5,33 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link is-active" href="{% url 'delegation_list' %}" aria-current="page">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems</a>
-                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="delegations" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -44,7 +21,7 @@
                 </div>
             </header>
 
-            <form class="attention-entry-card" method="post" aria-label="{{ maintainer_title }}">
+            <form class="attention-entry-card" method="post" aria-label="{{ maintainer_title }}" data-loading>
                 {% csrf_token %}
 
                 {% if form.non_field_errors %}
@@ -89,8 +66,10 @@
 
                 <div class="attention-entry-actions">
                     <a class="btn attention-entry-cancel" href="{% url 'delegation_list' %}">Cancelar</a>
-                    <button class="btn btn-primary attention-entry-submit" type="submit">Guardar delegación</button>
+                    <button class="btn btn-primary attention-entry-submit" type="submit" data-loading-text="Guardando…">Guardar delegación</button>
                 </div>
+
+                <p class="attention-entry-note">Los campos marcados con * son obligatorios.</p>
 
                 {% if form_mode == 'create' %}
                     <p class="attention-entry-note">El código se genera automáticamente al guardar (por ejemplo, DEL-0001).</p>
@@ -103,4 +82,5 @@
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
     <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

@@ -5,33 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url 'item_maintainer' %}" aria-current="page">Ítems</a>
-                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="items" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -72,11 +49,12 @@
             </section>
 
             <div class="attention-entry-actions">
-                <a class="btn attention-entry-cancel" href="{% url 'item_maintainer' %}">Volver</a>
+                <a class="btn attention-entry-cancel" href="{% url 'item_maintainer' %}">Volver al listado</a>
                 {% if can_change %}
                     {% if item.is_active %}
-                        <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial." data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
+                        <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial. {% if activity_count %}{{ activity_count }} actividad{{ activity_count|pluralize:'es' }} registrada{{ activity_count|pluralize }} lo usa{{ activity_count|pluralize:'n' }} y conservará{{ activity_count|pluralize:'n' }} el ítem.{% else %}Ninguna actividad registrada lo usa.{% endif %}" data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
                             {% csrf_token %}
+                            <input type="hidden" name="affected_activities" value="{{ activity_count }}">
                             <button class="btn attention-entry-submit" type="submit">Desactivar</button>
                         </form>
                     {% else %}

@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.core.exceptions import ValidationError
 
@@ -57,6 +59,8 @@ class SocialAttentionForm(forms.Form):
         queryset=SubattentionType.objects.none(),
         widget=SubattentionSelect(attrs={"class": "form-select"}),
     )
+    # Token de un solo uso que emite la vista al abrir el formulario (ver SocialAttention).
+    submission_token = forms.CharField(required=False, max_length=32, widget=forms.HiddenInput)
     description = forms.CharField(
         label="Descripción de la atención",
         max_length=5000,
@@ -104,6 +108,11 @@ class SocialAttentionForm(forms.Form):
             .select_related("attention_type")
             .order_by("attention_type__name", "name")
         )
+
+    def clean_submission_token(self):
+        """Un token con otro formato se ignora: la atención se guarda sin control de doble envío."""
+        token = (self.cleaned_data.get("submission_token") or "").strip().lower()
+        return token if re.fullmatch(r"[0-9a-f]{32}", token) else ""
 
     def clean_recipient_national_id(self):
         return (self.cleaned_data["recipient_national_id"] or "").strip().upper()

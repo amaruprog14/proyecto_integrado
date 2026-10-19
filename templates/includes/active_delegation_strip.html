@@ -1,0 +1,10 @@
+<div class="maintainer-active-delegation">
+    <span>Delegación activa</span>
+    <strong>
+        {% if active_delegation %}
+            {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+        {% else %}
+            Sin delegación asignada
+        {% endif %}
+    </strong>
+</div>

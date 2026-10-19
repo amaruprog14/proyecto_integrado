@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
 
+from . import login_security
 from .models import Official
 
 
@@ -32,6 +33,8 @@ class SGRAuthBackend(ModelBackend):
     Autenticación y permisos del SGR (reemplaza a ModelBackend).
 
     - Ingreso con nombre de usuario o correo electrónico.
+    - Bloqueo temporal tras varios intentos fallidos (accounts.login_security). Se aplica aquí
+      para que cubra todo ingreso con contraseña, también el del Admin.
     - Un funcionario Inactivo, Suspendido o archivado no puede autenticarse, y una sesión ya
       abierta deja de reconocerse en la siguiente petición (get_user usa la misma regla).
     - Además de los permisos propios y de grupos, otorga los permisos de los roles SGR
@@ -45,13 +48,19 @@ class SGRAuthBackend(ModelBackend):
         if username is None or password is None:
             return None
 
-        user = self.find_user(username.strip())
+        identifier = username.strip()
+        user = self.find_user(identifier)
+        key = login_security.throttle_key(identifier, user)
+        if login_security.is_locked(key):
+            login_security.reject_locked_attempt(request, identifier, user)
+            return None
         if user is None:
             # Igual que ModelBackend: se calcula un hash para no revelar por tiempo si la cuenta existe.
             UserModel().set_password(password)
-            return None
-        if user.check_password(password) and self.user_can_authenticate(user):
+        elif user.check_password(password) and self.user_can_authenticate(user):
+            login_security.reset_failures(key)
             return user
+        login_security.record_failed_attempt(request, identifier, user, key)
         return None
 
     @staticmethod

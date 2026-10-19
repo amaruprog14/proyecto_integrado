@@ -5,30 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems y metas</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url 'attention_type_maintainer' %}" aria-current="page">Tipo de Atención</a>
-                <a class="maintainer-sidebar-link" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="attention_types" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -40,22 +20,23 @@
                 {% endif %}
             </header>
 
-            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda por código, nombre o descripción</label>
                 <div class="maintainer-controls">
                     <input class="form-control maintainer-search" id="maintainer-search" name="q" type="search" value="{{ query }}" placeholder="Buscar tipos de atención...">
                     <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
-                    <select class="form-select maintainer-status-filter" id="maintainer-status" name="status">
+                    <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit>
                         <option value="">Todos los estados</option>
                         <option value="1"{% if selected_status == "1" %} selected{% endif %}>Activo</option>
                         <option value="0"{% if selected_status == "0" %} selected{% endif %}>Inactivo</option>
                     </select>
-                    <button class="btn btn-primary" type="submit">Buscar</button>
-                    <a class="btn maintainer-export-button" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar Excel</a>
+                    <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
+                    <a class="btn maintainer-export-button" data-export-base="{% url 'attention_type_export' %}" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
                 </div>
             </form>
+            <p class="maintainer-live-status" data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap">
+            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table">
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr><th scope="col">Código</th><th scope="col">Nombre</th><th scope="col">Descripción</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr>
@@ -84,14 +65,14 @@
                                 </td>
                             </tr>
                         {% empty %}
-                            <tr><td colspan="5">No hay tipos de atención que coincidan con los filtros.</td></tr>
+                            <tr><td colspan="5" class="text-center">{% if query or selected_status %}No hay tipos de atención que coincidan con la búsqueda o el filtro aplicado.{% else %}Aún no hay tipos de atención registrados.{% endif %}</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
 
-            <div class="maintainer-table-footer">
-                <p class="maintainer-record-count" aria-live="polite">{{ total }} registro{{ total|pluralize:"s" }}</p>
+            <div class="maintainer-table-footer" data-live-region="footer">
+                <p class="maintainer-record-count" aria-live="polite">Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros</p>
                 {% if page_obj.has_other_pages %}
                     <nav aria-label="Paginación de tipos de atención">
                         <ul class="pagination maintainer-pagination">
@@ -100,7 +81,7 @@
                             </li>
                             {% for number in page_obj.paginator.page_range %}
                                 <li class="page-item{% if number == page_obj.number %} active{% endif %}">
-                                    {% if number == page_obj.number %}<span class="page-link">{{ number }}</span>{% else %}<a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ number }}">{{ number }}</a>{% endif %}
+                                    {% if number == page_obj.number %}<span class="page-link" aria-current="page">{{ number }}</span>{% else %}<a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ number }}">{{ number }}</a>{% endif %}
                                 </li>
                             {% endfor %}
                             <li class="page-item{% if not page_obj.has_next %} disabled{% endif %}">
@@ -118,4 +99,5 @@
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
     <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

@@ -1,18 +1,48 @@
+import uuid
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.shortcuts import redirect
 from django.utils import timezone
-from django.views.generic import FormView, TemplateView
+from django.views.generic import DetailView, FormView, TemplateView
 
 from accounts.delegation_context import get_active_delegation
 from accounts.models import Delegation, ServiceRecipient
-from common.access import ProtectedViewMixin
+from common.access import ProtectedViewMixin, ScopedObjectMixin
 from configuration.models import AttentionType, SubattentionType
 from configuration.services import AuditoriaService
 
 from .forms import SocialAttentionForm
 from .models import SocialAttention
+
+LAST_ATTENTION_SESSION_KEY = "last_registered_attention"
+
+
+def scoped_attentions(user):
+    """
+    Atenciones que el usuario puede consultar: las de sus delegaciones autorizadas y las que
+    registró. El superusuario conserva el alcance total; sin funcionario no hay alcance.
+    """
+    queryset = SocialAttention.objects.filter(deleted_at__isnull=True).select_related(
+        "recipient", "attention_type", "subattention_type", "delegation", "responsible"
+    )
+    if user.is_superuser:
+        return queryset
+    official = getattr(user, "official", None)
+    if official is None or not official.is_enabled:
+        return queryset.none()
+    return queryset.filter(
+        Q(delegation__in=official.get_authorized_delegations()) | Q(responsible=official)
+    ).distinct()
+
+
+def registered_attention(token, official):
+    """Atención ya guardada con este token de envío por el mismo responsable, si existe."""
+    if not token or official is None:
+        return None
+    return SocialAttention.objects.filter(submission_token=token, responsible=official).first()
 
 
 class ActivityMaintainerView(ProtectedViewMixin, TemplateView):
@@ -69,12 +99,35 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
         kwargs["active_delegation"] = get_active_delegation(self.request)
         return kwargs
 
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["submission_token"] = uuid.uuid4().hex
+        return initial
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["registered_at"] = timezone.localtime()
+        if self.request.method == "GET":
+            # Tras guardar se vuelve a un formulario limpio que muestra la atención registrada.
+            last_pk = self.request.session.pop(LAST_ATTENTION_SESSION_KEY, None)
+            if last_pk is not None:
+                context["last_attention"] = scoped_attentions(self.request.user).filter(pk=last_pk).first()
         return context
 
+    def already_registered(self, attention):
+        """Doble envío del mismo formulario: no se crea otra atención y se informa la existente."""
+        self.request.session[LAST_ATTENTION_SESSION_KEY] = attention.pk
+        messages.info(
+            self.request,
+            f"La atención {attention.identifier} ya estaba registrada; el envío repetido no creó un duplicado.",
+        )
+        return redirect("attention_entry")
+
     def form_valid(self, form):
+        token = form.cleaned_data.get("submission_token") or None
+        duplicate = registered_attention(token, form.official)
+        if duplicate is not None:
+            return self.already_registered(duplicate)
         try:
             with transaction.atomic():
                 recipient = form.get_or_create_recipient()
@@ -131,8 +184,10 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                     description=form.cleaned_data["description"],
                     delegation=delegation,
                     responsible=form.official,
+                    submission_token=token,
                 )
-                attention.full_clean()
+                # La unicidad del token la resuelve la base (IntegrityError), también entre envíos simultáneos.
+                attention.full_clean(exclude=["submission_token"])
                 attention.save()
                 AuditoriaService.register_change(
                     official=form.official,
@@ -160,7 +215,13 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                 for message in error.messages:
                     form.add_error(None, message)
             return self.form_invalid(form)
+        except IntegrityError:
+            duplicate = registered_attention(token, form.official)
+            if duplicate is None:
+                raise
+            return self.already_registered(duplicate)
 
+        self.request.session[LAST_ATTENTION_SESSION_KEY] = attention.pk
         messages.success(
             self.request,
             f"La atención {attention.identifier} se registró correctamente.",
@@ -173,3 +234,14 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
             "No se pudo registrar la atención. Revisa los datos ingresados.",
         )
         return super().form_invalid(form)
+
+
+class AttentionDetailView(ScopedObjectMixin, ProtectedViewMixin, DetailView):
+    """Consulta de una atención registrada, limitada a las delegaciones autorizadas del usuario."""
+
+    permission_required = 'activities.view_socialattention'
+    template_name = 'activities/attention_detail.html'
+    context_object_name = 'attention'
+
+    def get_queryset(self):
+        return scoped_attentions(self.request.user)

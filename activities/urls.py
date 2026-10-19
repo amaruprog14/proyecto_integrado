@@ -16,10 +16,11 @@ Including another URLconf
 """
 from django.urls import path
 
-from .views import ActivityMaintainerView, AttentionEntryView
+from .views import ActivityMaintainerView, AttentionDetailView, AttentionEntryView
 
 urlpatterns = []
 urlpatterns += [
     path('', ActivityMaintainerView.as_view(), name='activity_maintainer'),
     path('atenciones/nueva/', AttentionEntryView.as_view(), name='attention_entry'),
+    path('atenciones/<int:pk>/', AttentionDetailView.as_view(), name='attention_detail'),
 ]

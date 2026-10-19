@@ -850,6 +850,52 @@ body {
     font-size: var(--font-size-sm);
 }
 
+/* Búsqueda en tiempo real: «Buscando…» y errores de red junto al buscador. */
+.maintainer-live-status {
+    min-height: 1.25rem;
+    margin: 0 0 0.75rem;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.maintainer-live-status.is-error {
+    color: var(--color-primary-dark);
+    font-weight: 700;
+}
+
+/* Confirmación persistente tras registrar una atención, con enlace para consultarla. */
+.attention-entry-result {
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-left: 0.35rem solid var(--color-neutral-70);
+    border-radius: 0.25rem;
+    background-color: var(--color-surface);
+}
+
+/* Maquetas sin persistencia: aviso con texto (no solo color) y distintivo junto al título. */
+.maintainer-demo-banner {
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-accent-lighter);
+    border-left: 0.35rem solid var(--color-accent-dark);
+    border-radius: 0.25rem;
+    background-color: #fff8e1;
+    color: var(--color-neutral-90);
+}
+
+.maintainer-demo-badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--color-accent-dark);
+    border-radius: 999px;
+    color: var(--color-accent-dark);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    vertical-align: middle;
+}
+
 .attention-entry {
     max-width: 76rem;
     margin: 0 auto;

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Página no encontrada · SGR{% endblock %}
+
+{% block content %}
+    <section class="page-intro" aria-labelledby="not-found-title">
+        <p class="page-intro-kicker">Página no encontrada</p>
+        <h1 id="not-found-title">No encontramos lo que buscas</h1>
+        <p>
+            La dirección no existe o el registro no está disponible para tu perfil y tu delegación.
+        </p>
+        <p class="page-intro-note">
+            Vuelve al inicio o usa el menú para continuar. Si llegaste desde un enlace del sistema,
+            informa al administrador.
+        </p>
+        <a class="auth-text-link" href="{% url 'home' %}">Volver al inicio</a>
+    </section>
+{% endblock %}

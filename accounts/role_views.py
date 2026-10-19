@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
+from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
 from .models import Role
@@ -35,7 +36,7 @@ from .role_forms import (
     permission_label,
     role_snapshot,
 )
-from .views import ClampedPaginationMixin, _registrar_auditoria, scoped_officials
+from .views import _registrar_auditoria, scoped_officials
 
 
 def roles_queryset():
@@ -183,10 +184,17 @@ class RoleCreateView(ProtectedViewMixin, CreateView):
         context.update(maintainer_title="Nuevo rol", form_mode="create")
         return context
 
-    def form_valid(self, form):
+    def deny_privileged_permissions(self, form):
+        """
+        403 con auditoría, igual que Usuarios y Funcionarios con los roles privilegiados; también
+        si el envío trae otros errores, para que una petición manipulada siempre quede registrada.
+        """
         if form.grants_privileged_permissions() and not can_grant_privileged_permissions(self.request.user):
             register_denied_access(self.request, ["accounts.change_role"])
             raise PermissionDenied("Asignar permisos privilegiados a un rol requiere accounts.change_role.")
+
+    def form_valid(self, form):
+        self.deny_privileged_permissions(form)
         self.object = form.save()
         _registrar_auditoria(
             self.request, "Creación de rol", self.object, new=format_snapshot(role_snapshot(self.object))
@@ -195,6 +203,7 @@ class RoleCreateView(ProtectedViewMixin, CreateView):
         return redirect(self.get_success_url())
 
     def form_invalid(self, form):
+        self.deny_privileged_permissions(form)
         messages.error(self.request, "No se pudo guardar el rol. Revisa los datos ingresados.")
         return super().form_invalid(form)
 

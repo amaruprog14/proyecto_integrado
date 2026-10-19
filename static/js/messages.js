@@ -24,11 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     container.hidden = true;
-    alerts.reduce(
-        (previous, options) =>
-            previous.then(() =>
-                window.Swal.fire({ ...options, confirmButtonText: "Entendido", confirmButtonColor }),
-            ),
-        Promise.resolve(),
-    );
+    alerts
+        .reduce(
+            (previous, options) =>
+                previous.then(() =>
+                    window.Swal.fire({ ...options, confirmButtonText: "Entendido", confirmButtonColor }),
+                ),
+            Promise.resolve(),
+        )
+        // Permite devolver el foco al primer campo con error (maintainer-states.js).
+        .then(() => document.dispatchEvent(new Event("sgr:messages-closed")));
 });

@@ -6,15 +6,18 @@ reactivación lógicas, validaciones de código y nombre, permisos (403 con audi
 filtros, paginación, exportación a Excel y registro de auditoría con valor anterior y nuevo.
 """
 
+from datetime import date
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import load_workbook
 
 from accounts.models import Official
+from activities.models import Activity
 from configuration.models import AuditLog, Item
 
 User = get_user_model()
@@ -157,17 +160,28 @@ class ItemCrudAdminTests(TestCase):
         self.assertEqual(log.previous_value, f"Código: {previous_code}")
         self.assertEqual(log.new_value, "Código: ATC-01")
 
-    def test_clearing_the_code_regenerates_the_automatic_one(self):
+    def test_existing_code_cannot_be_cleared_on_edit(self):
         self.item.code = "MANUAL-1"
         self.item.save()
 
-        self.client.post(
-            reverse("item_update", args=[self.item.pk]),
-            item_payload(code="", item_name=self.item.item_name, description=self.item.description),
-        )
+        for empty in ("", "   "):
+            with self.subTest(code=repr(empty)):
+                response = self.client.post(
+                    reverse("item_update", args=[self.item.pk]),
+                    item_payload(code=empty, item_name=self.item.item_name, description=self.item.description),
+                )
 
-        self.item.refresh_from_db()
-        self.assertEqual(self.item.code, f"ITM-{self.item.pk:04d}")
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "un ítem existente no puede quedar sin código")
+                self.item.refresh_from_db()
+                self.assertEqual(self.item.code, "MANUAL-1")
+        self.assertFalse(AuditLog.objects.filter(action="Actualización de ítem").exists())
+
+    def test_edit_form_marks_the_code_as_required(self):
+        response = self.client.get(reverse("item_update", args=[self.item.pk]))
+
+        self.assertContains(response, f'value="{self.item.code}"')
+        self.assertRegex(response.content.decode(), r'<input[^>]*name="code"[^>]*required')
 
     def test_update_form_does_not_change_status(self):
         self.client.post(
@@ -186,7 +200,10 @@ class ItemCrudAdminTests(TestCase):
         self.assertTrue(Item.objects.filter(pk=self.item.pk).exists())
         self.assertContains(response, "fue desactivado correctamente")
         log = AuditLog.objects.get(action="Desactivación de ítem", affected_record_id=self.item.pk)
-        self.assertEqual((log.previous_value, log.new_value), ("Estado: Activo", "Estado: Inactivo"))
+        self.assertEqual(
+            (log.previous_value, log.new_value),
+            ("Estado: Activo", "Estado: Inactivo\nActividades registradas con el ítem: 0"),
+        )
 
     def test_activate_after_deactivate(self):
         self.item.is_active = False
@@ -378,3 +395,57 @@ class ItemPermissionTests(TestCase):
         self.assertEqual(self.client.get(reverse("item_export")).status_code, 403)
         log = AuditLog.objects.filter(action="Acceso denegado").first()
         self.assertEqual(log.official, self.stranger.official)
+
+
+class ItemDeactivationWithActivitiesTests(TestCase):
+    """Como Roles con sus funcionarios: desactivar informa cuántas actividades usan el ítem."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("admin.uso", "admin.uso@example.test", PASSWORD)
+        official = make_official(cls.admin, national_id="RUT-ADMIN-USO")
+        cls.item = Item.objects.create(item_name="Visitas a terreno")
+        for day in (1, 2):
+            Activity.objects.create(
+                official=official, item=cls.item, date=date(2026, 10, day), record_type="Terreno"
+            )
+        Activity.objects.create(
+            official=official,
+            item=cls.item,
+            date=date(2026, 10, 3),
+            record_type="Terreno",
+            deleted_at=timezone.now(),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_confirmation_shows_how_many_activities_use_the_item(self):
+        response = self.client.get(reverse("item_maintainer"))
+
+        self.assertContains(response, "2 actividades registradas lo usan")
+        self.assertContains(response, 'name="affected_activities" value="2"')
+
+        detail = self.client.get(reverse("item_detail", args=[self.item.pk]))
+        self.assertContains(detail, "2 actividades registradas lo usan")
+
+    def test_outdated_count_does_not_deactivate(self):
+        response = self.client.post(
+            reverse("item_deactivate", args=[self.item.pk]), {"affected_activities": "1"}, follow=True
+        )
+
+        self.item.refresh_from_db()
+        self.assertTrue(self.item.is_active)
+        self.assertContains(response, "tiene 2 actividades registradas")
+
+    def test_confirmed_count_deactivates_and_audits_it(self):
+        response = self.client.post(
+            reverse("item_deactivate", args=[self.item.pk]), {"affected_activities": "2"}, follow=True
+        )
+
+        self.item.refresh_from_db()
+        self.assertFalse(self.item.is_active)
+        self.assertEqual(self.item.activities.count(), 3)
+        self.assertContains(response, "conservan el ítem en su historial")
+        log = AuditLog.objects.get(action="Desactivación de ítem")
+        self.assertIn("Actividades registradas con el ítem: 2", log.new_value)

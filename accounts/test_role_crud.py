@@ -613,6 +613,16 @@ class RolePermissionTests(TestCase):
         self.assertIn("accounts.change_role", log.new_value)
         self.assertEqual(log.official, self.creator.official)
 
+    def test_privileged_permissions_are_denied_even_if_the_submission_has_other_errors(self):
+        self.client.force_login(self.creator)
+
+        response = self.client.post(
+            reverse("role_create"), role_payload("auth.change_user", role_name="")
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(AuditLog.objects.filter(action="Acceso denegado").exists())
+
     def test_privileged_permissions_are_locked_in_the_creator_form(self):
         self.client.force_login(self.creator)
 

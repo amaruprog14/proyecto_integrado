@@ -2,39 +2,41 @@
 //
 // - Intercepta los formularios marcados con data-swal-confirm y pide confirmación con
 //   SweetAlert2 antes de desactivar o activar un registro. Si SweetAlert2 no carga, el
-//   formulario se envía igual (nunca se bloquea una operación).
-// - Los controles marcados con data-swal-autosubmit envían su formulario al cambiar.
+//   formulario se envía igual (nunca se bloquea una operación). El listener está en el
+//   documento para cubrir también las filas que la búsqueda en tiempo real vuelve a dibujar.
+// - Los controles marcados con data-swal-autosubmit envían su formulario al cambiar, salvo que
+//   la búsqueda en tiempo real (maintainer-states.js) ya actualice el listado sin recargar.
 document.addEventListener("DOMContentLoaded", () => {
     const confirmColor = () =>
         getComputedStyle(document.documentElement).getPropertyValue("--color-primary").trim() || "#ad0000";
 
-    document.querySelectorAll("form[data-swal-confirm]").forEach((form) => {
-        form.addEventListener("submit", (event) => {
-            if (form.dataset.swalConfirmed === "true") return;
-            if (!window.Swal) return;
+    document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.matches("form[data-swal-confirm]")) return;
+        if (form.dataset.swalConfirmed === "true") return;
+        if (!window.Swal) return;
 
-            event.preventDefault();
-            window.Swal.fire({
-                title: form.dataset.swalTitle || "Confirmar acción",
-                text: form.dataset.swalConfirm,
-                icon: form.dataset.swalIcon || "warning",
-                showCancelButton: true,
-                confirmButtonText: form.dataset.swalConfirmText || "Sí, continuar",
-                cancelButtonText: "Cancelar",
-                confirmButtonColor: confirmColor(),
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    form.dataset.swalConfirmed = "true";
-                    form.submit();
-                }
-            });
+        event.preventDefault();
+        window.Swal.fire({
+            title: form.dataset.swalTitle || "Confirmar acción",
+            text: form.dataset.swalConfirm,
+            icon: form.dataset.swalIcon || "warning",
+            showCancelButton: true,
+            confirmButtonText: form.dataset.swalConfirmText || "Sí, continuar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: confirmColor(),
+        }).then((result) => {
+            if (result.isConfirmed) {
+                form.dataset.swalConfirmed = "true";
+                form.submit();
+            }
         });
     });
 
     document.querySelectorAll("[data-swal-autosubmit]").forEach((element) => {
         element.addEventListener("change", () => {
             const form = element.closest("form");
-            if (form) form.submit();
+            if (form && form.dataset.liveSearchReady !== "true") form.submit();
         });
     });
 
@@ -130,12 +132,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Los roles privilegiados que el actor no puede asignar llegan bloqueados (data-role-locked)
+    // desde el servidor: aquí no se habilitan ni se desmarcan.
     const roleInputs = [...userForm.querySelectorAll('input[name="roles"]')];
     const applyRoleSelection = () => {
         const administrator = roleInputs.find((input) =>
             input.dataset.roleGlobalAdministrator === "true" && input.checked,
         );
         roleInputs.forEach((input) => {
+            if (input.dataset.roleLocked === "true") return;
             if (administrator && input !== administrator) {
                 input.checked = false;
                 input.disabled = true;

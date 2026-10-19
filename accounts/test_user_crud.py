@@ -386,6 +386,69 @@ class UserCrudAdminTests(TestCase):
         self.assertNotIn("pbkdf2", content)
         self.assertNotIn(PASSWORD.lower(), content)
 
+    def test_export_columns_and_rows_follow_search_and_status(self):
+        delegation = Delegation.objects.create(
+            delegation_name="Zona Exportación", address="Calle Uno", commune="La Serena"
+        )
+        role = Role.objects.create(role_name="Rol Exportable")
+        active = User.objects.create_user("export.activo", "export.activo@example.test", PASSWORD)
+        make_official(
+            active, delegation=delegation, full_name="Persona Exportada Activa", national_id="RUT-EXP-ACT"
+        ).roles.add(role)
+        inactive = User.objects.create_user(
+            "export.inactivo", "export.inactivo@example.test", PASSWORD, is_active=False
+        )
+        make_official(
+            inactive,
+            delegation=delegation,
+            status=Official.Status.INACTIVE,
+            full_name="Persona Exportada Inactiva",
+            national_id="RUT-EXP-INA",
+        )
+
+        response = self.client.get(
+            reverse("user_export"), {"q": "EXPORTADA", "status": Official.Status.ACTIVE}
+        )
+
+        rows = list(load_workbook(BytesIO(response.content), read_only=True).active.values)
+        # Columnas visibles únicamente: sin id, hash de contraseña, is_staff ni último acceso.
+        self.assertEqual(
+            rows,
+            [
+                (
+                    "Nombre de usuario",
+                    "Nombre",
+                    "Correo electrónico",
+                    "RUT / identificador",
+                    "Rol",
+                    "Delegación",
+                    "Estado",
+                ),
+                (
+                    "export.activo",
+                    "Persona Exportada Activa",
+                    "export.activo@example.test",
+                    "RUT-EXP-ACT",
+                    "Rol Exportable",
+                    "Zona Exportación",
+                    "Activo",
+                ),
+            ],
+        )
+
+    def test_export_contains_every_filtered_account_shown_across_pages(self):
+        for index in range(23):
+            user = User.objects.create_user(f"pagina{index:02d}", f"pagina{index:02d}@example.test", PASSWORD)
+            make_official(user, full_name=f"Funcionario Página {index:02d}", national_id=f"RUT-P{index:02d}")
+
+        listed = self.client.get(reverse("user_maintainer"), {"q": "pagina"})
+        export = self.client.get(reverse("user_export"), {"q": "pagina"})
+
+        self.assertEqual(listed.context["total"], 23)
+        self.assertEqual(listed.context["paginator"].num_pages, 3)
+        usernames = [row[0] for row in load_workbook(BytesIO(export.content), read_only=True).active.values][1:]
+        self.assertEqual(usernames, [f"pagina{index:02d}" for index in range(23)])
+
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
         url = reverse("user_maintainer")
@@ -458,6 +521,10 @@ class UserCrudAdminTests(TestCase):
         )
 
         self.client.force_login(manager)
+        form_page = self.client.get(reverse("user_update", args=[target.pk]))
+        self.assertContains(form_page, f'value="{privileged_role.pk}"')
+        self.assertContains(form_page, 'data-role-locked="true"')
+
         response = self.client.post(
             reverse("user_update", args=[target.pk]),
             user_payload(
@@ -470,9 +537,52 @@ class UserCrudAdminTests(TestCase):
             ),
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "No tienes permisos para asignar roles privilegiados")
+        # Misma respuesta que el mantenedor de Roles: 403 con auditoría.
+        self.assertEqual(response.status_code, 403)
         self.assertFalse(target.official.roles.filter(pk=privileged_role.pk).exists())
+        log = AuditLog.objects.get(action="Acceso denegado")
+        self.assertIn("accounts.change_role", log.new_value)
+        self.assertEqual(log.official, manager_official)
+
+        invalid = user_payload(
+            username=target.username,
+            email="no-es-un-correo",
+            full_name=target.official.full_name,
+            national_id=target.official.national_id,
+            roles=[privileged_role.pk],
+        )
+        self.assertEqual(self.client.post(reverse("user_update", args=[target.pk]), invalid).status_code, 403)
+
+    def test_actor_without_role_management_permission_keeps_existing_privileged_roles(self):
+        delegation = Delegation.objects.create(delegation_name="Zona Conserva", address="Calle 9", commune="La Serena")
+        manager = User.objects.create_user("gestor.conserva", "gestor.conserva@example.test", PASSWORD)
+        make_official(manager, delegation=delegation, national_id="RUT-GESTOR-CONS")
+        grant_permissions(manager, "auth.change_user")
+        privileged_role = Role.objects.create(role_name="Rol Privilegiado Asignado")
+        privileged_role.permissions.add(
+            Permission.objects.get(content_type__app_label="accounts", codename="change_delegation")
+        )
+        target = User.objects.create_user("con.privilegio", "con.privilegio@example.test", PASSWORD)
+        make_official(target, delegation=delegation, national_id="RUT-CON-PRIV").roles.add(privileged_role)
+
+        self.client.force_login(manager)
+        response = self.client.post(
+            reverse("user_update", args=[target.pk]),
+            user_payload(
+                username=target.username,
+                email=target.email,
+                password1="",
+                password2="",
+                full_name="Con Privilegio Editado",
+                national_id="RUT-CON-PRIV",
+                delegation=delegation.pk,
+            ),
+        )
+
+        self.assertRedirects(response, reverse("user_maintainer"), fetch_redirect_response=False)
+        target.official.refresh_from_db()
+        self.assertEqual(target.official.full_name, "Con Privilegio Editado")
+        self.assertTrue(target.official.roles.filter(pk=privileged_role.pk).exists())
 
     def test_global_administrator_role_cannot_be_combined_with_other_roles(self):
         global_admin = Role.objects.create(
@@ -620,3 +730,145 @@ class UserPermissionTests(TestCase):
             403,
         )
         self.assertFalse(User.objects.filter(username="no.autorizado").exists())
+
+
+def make_global_administrator_role(name="Administrador Global Usuarios"):
+    role = Role.objects.create(role_name=name, scope=Role.Scope.ALL)
+    role.permissions.add(Permission.objects.get(content_type__app_label="accounts", codename="change_role"))
+    return role
+
+
+class LastGlobalAdministratorAccountTests(TestCase):
+    """Desde Usuarios no se puede dejar al sistema sin su último Administrador global."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("super.ultimo", "super.ultimo@example.test", PASSWORD)
+        cls.role = make_global_administrator_role()
+        cls.holder = User.objects.create_user("unico.admin", "unico.admin@example.test", PASSWORD)
+        make_official(cls.holder, full_name="Única Administradora", national_id="RUT-UNICO-ADM").roles.add(cls.role)
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def holder_payload(self, **overrides):
+        payload = user_payload(
+            username=self.holder.username,
+            email=self.holder.email,
+            password1="",
+            password2="",
+            full_name=self.holder.official.full_name,
+            national_id=self.holder.official.national_id,
+            roles=[self.role.pk],
+        )
+        payload.update(overrides)
+        return payload
+
+    def test_sole_holder_cannot_be_deactivated_from_the_list(self):
+        response = self.client.post(reverse("user_deactivate", args=[self.holder.pk]), follow=True)
+
+        self.holder.refresh_from_db()
+        self.assertTrue(self.holder.is_active)
+        self.assertEqual(self.holder.official.status, Official.Status.ACTIVE)
+        self.assertContains(response, "es el único funcionario activo con el rol Administrador Global Usuarios")
+        self.assertFalse(AuditLog.objects.filter(action="Desactivación de usuario").exists())
+
+    def test_sole_holder_cannot_be_deactivated_or_suspended_through_the_form(self):
+        for status in (Official.Status.INACTIVE, Official.Status.SUSPENDED):
+            with self.subTest(status=status):
+                response = self.client.post(
+                    reverse("user_update", args=[self.holder.pk]), self.holder_payload(status=status)
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "No se puede desactivar ni suspender a Única Administradora")
+                self.holder.refresh_from_db()
+                self.assertTrue(self.holder.is_active)
+                self.assertEqual(self.holder.official.status, Official.Status.ACTIVE)
+
+    def test_global_administrator_role_cannot_be_removed_from_its_sole_holder(self):
+        payload = self.holder_payload()
+        payload.pop("roles")
+
+        response = self.client.post(reverse("user_update", args=[self.holder.pk]), payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se puede quitar el rol Administrador Global Usuarios a Única Administradora")
+        self.assertTrue(self.holder.official.roles.filter(pk=self.role.pk).exists())
+
+    def test_holder_can_be_deactivated_when_another_active_official_has_the_role(self):
+        backup = User.objects.create_user("respaldo.admin", "respaldo.admin@example.test", PASSWORD)
+        make_official(backup, national_id="RUT-RESPALDO-ADM").roles.add(self.role)
+
+        self.client.post(reverse("user_deactivate", args=[self.holder.pk]))
+
+        self.holder.refresh_from_db()
+        self.assertFalse(self.holder.is_active)
+
+    def test_list_disables_deactivation_of_the_sole_holder(self):
+        response = self.client.get(reverse("user_maintainer"))
+
+        self.assertNotContains(response, f'action="{reverse("user_deactivate", args=[self.holder.pk])}"')
+        self.assertContains(response, "Es el único funcionario activo con el último rol Administrador global.")
+
+
+class InactiveRoleAssignmentTests(TestCase):
+    """Editar un usuario no le quita en silencio un rol inactivo que tenga asignado."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("super.inactivo", "super.inactivo@example.test", PASSWORD)
+        cls.active_role = Role.objects.create(role_name="Rol Vigente Asignado")
+        cls.inactive_role = Role.objects.create(role_name="Rol Inactivo Asignado", is_active=False)
+        cls.target = User.objects.create_user("con.rol.inactivo", "con.rol.inactivo@example.test", PASSWORD)
+        make_official(cls.target, full_name="Con Rol Inactivo", national_id="RUT-ROL-INACT").roles.add(
+            cls.active_role, cls.inactive_role
+        )
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_edit_form_shows_the_inactive_role_locked(self):
+        response = self.client.get(reverse("user_update", args=[self.target.pk]))
+
+        self.assertContains(response, "Rol Inactivo Asignado")
+        self.assertContains(response, "Rol inactivo")
+        self.assertNotContains(response, f'name="roles" value="{self.inactive_role.pk}"')
+
+    def test_saving_keeps_the_inactive_role(self):
+        response = self.client.post(
+            reverse("user_update", args=[self.target.pk]),
+            user_payload(
+                username=self.target.username,
+                email=self.target.email,
+                password1="",
+                password2="",
+                full_name="Con Rol Inactivo Editado",
+                national_id="RUT-ROL-INACT",
+                roles=[self.active_role.pk],
+            ),
+        )
+
+        self.assertRedirects(response, reverse("user_maintainer"))
+        self.target.official.refresh_from_db()
+        self.assertEqual(self.target.official.full_name, "Con Rol Inactivo Editado")
+        self.assertEqual(set(self.target.official.roles.all()), {self.active_role, self.inactive_role})
+
+    def test_inactive_role_does_not_count_as_a_change_of_the_own_account(self):
+        form = OfficialUserForm(
+            data=user_payload(
+                username=self.target.username,
+                email=self.target.email,
+                first_name="",
+                last_name="",
+                password1="",
+                password2="",
+                full_name="Con Rol Inactivo",
+                national_id="RUT-ROL-INACT",
+                roles=[self.active_role.pk],
+            ),
+            actor=self.target,
+            instance=self.target,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)

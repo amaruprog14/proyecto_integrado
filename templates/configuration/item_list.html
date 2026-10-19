@@ -5,33 +5,10 @@
 
 {% block content %}
     <div class="maintainer-layout">
-        <aside class="maintainer-sidebar" aria-label="Mantenedores">
-            <p class="maintainer-sidebar-title">Gestión municipal</p>
-            <nav aria-label="Mantenedores">
-                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
-                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
-                <a class="maintainer-sidebar-link" href="{% url 'position_maintainer' %}">Cargos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'area_maintainer' %}">Áreas</a>
-                <a class="maintainer-sidebar-link" href="{% url 'official_maintainer' %}">Funcionarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
-                <a class="maintainer-sidebar-link" href="{% url 'group_maintainer' %}">Grupos</a>
-                <a class="maintainer-sidebar-link" href="{% url 'activity_maintainer' %}">Actividades</a>
-                <a class="maintainer-sidebar-link is-active" href="{% url 'item_maintainer' %}" aria-current="page">Ítems</a>
-                <a class="maintainer-sidebar-link" href="{% url 'period_maintainer' %}">Períodos</a>
-            </nav>
-        </aside>
+        {% include "includes/maintainer_sidebar.html" with active="items" %}
 
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <div class="maintainer-active-delegation">
-                <span>Delegación activa</span>
-                <strong>
-                    {% if active_delegation %}
-                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                    {% else %}
-                        Sin delegación asignada
-                    {% endif %}
-                </strong>
-            </div>
+            {% include "includes/active_delegation_strip.html" %}
 
             <header class="maintainer-heading">
                 <div>
@@ -43,14 +20,14 @@
                 {% endif %}
             </header>
 
-            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls">
                     <div class="input-group">
                         <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" value="{{ query }}" placeholder="Buscar por código, nombre o descripción..." autocomplete="off">
                         <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
                     </div>
-                    <a class="btn maintainer-export-button" href="{% url 'item_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar a Excel</a>
+                    <a class="btn maintainer-export-button" data-export-base="{% url 'item_export' %}" href="{% url 'item_export' %}{% if querystring %}?{{ querystring }}{% endif %}">Exportar a Excel</a>
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
                         <option value="">Filtrar estado</option>
                         {% for value, label in status_choices %}
@@ -59,9 +36,10 @@
                     </select>
                 </div>
             </form>
+            <p class="maintainer-live-status" data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-export-filename="{{ maintainer_kind }}">
+            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table">
+                <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>
                             <th scope="col">Código</th>
@@ -85,8 +63,9 @@
                                     {% if can_change %}
                                         <a class="auth-text-link" href="{% url 'item_update' item.pk %}">Editar</a>
                                         {% if item.is_active %}
-                                            <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial." data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
+                                            <form class="d-inline" method="post" action="{% url 'item_deactivate' item.pk %}" data-swal-confirm="El ítem {{ item.item_name }} quedará inactivo; no se elimina su historial. {% if item.activity_count %}{{ item.activity_count }} actividad{{ item.activity_count|pluralize:'es' }} registrada{{ item.activity_count|pluralize }} lo usa{{ item.activity_count|pluralize:'n' }} y conservará{{ item.activity_count|pluralize:'n' }} el ítem.{% else %}Ninguna actividad registrada lo usa.{% endif %}" data-swal-title="Desactivar ítem" data-swal-confirm-text="Sí, desactivar">
                                                 {% csrf_token %}
+                                                <input type="hidden" name="affected_activities" value="{{ item.activity_count }}">
                                                 <button type="submit">Desactivar</button>
                                             </form>
                                         {% else %}
@@ -113,7 +92,7 @@
                 </table>
             </div>
 
-            <div class="maintainer-table-footer">
+            <div class="maintainer-table-footer" data-live-region="footer">
                 <p class="maintainer-record-count" aria-live="polite">
                     Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros
                 </p>
@@ -130,7 +109,7 @@
                             {% for number in page_obj.paginator.page_range %}
                                 <li class="page-item{% if number == page_obj.number %} active{% endif %}">
                                     {% if number == page_obj.number %}
-                                        <span class="page-link">{{ number }}</span>
+                                        <span class="page-link" aria-current="page">{{ number }}</span>
                                     {% else %}
                                         <a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ number }}">{{ number }}</a>
                                     {% endif %}
