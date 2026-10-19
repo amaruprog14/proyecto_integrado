@@ -92,7 +92,9 @@
                                             <a class="auth-text-link" href="{% url 'user_update' account.pk %}">Editar</a>
                                         {% endif %}
                                         {% if account.status_is_active %}
-                                            {% if account.pk != request.user.pk %}
+                                            {% if account.pk == protected_user_pk %}
+                                                <button type="button" disabled title="Es el único funcionario activo con el último rol Administrador global.">Desactivar</button>
+                                            {% elif account.pk != request.user.pk %}
                                                 <form class="d-inline" method="post" action="{% url 'user_deactivate' account.pk %}" data-swal-confirm="El usuario {{ account.username }} quedará inactivo y no podrá iniciar sesión." data-swal-title="Desactivar usuario" data-swal-confirm-text="Sí, desactivar">
                                                     {% csrf_token %}
                                                     <button type="submit">Desactivar</button>

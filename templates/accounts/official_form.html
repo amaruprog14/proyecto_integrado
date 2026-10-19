@@ -76,6 +76,7 @@
                             {% for checkbox in form.roles %}
                                 <div class="form-check">{{ checkbox.tag }} <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label></div>
                             {% empty %}<span class="text-muted">No hay roles vigentes disponibles.</span>{% endfor %}
+                            {% include "accounts/includes/kept_roles.html" with roles=form.kept_roles %}
                         </div>
                         {% for error in form.roles.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </fieldset>

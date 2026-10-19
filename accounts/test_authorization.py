@@ -4,6 +4,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from accounts.models import Delegation, Official, Role
+from configuration.models import AuditLog
 
 
 User = get_user_model()
@@ -190,6 +191,9 @@ class AdministrativeAuthorizationTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
+        # Igual que Roles: 403 y registro en la auditoría (SEG-02).
+        self.assertEqual(response.status_code, 403)
         official.refresh_from_db()
         self.assertFalse(official.roles.filter(pk=role.pk).exists())
+        log = AuditLog.objects.get(action="Acceso denegado")
+        self.assertIn("accounts.change_role", log.new_value)

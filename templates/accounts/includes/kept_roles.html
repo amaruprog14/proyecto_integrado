@@ -1,0 +1,18 @@
+{% comment %}
+    Roles inactivos o archivados que el funcionario ya tiene: se muestran bloqueados (sin name,
+    no se envían) y el formulario los conserva al guardar. No otorgan permisos mientras sigan inactivos.
+{% endcomment %}
+{% for role in roles %}
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="kept-role-{{ role.pk }}" checked disabled aria-describedby="kept-roles-help">
+        <label class="form-check-label" for="kept-role-{{ role.pk }}">
+            {{ role.role_name }} <span class="badge text-bg-secondary">Rol inactivo</span>
+        </label>
+    </div>
+    {% if forloop.last %}
+        <p class="attention-entry-hint mb-0" id="kept-roles-help">
+            Los roles inactivos se conservan asignados, pero no otorgan permisos mientras sigan inactivos.
+            Se gestionan desde el mantenedor de Roles.
+        </p>
+    {% endif %}
+{% endfor %}

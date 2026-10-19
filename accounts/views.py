@@ -26,7 +26,7 @@ from django.views.generic import (
     View,
 )
 
-from common.access import ProtectedViewMixin
+from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
 from configuration.services import AuditoriaService
 
@@ -45,6 +45,12 @@ from .forms import (
     RecoveryRequestForm,
 )
 from .models import Delegation, Official, PasswordResetCode, Role
+from .role_forms import (
+    active_officials,
+    last_global_administrator,
+    sole_global_administrator_message,
+    sole_global_administrator_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -612,6 +618,28 @@ def decorate_user(user):
     return user
 
 
+def sole_global_administrator_user_pk():
+    """Cuenta del único titular activo del último rol Administrador global, si la hay."""
+    role = last_global_administrator()
+    if role is None:
+        return None
+    holders = list(active_officials(role).values_list("user_id", flat=True)[:2])
+    return holders[0] if len(holders) == 1 else None
+
+
+def deny_privileged_role_assignment(request, form):
+    """
+    Responde 403 con auditoría si el formulario pidió roles privilegiados sin accounts.change_role,
+    igual que el mantenedor de Roles con los permisos privilegiados. Las casillas ya se muestran
+    bloqueadas, de modo que solo una petición manipulada llega aquí.
+    """
+    denied = getattr(form, "denied_privileged_roles", None)
+    if denied:
+        register_denied_access(request, ["accounts.change_role"])
+        names = ", ".join(role.role_name for role in denied)
+        raise PermissionDenied(f"Asignar roles privilegiados ({names}) requiere accounts.change_role.")
+
+
 def _actor_official(request):
     return getattr(request.user, "official", None)
 
@@ -863,6 +891,7 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             return context
 
     def form_valid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             official = form.save()
             _registrar_auditoria(
                 self.request,
@@ -877,6 +906,7 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo guardar el funcionario. Revisa los datos ingresados.",
@@ -927,6 +957,7 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
             return context
 
     def form_valid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             official = form.save()
             _registrar_auditoria(
                 self.request,
@@ -941,6 +972,7 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
+            deny_privileged_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo actualizar el funcionario. Revisa los datos ingresados.",
@@ -976,6 +1008,7 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
             decorate_user(user)
         params = self.request.GET.copy()
         params.pop(self.page_kwarg, None)
+        can_change = self.request.user.has_perm("auth.change_user")
         context.update(
             maintainer_title="Usuarios del sistema",
             maintainer_kind="users",
@@ -985,7 +1018,8 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
             querystring=params.urlencode(),
             total=context["paginator"].count,
             can_add=self.request.user.has_perm("auth.add_user"),
-            can_change=self.request.user.has_perm("auth.change_user"),
+            can_change=can_change,
+            protected_user_pk=sole_global_administrator_user_pk() if can_change else None,
         )
         return context
 
@@ -1093,12 +1127,14 @@ class UserCreateView(ProtectedViewMixin, FormView):
         return context
 
     def form_valid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         user = form.save()
         _registrar_auditoria(self.request, "Creación de usuario", user, new=user.username)
         messages.success(self.request, f"El usuario {user.username} fue creado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
@@ -1183,12 +1219,14 @@ class UserUpdateView(ProtectedViewMixin, FormView):
         return context
 
     def form_valid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         user = form.save()
         _registrar_auditoria(self.request, "Actualización de usuario", user, new=user.username)
         messages.success(self.request, f"El usuario {user.username} fue actualizado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        deny_privileged_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
@@ -1203,6 +1241,12 @@ class UserDeactivateView(ProtectedViewMixin, View):
             return redirect("user_maintainer")
         if not target.is_active and display_status(target) != Official.Status.ACTIVE:
             messages.info(request, f"El usuario {target.username} ya estaba inactivo.")
+            return redirect("user_maintainer")
+        protected_role = sole_global_administrator_role(getattr(target, "official", None))
+        if protected_role is not None:
+            messages.error(
+                request, sole_global_administrator_message(target.official, protected_role, "desactivar a")
+            )
             return redirect("user_maintainer")
         target.is_active = False
         target.save(update_fields=["is_active"])

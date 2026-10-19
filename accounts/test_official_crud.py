@@ -265,3 +265,107 @@ class OfficialExportTests(TestCase):
         self.assertContains(response, f'data-export-url="{reverse("official_export")}"')
         self.assertContains(response, "Exportar a Excel")
         self.assertNotContains(response, "CSV")
+
+
+class OfficialRoleRulesTests(TestCase):
+    """El mantenedor de funcionarios aplica las mismas reglas de roles que Usuarios y Roles."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("roles.official", "roles.official@example.test", PASSWORD)
+        cls.global_role = Role.objects.create(role_name="Administración Funcionarios", scope=Role.Scope.ALL)
+        cls.global_role.permissions.add(
+            Permission.objects.get(content_type__app_label="accounts", codename="change_role")
+        )
+        cls.inactive_role = Role.objects.create(role_name="Rol Histórico", is_active=False)
+        holder_user = User.objects.create_user("titular.unico", "titular.unico@example.test", PASSWORD)
+        cls.holder = Official.objects.create(
+            user=holder_user,
+            full_name="Titular Único",
+            national_id="RUT-TITULAR",
+            email="titular.unico@example.test",
+        )
+        cls.holder.roles.add(cls.global_role, cls.inactive_role)
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def payload(self, **overrides):
+        payload = {
+            "full_name": "Titular Único",
+            "national_id": "RUT-TITULAR",
+            "email": "titular.unico@example.test",
+            "roles": [self.global_role.pk],
+            "status": Official.Status.ACTIVE,
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_sole_global_administrator_cannot_be_deactivated(self):
+        response = self.client.post(
+            reverse("official_update", args=[self.holder.pk]), self.payload(status=Official.Status.INACTIVE)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se puede desactivar ni suspender a Titular Único")
+        self.holder.refresh_from_db()
+        self.assertEqual(self.holder.status, Official.Status.ACTIVE)
+
+    def test_sole_global_administrator_keeps_the_role(self):
+        payload = self.payload()
+        payload.pop("roles")
+
+        response = self.client.post(reverse("official_update", args=[self.holder.pk]), payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se puede quitar el rol Administración Funcionarios a Titular Único")
+        self.assertTrue(self.holder.roles.filter(pk=self.global_role.pk).exists())
+
+    def test_editing_keeps_the_inactive_role_and_shows_it_locked(self):
+        form_page = self.client.get(reverse("official_update", args=[self.holder.pk]))
+        self.assertContains(form_page, "Rol Histórico")
+        self.assertContains(form_page, "Rol inactivo")
+
+        response = self.client.post(
+            reverse("official_update", args=[self.holder.pk]), self.payload(full_name="Titular Editado")
+        )
+
+        self.assertRedirects(response, reverse("official_maintainer"))
+        self.holder.refresh_from_db()
+        self.assertEqual(self.holder.full_name, "Titular Editado")
+        self.assertEqual(set(self.holder.roles.all()), {self.global_role, self.inactive_role})
+
+    def test_privileged_role_without_role_permission_is_denied_with_403_and_audited(self):
+        manager = User.objects.create_user("gestor.funcionarios", "gestor.funcionarios@example.test", PASSWORD)
+        manager_official = Official.objects.create(
+            user=manager,
+            full_name="Gestor Funcionarios",
+            national_id="RUT-GESTOR-FUNC",
+            email="gestor.funcionarios@example.test",
+        )
+        manager.user_permissions.add(
+            *Permission.objects.filter(
+                content_type__app_label="accounts", codename__in=["view_official", "add_official"]
+            )
+        )
+        self.client.force_login(manager)
+
+        form_page = self.client.get(reverse("official_create"))
+        self.assertContains(form_page, 'data-role-locked="true"')
+
+        response = self.client.post(
+            reverse("official_create"),
+            {
+                "full_name": "Escalada",
+                "national_id": "RUT-ESCALADA",
+                "email": "escalada@example.test",
+                "roles": [self.global_role.pk],
+                "status": Official.Status.ACTIVE,
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Official.objects.filter(national_id="RUT-ESCALADA").exists())
+        log = AuditLog.objects.get(action="Acceso denegado")
+        self.assertIn("accounts.change_role", log.new_value)
+        self.assertEqual(log.official, manager_official)

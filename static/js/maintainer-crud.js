@@ -130,12 +130,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Los roles privilegiados que el actor no puede asignar llegan bloqueados (data-role-locked)
+    // desde el servidor: aquí no se habilitan ni se desmarcan.
     const roleInputs = [...userForm.querySelectorAll('input[name="roles"]')];
     const applyRoleSelection = () => {
         const administrator = roleInputs.find((input) =>
             input.dataset.roleGlobalAdministrator === "true" && input.checked,
         );
         roleInputs.forEach((input) => {
+            if (input.dataset.roleLocked === "true") return;
             if (administrator && input !== administrator) {
                 input.checked = false;
                 input.disabled = true;
