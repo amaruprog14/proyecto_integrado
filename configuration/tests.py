@@ -233,7 +233,7 @@ class AttentionCatalogCrudTests(TestCase):
             delegation=delegation,
         )
         recipient = ServiceRecipient.objects.create(
-            full_name="Persona de prueba", national_id="RUT-RECIPIENT-HISTORY"
+            full_name="Persona de prueba", national_id="RUT-RECIP-HISTORY"
         )
         SocialAttention.objects.create(
             recipient=recipient,

@@ -93,7 +93,7 @@ class SocialAttentionEntryTests(TestCase):
         self.official = Official.objects.create(
             user=self.user,
             full_name="Funcionario responsable",
-            national_id="RUT-ATTENTION-OFFICIAL",
+            national_id="RUT-ATTN-OFFICIAL",
             email="attention.official@example.test",
             delegation=self.delegation,
         )
