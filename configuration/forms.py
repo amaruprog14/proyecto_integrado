@@ -4,7 +4,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from common.text import normalize_spaces
-from configuration.models import Item
+from configuration.models import AttentionType, Item, SubattentionType
 
 ITEM_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
 # Formato de la numeración automática (AutoCodeMixin): no se acepta como código manual.
@@ -99,12 +99,134 @@ class ItemForm(forms.ModelForm):
 
     def clean_item_name(self):
         name = normalize_spaces(self.cleaned_data.get("item_name"))
-        duplicates = Item.objects.filter(item_name__iexact=name)
+        duplicates = Item.objects.only("pk", "item_name").all()
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
-        if duplicates.exists():
+        normalized_name = name.casefold()
+        if any(
+            normalize_spaces(existing_name).casefold() == normalized_name
+            for existing_name in duplicates.values_list("item_name", flat=True)
+        ):
             raise ValidationError("Ya existe un ítem con este nombre.")
         return name
 
     def clean_description(self):
         return (self.cleaned_data.get("description") or "").strip()
+
+
+class AttentionTypeForm(forms.ModelForm):
+    class Meta:
+        model = AttentionType
+        fields = ("name", "description", "is_active")
+        widgets = {
+            "name": forms.TextInput(
+                attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
+            ),
+            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "is_active": forms.Select(
+                choices=((True, "Activo"), (False, "Inactivo")),
+                attrs={"class": "form-select"},
+            ),
+        }
+        labels = {
+            "name": "Nombre",
+            "description": "Descripción",
+            "is_active": "Estado",
+        }
+        error_messages = {"name": {"required": "Ingresa el nombre del tipo de atención."}}
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip()
+        duplicates = AttentionType.objects.filter(
+            name__iexact=name, service_type=self.instance.service_type
+        )
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise ValidationError("Ya existe un tipo de atención con ese nombre.")
+        return name
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if (
+            self.instance.pk
+            and cleaned_data.get("is_active") is False
+            and self.instance.subattention_types.filter(
+                is_active=True, deleted_at__isnull=True
+            ).exists()
+        ):
+            self.add_error(
+                "is_active",
+                "No se puede desactivar este tipo mientras tenga subatenciones activas.",
+            )
+        return cleaned_data
+
+
+class SubattentionTypeForm(forms.ModelForm):
+    class Meta:
+        model = SubattentionType
+        fields = ("name", "attention_type", "is_active")
+        widgets = {
+            "name": forms.TextInput(
+                attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
+            ),
+            "attention_type": forms.Select(attrs={"class": "form-select"}),
+            "is_active": forms.Select(
+                choices=((True, "Activo"), (False, "Inactivo")),
+                attrs={"class": "form-select"},
+            ),
+        }
+        labels = {
+            "name": "Nombre",
+            "attention_type": "Tipo de Atención asociado",
+            "is_active": "Estado",
+        }
+        error_messages = {
+            "name": {"required": "Ingresa el nombre de la subatención."},
+            "attention_type": {"required": "Selecciona el tipo de atención asociado."},
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["attention_type"].queryset = AttentionType.objects.filter(
+            deleted_at__isnull=True
+        ).order_by("name")
+
+    def clean_name(self):
+        return (self.cleaned_data.get("name") or "").strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        attention_type = cleaned_data.get("attention_type")
+        name = cleaned_data.get("name")
+        is_active = cleaned_data.get("is_active")
+
+        if attention_type is not None and name:
+            duplicates = SubattentionType.objects.filter(
+                name__iexact=name, attention_type=attention_type
+            )
+            if self.instance.pk:
+                duplicates = duplicates.exclude(pk=self.instance.pk)
+            if duplicates.exists():
+                self.add_error(
+                    "name",
+                    "Ya existe una subatención con ese nombre para este tipo.",
+                )
+
+        if is_active and attention_type is not None and not attention_type.is_active:
+            self.add_error(
+                "attention_type",
+                "No puedes activar una subatención asociada a un tipo de atención inactivo.",
+            )
+
+        if (
+            self.instance.pk
+            and attention_type is not None
+            and attention_type.pk != self.instance.attention_type_id
+            and self.instance.social_attentions.exists()
+        ):
+            self.add_error(
+                "attention_type",
+                "No puedes cambiar el tipo asociado porque esta subatención ya tiene atenciones registradas.",
+            )
+        return cleaned_data

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+
+{% block content %}
+    <div class="maintainer-layout">
+        <aside class="maintainer-sidebar" aria-label="Mantenedores">
+            <p class="maintainer-sidebar-title">Gestión municipal</p>
+            <nav aria-label="Mantenedores">
+                <a class="maintainer-sidebar-link" href="{% url 'delegation_list' %}">Delegaciones</a>
+                <a class="maintainer-sidebar-link" href="{% url 'role_list' %}">Roles</a>
+                <a class="maintainer-sidebar-link" href="{% url 'user_maintainer' %}">Usuarios</a>
+                <a class="maintainer-sidebar-link" href="{% url 'item_maintainer' %}">Ítems y metas</a>
+                <a class="maintainer-sidebar-link is-active" href="{% url list_url %}">Tipo de Atención</a>
+                <a class="maintainer-sidebar-link" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a>
+            </nav>
+        </aside>
+
+        <section class="maintainer-content" aria-labelledby="maintainer-title">
+            <header class="maintainer-heading">
+                <div>
+                    <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> <a class="auth-text-link" href="{% url list_url %}">Tipo de Atención</a> <span aria-hidden="true">/</span> {{ record.code }}</p>
+                    <h1 id="maintainer-title">{{ record.name }}</h1>
+                </div>
+                {% if can_change %}<a class="btn btn-primary maintainer-new-button" href="{% url update_url record.pk %}">Editar tipo</a>{% endif %}
+            </header>
+
+            <section class="attention-entry-card" aria-label="Datos del tipo de atención">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Código</dt><dd class="col-sm-8">{{ record.code }}</dd>
+                    <dt class="col-sm-4">Nombre</dt><dd class="col-sm-8">{{ record.name }}</dd>
+                    <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ record.description|default:"—"|linebreaksbr }}</dd>
+                    <dt class="col-sm-4">Estado</dt>
+                    <dd class="col-sm-8"><span class="maintainer-status-pill{% if record.is_active %} is-active{% else %} is-inactive{% endif %}">{% if record.is_active %}Activo{% else %}Inactivo{% endif %}</span></dd>
+                    <dt class="col-sm-4">Creado</dt><dd class="col-sm-8">{{ record.created_at|date:"d-m-Y H:i" }}</dd>
+                    <dt class="col-sm-4">Última actualización</dt><dd class="col-sm-8">{{ record.updated_at|date:"d-m-Y H:i" }}</dd>
+                </dl>
+            </section>
+
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url list_url %}">Volver al listado</a>
+                {% if can_change %}
+                    {% if record.is_active %}
+                        <form class="d-inline" method="post" action="{% url 'attention_type_deactivate' record.pk %}" data-swal-confirm="El tipo quedará inactivo; su historial se conservará." data-swal-title="Desactivar tipo de atención" data-swal-confirm-text="Sí, desactivar">
+                            {% csrf_token %}<button class="btn attention-entry-submit" type="submit">Desactivar</button>
+                        </form>
+                    {% else %}
+                        <form class="d-inline" method="post" action="{% url 'attention_type_activate' record.pk %}" data-swal-confirm="El tipo volverá a estar disponible." data-swal-title="Activar tipo de atención" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
+                            {% csrf_token %}<button class="btn attention-entry-submit" type="submit">Activar</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
+{% endblock %}

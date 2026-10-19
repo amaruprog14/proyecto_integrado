@@ -269,7 +269,15 @@ class OfficialUserForm(forms.Form):
         widget=forms.Select(attrs={"class": "form-select"}),
     )
 
-    def __init__(self, *args, actor=None, instance=None, delegation_queryset=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        actor=None,
+        instance=None,
+        delegation_queryset=None,
+        active_delegation=None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self.instance = instance
@@ -280,6 +288,11 @@ class OfficialUserForm(forms.Form):
         if delegation_queryset is not None:
             self.fields["delegation"].queryset = delegation_queryset
             self.fields["authorized_delegations"].queryset = delegation_queryset
+        if active_delegation is not None and self.official_instance is None:
+            self.fields["delegation"].queryset = self.fields["delegation"].queryset.filter(
+                pk=active_delegation.pk
+            )
+            self.initial.setdefault("delegation", active_delegation.pk)
         self.fields["roles"].queryset = Role.objects.filter(
             is_active=True, deleted_at__isnull=True
         ).order_by("role_name")
@@ -624,6 +637,7 @@ class OfficialForm(forms.Form):
         actor=None,
         instance=None,
         delegation_queryset=None,
+        active_delegation=None,
         existing_usernames=None,
         **kwargs,
     ):
@@ -640,6 +654,11 @@ class OfficialForm(forms.Form):
         if delegation_queryset is not None:
             self.fields["delegation"].queryset = delegation_queryset
             self.fields["authorized_delegations"].queryset = delegation_queryset
+        if active_delegation is not None and (instance is None or not instance.pk):
+            self.fields["delegation"].queryset = self.fields["delegation"].queryset.filter(
+                pk=active_delegation.pk
+            )
+            self.initial.setdefault("delegation", active_delegation.pk)
 
         if instance is not None and instance.pk:
             self.initial.update(

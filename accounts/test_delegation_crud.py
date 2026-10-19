@@ -2,14 +2,17 @@
 Pruebas del CRUD de Delegaciones.
 
 Cubren creación, consulta, edición, desactivación lógica, validaciones, permisos,
-búsqueda, filtros combinables, paginación, exportación CSV y el ámbito por delegación
+búsqueda, filtros combinables, paginación, exportación Excel y el ámbito por delegación
 (SEG-01/SEG-02: acceso directo a identificadores fuera del ámbito).
 """
+
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
+from openpyxl import load_workbook
 
 from accounts.models import Delegation, Official, Role
 from configuration.models import AuditLog
@@ -172,8 +175,9 @@ class DelegationCrudAdminTests(TestCase):
 
         response = self.client.get(reverse("delegation_list"), {"q": "rural norte"})
 
-        self.assertContains(response, "Zona Rural Norte")
-        self.assertNotContains(response, "Zona Urbana Sur")
+        names = [item.delegation_name for item in response.context["delegations"]]
+        self.assertIn("Zona Rural Norte", names)
+        self.assertNotIn("Zona Urbana Sur", names)
 
     def test_status_filter_combines_with_search(self):
         Delegation.objects.create(
@@ -187,8 +191,9 @@ class DelegationCrudAdminTests(TestCase):
             reverse("delegation_list"), {"q": "rural", "status": Delegation.Status.INACTIVE}
         )
 
-        self.assertContains(response, "Zona Rural Sur")
-        self.assertNotContains(response, "Zona Rural Norte")
+        names = [item.delegation_name for item in response.context["delegations"]]
+        self.assertIn("Zona Rural Sur", names)
+        self.assertNotIn("Zona Rural Norte", names)
 
     def test_pagination_is_ten_per_page_and_keeps_filters(self):
         for index in range(12):
@@ -228,14 +233,17 @@ class DelegationCrudAdminTests(TestCase):
         response = self.client.get(reverse("delegation_export"), {"status": Delegation.Status.ACTIVE})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn('attachment; filename="delegaciones.csv"', response["Content-Disposition"])
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn('attachment; filename="delegaciones.xlsx"', response["Content-Disposition"])
 
-        content = response.content.decode("utf-8-sig")
-        rows = [line for line in content.strip().splitlines() if line]
+        sheet = load_workbook(BytesIO(response.content), read_only=True).active
+        rows = list(sheet.values)
         self.assertEqual(len(rows), 14)
-        self.assertEqual(rows[0], "Código;Nombre;Dirección;Comuna;Estado")
-        self.assertNotIn("password", content.lower())
+        self.assertEqual(rows[0], ("Código", "Nombre", "Dirección", "Comuna", "Estado"))
+        self.assertNotIn("password", str(rows).lower())
 
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
@@ -320,7 +328,9 @@ class DelegationScopeTests(TestCase):
         self.assertEqual(self.foreign.status, Delegation.Status.ACTIVE)
 
     def test_export_only_includes_authorized_delegations(self):
-        content = self.client.get(reverse("delegation_export")).content.decode("utf-8-sig")
+        response = self.client.get(reverse("delegation_export"))
+        rows = list(load_workbook(BytesIO(response.content), read_only=True).active.values)
+        content = str(rows)
 
         self.assertIn("Zona Autorizada", content)
         self.assertNotIn("Zona Ajena", content)

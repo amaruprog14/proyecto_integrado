@@ -26,9 +26,21 @@ from .item_views import (
     ItemUpdateView,
 )
 from .views import (
+    AttentionTypeActivateView,
+    AttentionTypeCreateView,
+    AttentionTypeDeactivateView,
+    AttentionTypeDetailView,
+    AttentionTypeExportView,
     AttentionTypeMaintainerView,
+    AttentionTypeUpdateView,
     PeriodMaintainerView,
+    SubattentionTypeActivateView,
+    SubattentionTypeCreateView,
+    SubattentionTypeDeactivateView,
+    SubattentionTypeDetailView,
+    SubattentionTypeExportView,
     SubattentionTypeMaintainerView,
+    SubattentionTypeUpdateView,
 )
 
 urlpatterns = []
@@ -47,8 +59,68 @@ urlpatterns += [
         name='attention_type_maintainer',
     ),
     path(
+        'tipos-atencion/nuevo/',
+        AttentionTypeCreateView.as_view(),
+        name='attention_type_create',
+    ),
+    path(
+        'tipos-atencion/exportar/',
+        AttentionTypeExportView.as_view(),
+        name='attention_type_export',
+    ),
+    path(
+        'tipos-atencion/<int:pk>/',
+        AttentionTypeDetailView.as_view(),
+        name='attention_type_detail',
+    ),
+    path(
+        'tipos-atencion/<int:pk>/editar/',
+        AttentionTypeUpdateView.as_view(),
+        name='attention_type_update',
+    ),
+    path(
+        'tipos-atencion/<int:pk>/activar/',
+        AttentionTypeActivateView.as_view(),
+        name='attention_type_activate',
+    ),
+    path(
+        'tipos-atencion/<int:pk>/desactivar/',
+        AttentionTypeDeactivateView.as_view(),
+        name='attention_type_deactivate',
+    ),
+    path(
         'subatenciones/',
         SubattentionTypeMaintainerView.as_view(),
         name='subattention_type_maintainer',
+    ),
+    path(
+        'subatenciones/nueva/',
+        SubattentionTypeCreateView.as_view(),
+        name='subattention_type_create',
+    ),
+    path(
+        'subatenciones/exportar/',
+        SubattentionTypeExportView.as_view(),
+        name='subattention_type_export',
+    ),
+    path(
+        'subatenciones/<int:pk>/',
+        SubattentionTypeDetailView.as_view(),
+        name='subattention_type_detail',
+    ),
+    path(
+        'subatenciones/<int:pk>/editar/',
+        SubattentionTypeUpdateView.as_view(),
+        name='subattention_type_update',
+    ),
+    path(
+        'subatenciones/<int:pk>/activar/',
+        SubattentionTypeActivateView.as_view(),
+        name='subattention_type_activate',
+    ),
+    path(
+        'subatenciones/<int:pk>/desactivar/',
+        SubattentionTypeDeactivateView.as_view(),
+        name='subattention_type_deactivate',
     ),
 ]

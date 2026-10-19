@@ -19,14 +19,16 @@ class ActivityFrontendRouteTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertTemplateUsed(response, "activities/activity_list.html")
 
-	def test_c6_attention_entry_route_renders_demo_form(self):
+	def test_c6_attention_entry_route_renders_operational_form(self):
 		response = self.client.get(reverse("attention_entry"))
 
 		self.assertEqual(response.status_code, 200)
 		self.assertTemplateUsed(response, "activities/attention_entry.html")
 		self.assertContains(response, 'id="attention-entry-form"')
-		self.assertContains(response, "No se creó ni guardó una atención.")
-		self.assertContains(response, 'id="subattention-type"')
+		self.assertContains(response, "RUT o identificador")
+		self.assertContains(response, 'id="id_subattention_type"')
+		self.assertNotContains(response, "Ana Ejemplo")
+		self.assertNotContains(response, "Demostración sin persistencia")
 
 
 class ActivityAdminScopingTests(TestCase):

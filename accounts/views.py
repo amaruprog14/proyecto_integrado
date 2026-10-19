@@ -1,4 +1,3 @@
-import csv
 import logging
 import math
 import time
@@ -6,15 +5,16 @@ import time
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import SetPasswordForm
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.generic import (
     CreateView,
@@ -25,12 +25,17 @@ from django.views.generic import (
     UpdateView,
     View,
 )
-from django.contrib.auth.mixins import LoginRequiredMixin
 
 from common.access import ProtectedViewMixin
+from common.exports import xlsx_response
 from configuration.services import AuditoriaService
 
 from .backends import SGRAuthBackend, find_user_by_email
+from .delegation_context import (
+    ACTIVE_DELEGATION_SESSION_KEY,
+    authorized_active_delegations,
+    get_active_delegation,
+)
 from .forms import (
     DelegationForm,
     OfficialForm,
@@ -56,6 +61,33 @@ RESEND_ERROR_MESSAGES = {
 
 class MaintainerListView(ProtectedViewMixin, TemplateView):
     template_name = ''
+
+
+class ActiveDelegationSelectView(ProtectedViewMixin, View):
+    permission_required = ()
+    http_method_names = ["post"]
+
+    def post(self, request):
+        selected_id = request.POST.get("delegation_id", "")
+        delegation = None
+        if selected_id.isdecimal():
+            delegation = authorized_active_delegations(request.user).filter(
+                pk=int(selected_id)
+            ).first()
+        return_to = request.POST.get("next")
+        if not url_has_allowed_host_and_scheme(
+            return_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            return_to = reverse_lazy("home")
+        if delegation is None:
+            messages.error(request, "No tienes autorización para seleccionar esa delegación.")
+            return redirect(return_to)
+        request.session[ACTIVE_DELEGATION_SESSION_KEY] = delegation.pk
+        messages.success(
+            request,
+            f"Delegación activa: {delegation.code} · {delegation.delegation_name}.",
+        )
+        return redirect(return_to)
 
 
 # --- Recuperación de contraseña (SCRUM-31) ---
@@ -334,13 +366,16 @@ class OfficialMaintainerView(MaintainerListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         officials = (
-            Official.objects.filter(deleted_at__isnull=True)
+            scoped_officials(self.request.user)
             .select_related("area", "position", "delegation", "user")
             .order_by("full_name")
         )
-        ids = _authorized_delegation_ids(self.request.user)
-        if ids is not None:
-            officials = officials.filter(delegation_id__in=ids)
+        active_delegation = get_active_delegation(self.request)
+        if active_delegation is not None:
+            officials = officials.filter(
+                Q(delegation=active_delegation)
+                | Q(authorized_delegations=active_delegation)
+            ).distinct()
 
         query = (self.request.GET.get("q") or "").strip()
         status = (self.request.GET.get("status") or "").strip()
@@ -441,14 +476,18 @@ def scoped_users(user):
     users = get_user_model().objects.all()
     if ids is None:
         return users
-    return users.filter(official__delegation_id__in=ids)
+    return users.filter(
+        Q(official__delegation_id__in=ids) | Q(official__authorized_delegations__in=ids)
+    ).distinct()
 
 
 def scoped_officials(user):
     queryset = Official.objects.filter(deleted_at__isnull=True)
     ids = _authorized_delegation_ids(user)
     if ids is not None:
-        queryset = queryset.filter(delegation_id__in=ids)
+        queryset = queryset.filter(
+            Q(delegation_id__in=ids) | Q(authorized_delegations__in=ids)
+        ).distinct()
     return queryset
 
 
@@ -628,22 +667,22 @@ class DelegationExportView(ProtectedViewMixin, View):
         queryset = filter_delegations(
             scoped_delegations(request.user).order_by("delegation_name", "pk"), request.GET
         )
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="delegaciones.csv"'
-        response.write("\ufeff")
-        writer = csv.writer(response, delimiter=";")
-        writer.writerow(["Código", "Nombre", "Dirección", "Comuna", "Estado"])
-        for delegation in queryset:
-            writer.writerow(
-                [
-                    delegation.code,
-                    delegation.delegation_name,
-                    delegation.address,
-                    delegation.commune,
-                    delegation.get_status_display(),
-                ]
+        rows = (
+            (
+                delegation.code,
+                delegation.delegation_name,
+                delegation.address,
+                delegation.commune,
+                delegation.get_status_display(),
             )
-        return response
+            for delegation in queryset
+        )
+        return xlsx_response(
+            "delegaciones",
+            ("Código", "Nombre", "Dirección", "Comuna", "Estado"),
+            rows,
+            sheet_title="Delegaciones",
+        )
 
 
 class DelegationCreateView(ProtectedViewMixin, CreateView):
@@ -773,6 +812,7 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             kwargs.update(
                 actor=self.request.user,
                 delegation_queryset=scoped_delegations(self.request.user),
+                active_delegation=get_active_delegation(self.request),
                 existing_usernames=get_user_model().objects.values_list("username", flat=True),
             )
             return kwargs
@@ -838,6 +878,7 @@ class OfficialUpdateView(ProtectedViewMixin, FormView):
                 actor=self.request.user,
                 instance=self.get_official(),
                 delegation_queryset=scoped_delegations(self.request.user),
+                active_delegation=get_active_delegation(self.request),
             )
             return kwargs
 
@@ -886,6 +927,13 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
             .prefetch_related("official__roles")
             .order_by("username")
         )
+        active_delegation = get_active_delegation(self.request)
+        if active_delegation is not None:
+            queryset = queryset.filter(
+                Q(official__isnull=True)
+                | Q(official__delegation=active_delegation)
+                | Q(official__authorized_delegations=active_delegation)
+            ).distinct()
         return filter_users(queryset, self.request.GET)
 
     def get_context_data(self, **kwargs):
@@ -946,27 +994,20 @@ class UserExportView(ProtectedViewMixin, View):
             .prefetch_related("official__roles")
             .order_by("username")
         )
+        active_delegation = get_active_delegation(request)
+        if active_delegation is not None:
+            queryset = queryset.filter(
+                Q(official__isnull=True)
+                | Q(official__delegation=active_delegation)
+                | Q(official__authorized_delegations=active_delegation)
+            ).distinct()
         queryset = filter_users(queryset, request.GET)
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="usuarios.csv"'
-        response.write("\ufeff")
-        writer = csv.writer(response, delimiter=";")
-        writer.writerow(
-            [
-                "Nombre de usuario",
-                "Nombre",
-                "Correo electrónico",
-                "RUT / identificador",
-                "Rol",
-                "Delegación",
-                "Estado",
-            ]
-        )
+        rows = []
         for user in queryset:
             decorate_user(user)
             official = getattr(user, "official", None)
-            writer.writerow(
-                [
+            rows.append(
+                (
                     user.username,
                     user.display_name,
                     user.display_email,
@@ -974,9 +1015,22 @@ class UserExportView(ProtectedViewMixin, View):
                     user.display_roles,
                     str(user.display_delegation) if user.display_delegation else "",
                     user.status_label,
-                ]
+                )
             )
-        return response
+        return xlsx_response(
+            "usuarios",
+            (
+                "Nombre de usuario",
+                "Nombre",
+                "Correo electrónico",
+                "RUT / identificador",
+                "Rol",
+                "Delegación",
+                "Estado",
+            ),
+            rows,
+            sheet_title="Usuarios",
+        )
 
 
 class UserCreateView(ProtectedViewMixin, FormView):
@@ -989,6 +1043,7 @@ class UserCreateView(ProtectedViewMixin, FormView):
         kwargs = super().get_form_kwargs()
         kwargs["actor"] = self.request.user
         kwargs["delegation_queryset"] = scoped_delegations(self.request.user)
+        kwargs["active_delegation"] = get_active_delegation(self.request)
         return kwargs
 
     def get_context_data(self, **kwargs):
@@ -1075,6 +1130,7 @@ class UserUpdateView(ProtectedViewMixin, FormView):
         kwargs["actor"] = self.request.user
         kwargs["instance"] = self.get_edited_user()
         kwargs["delegation_queryset"] = scoped_delegations(self.request.user)
+        kwargs["active_delegation"] = get_active_delegation(self.request)
         return kwargs
 
     def get_context_data(self, **kwargs):
