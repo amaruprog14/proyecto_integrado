@@ -11,8 +11,24 @@
             <p>Registra una atención con una persona solicitante y catálogos vigentes.</p>
         </header>
 
+        {% if last_attention %}
+            <div class="attention-entry-result" role="status">
+                <p class="mb-1"><strong>Atención registrada: {{ last_attention.identifier }}</strong></p>
+                <p class="mb-1">
+                    {{ last_attention.attention_type.name }} · {{ last_attention.subattention_type.name }} ·
+                    {{ last_attention.delegation.code }} · {{ last_attention.registered_at|date:"d-m-Y H:i" }}
+                </p>
+                {% if perms.activities.view_socialattention %}
+                    <a class="auth-text-link" href="{% url 'attention_detail' last_attention.pk %}">Consultar la atención registrada</a>
+                    <span aria-hidden="true">·</span>
+                {% endif %}
+                <span>El formulario está listo para registrar una nueva atención.</span>
+            </div>
+        {% endif %}
+
         <form class="attention-entry-card" id="attention-entry-form" method="post">
             {% csrf_token %}
+            {{ form.submission_token }}
             {% if form.non_field_errors %}
                 <div class="alert alert-danger" role="alert">
                     {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}

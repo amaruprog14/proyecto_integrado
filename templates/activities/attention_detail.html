@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Atención {{ attention.identifier }} · SGR{% endblock %}
+
+{% block content %}
+    <section class="attention-entry" aria-labelledby="attention-detail-title">
+        <header class="attention-entry-heading">
+            <p class="maintainer-breadcrumb">
+                Gestión municipal <span aria-hidden="true">/</span>
+                {% if perms.activities.add_socialattention %}<a class="auth-text-link" href="{% url 'attention_entry' %}">Atenciones</a>{% else %}Atenciones{% endif %}
+                <span aria-hidden="true">/</span> {{ attention.identifier }}
+            </p>
+            <h1 id="attention-detail-title">Atención {{ attention.identifier }}</h1>
+            <p>Registro de solo lectura: la delegación, el responsable y la fecha y hora los asignó el servidor.</p>
+        </header>
+
+        <section class="attention-entry-card" aria-label="Datos de la atención">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Identificador</dt><dd class="col-sm-8">{{ attention.identifier }}</dd>
+                <dt class="col-sm-4">Fecha y hora de registro</dt><dd class="col-sm-8">{{ attention.registered_at|date:"d-m-Y H:i" }}</dd>
+                <dt class="col-sm-4">Solicitante</dt><dd class="col-sm-8">{{ attention.recipient.full_name }} · {{ attention.recipient.national_id }}</dd>
+                <dt class="col-sm-4">Tipo de Atención</dt><dd class="col-sm-8">{{ attention.attention_type.code }} · {{ attention.attention_type.name }}</dd>
+                <dt class="col-sm-4">Sub Atención</dt><dd class="col-sm-8">{{ attention.subattention_type.code }} · {{ attention.subattention_type.name }}</dd>
+                <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ attention.description|default:"—"|linebreaksbr }}</dd>
+                <dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ attention.delegation.code }} · {{ attention.delegation.delegation_name }}</dd>
+                <dt class="col-sm-4">Usuario responsable</dt><dd class="col-sm-8">{{ attention.responsible.full_name }}</dd>
+            </dl>
+        </section>
+
+        <div class="attention-entry-actions">
+            <a class="btn attention-entry-cancel" href="{% url 'home' %}">Volver al inicio</a>
+            {% if perms.activities.add_socialattention %}
+                <a class="btn btn-primary attention-entry-submit" href="{% url 'attention_entry' %}">Registrar otra atención</a>
+            {% endif %}
+        </div>
+    </section>
+{% endblock %}

@@ -850,6 +850,16 @@ body {
     font-size: var(--font-size-sm);
 }
 
+/* Confirmación persistente tras registrar una atención, con enlace para consultarla. */
+.attention-entry-result {
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-left: 0.35rem solid var(--color-neutral-70);
+    border-radius: 0.25rem;
+    background-color: var(--color-surface);
+}
+
 /* Maquetas sin persistencia: aviso con texto (no solo color) y distintivo junto al título. */
 .maintainer-demo-banner {
     margin-bottom: 1.5rem;
