@@ -220,3 +220,6 @@ __marimo__/
 # Documentos de la asignatura (requisitos, plan de pruebas): no se versionan
 docs/
 /Requisitos_y_Plan_Pruebas_*.pdf
+
+
+staticfiles/
