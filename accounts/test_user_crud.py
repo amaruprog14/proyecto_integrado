@@ -76,6 +76,17 @@ class UserCrudAdminTests(TestCase):
         self.assertContains(response, "admin.user")
         self.assertContains(response, f'href="{reverse("user_create")}"')
 
+    def test_new_user_rut_field_is_empty_and_editable(self):
+        response = self.client.get(reverse("user_create"))
+        rut_field = response.context["form"].fields["national_id"]
+        attrs = rut_field.widget.attrs
+
+        self.assertIsNone(rut_field.initial)
+        self.assertEqual(attrs.get("data-chilean-rut"), "true")
+        self.assertNotIn("readonly", attrs)
+        self.assertNotIn("placeholder", attrs)
+        self.assertNotContains(response, 'value="12.345.678-5"')
+
     def test_create_user_with_official_profile(self):
         delegation = Delegation.objects.create(
             delegation_name="Zona Usuarios", address="Calle Uno", commune="La Serena"
@@ -91,7 +102,7 @@ class UserCrudAdminTests(TestCase):
                 email="nuevo.funcionario@example.test",
                 has_official="on",
                 full_name="Nuevo Funcionario",
-                national_id="RUT-NUEVO-1",
+                national_id="12.345.678-5",
                 phone="+56911111111",
                 area=area.pk,
                 position=position.pk,
@@ -110,11 +121,27 @@ class UserCrudAdminTests(TestCase):
 
         official = user.official
         self.assertEqual(official.full_name, "Nuevo Funcionario")
-        self.assertEqual(official.national_id, "RUT-NUEVO-1")
+        self.assertEqual(official.national_id, "12345678-5")
         self.assertEqual(official.delegation, delegation)
         self.assertEqual(list(official.authorized_delegations.all()), [])
         self.assertEqual(list(official.roles.all()), [role])
         self.assertContains(response, "fue creado correctamente")
+
+    def test_create_user_rejects_an_arbitrary_official_identifier(self):
+        response = self.client.post(
+            reverse("user_create"),
+            user_payload(
+                username="rut.invalido",
+                email="rut.invalido@example.test",
+                has_official="on",
+                full_name="Funcionario con RUT inválido",
+                national_id="CUALQUIER-VALOR",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ingresa un RUT o RUN chileno válido")
+        self.assertFalse(User.objects.filter(username="rut.invalido").exists())
 
     def test_create_administrative_account_without_official_profile(self):
         response = self.client.post(
@@ -164,7 +191,7 @@ class UserCrudAdminTests(TestCase):
 
     def test_duplicate_username_email_and_national_id_are_rejected(self):
         existing = User.objects.create_user("existe", "existe@example.test", PASSWORD)
-        make_official(existing, full_name="Existe Ya", national_id="RUT-EXISTE")
+        make_official(existing, full_name="Existe Ya", national_id="12345678-5")
 
         duplicated_username = self.client.post(
             reverse("user_create"),
@@ -185,7 +212,7 @@ class UserCrudAdminTests(TestCase):
                 email="otro.funcionario@example.test",
                 has_official="on",
                 full_name="Otro Funcionario",
-                national_id="rut-existe",
+                national_id="12.345.678-5",
             ),
         )
         self.assertContains(duplicated_national_id, "Ya existe un funcionario con este RUT")
@@ -194,7 +221,7 @@ class UserCrudAdminTests(TestCase):
 
     def test_edit_without_password_keeps_current_password(self):
         user = User.objects.create_user("mantener.clave", "mantener.clave@example.test", "Clave-Original-123")
-        official = make_official(user, full_name="Mantener Clave", national_id="RUT-MANTENER")
+        official = make_official(user, full_name="Mantener Clave", national_id="12345678-5")
 
         response = self.client.post(
             reverse("user_update", args=[user.pk]),
@@ -206,7 +233,7 @@ class UserCrudAdminTests(TestCase):
                 "password1": "",
                 "password2": "",
                 "full_name": "Nombre Editado",
-                "national_id": "RUT-MANTENER",
+                "national_id": "12.345.678-5",
                 "status": Official.Status.ACTIVE,
             },
             follow=True,
@@ -221,7 +248,7 @@ class UserCrudAdminTests(TestCase):
 
     def test_edit_can_change_password(self):
         user = User.objects.create_user("cambia.clave", "cambia.clave@example.test", "Clave-Original-123")
-        make_official(user, national_id="RUT-CAMBIA")
+        make_official(user, national_id="16666666-K")
 
         self.client.post(
             reverse("user_update", args=[user.pk]),
@@ -233,7 +260,7 @@ class UserCrudAdminTests(TestCase):
                 "password1": "Clave-Nueva-456",
                 "password2": "Clave-Nueva-456",
                 "full_name": "Cambia Clave",
-                "national_id": "RUT-CAMBIA",
+                "national_id": "16.666.666-K",
                 "status": Official.Status.ACTIVE,
             },
         )
@@ -244,7 +271,7 @@ class UserCrudAdminTests(TestCase):
 
     def test_status_inactive_deactivates_user_and_profile(self):
         user = User.objects.create_user("sincroniza.uno", "sincroniza.uno@example.test", PASSWORD)
-        official = make_official(user, national_id="RUT-SINC-1")
+        official = make_official(user, national_id="12345678-5")
 
         self.client.post(
             reverse("user_update", args=[user.pk]),
@@ -256,7 +283,7 @@ class UserCrudAdminTests(TestCase):
                 "password1": "",
                 "password2": "",
                 "full_name": "Sincroniza Uno",
-                "national_id": "RUT-SINC-1",
+                "national_id": "12.345.678-5",
                 "status": Official.Status.INACTIVE,
             },
         )
@@ -268,7 +295,7 @@ class UserCrudAdminTests(TestCase):
 
     def test_status_suspended_blocks_authentication(self):
         user = User.objects.create_user("sincroniza.dos", "sincroniza.dos@example.test", PASSWORD)
-        make_official(user, national_id="RUT-SINC-2")
+        make_official(user, national_id="16666666-K")
 
         self.client.post(
             reverse("user_update", args=[user.pk]),
@@ -280,7 +307,7 @@ class UserCrudAdminTests(TestCase):
                 "password1": "",
                 "password2": "",
                 "full_name": "Sincroniza Dos",
-                "national_id": "RUT-SINC-2",
+                "national_id": "16.666.666-K",
                 "status": Official.Status.SUSPENDED,
             },
         )
@@ -302,7 +329,7 @@ class UserCrudAdminTests(TestCase):
                 "password1": "",
                 "password2": "",
                 "full_name": "Administrador Usuarios",
-                "national_id": "RUT-ADMIN-USER",
+                "national_id": "12.345.678-5",
                 "status": Official.Status.INACTIVE,
             },
         )
@@ -419,7 +446,7 @@ class UserCrudAdminTests(TestCase):
                     "Nombre de usuario",
                     "Nombre",
                     "Correo electrónico",
-                    "RUT / identificador",
+                    "RUT o RUN chileno",
                     "Rol",
                     "Delegación",
                     "Estado",
@@ -563,7 +590,7 @@ class UserCrudAdminTests(TestCase):
             Permission.objects.get(content_type__app_label="accounts", codename="change_delegation")
         )
         target = User.objects.create_user("con.privilegio", "con.privilegio@example.test", PASSWORD)
-        make_official(target, delegation=delegation, national_id="RUT-CON-PRIV").roles.add(privileged_role)
+        make_official(target, delegation=delegation, national_id="12345678-5").roles.add(privileged_role)
 
         self.client.force_login(manager)
         response = self.client.post(
@@ -574,7 +601,7 @@ class UserCrudAdminTests(TestCase):
                 password1="",
                 password2="",
                 full_name="Con Privilegio Editado",
-                national_id="RUT-CON-PRIV",
+                national_id="12.345.678-5",
                 delegation=delegation.pk,
             ),
         )
@@ -821,7 +848,7 @@ class InactiveRoleAssignmentTests(TestCase):
         cls.active_role = Role.objects.create(role_name="Rol Vigente Asignado")
         cls.inactive_role = Role.objects.create(role_name="Rol Inactivo Asignado", is_active=False)
         cls.target = User.objects.create_user("con.rol.inactivo", "con.rol.inactivo@example.test", PASSWORD)
-        make_official(cls.target, full_name="Con Rol Inactivo", national_id="RUT-ROL-INACT").roles.add(
+        make_official(cls.target, full_name="Con Rol Inactivo", national_id="16666666-K").roles.add(
             cls.active_role, cls.inactive_role
         )
 
@@ -844,7 +871,7 @@ class InactiveRoleAssignmentTests(TestCase):
                 password1="",
                 password2="",
                 full_name="Con Rol Inactivo Editado",
-                national_id="RUT-ROL-INACT",
+                national_id="16.666.666-k",
                 roles=[self.active_role.pk],
             ),
         )
@@ -864,7 +891,7 @@ class InactiveRoleAssignmentTests(TestCase):
                 password1="",
                 password2="",
                 full_name="Con Rol Inactivo",
-                national_id="RUT-ROL-INACT",
+                national_id="16.666.666-k",
                 roles=[self.active_role.pk],
             ),
             actor=self.target,

@@ -71,7 +71,7 @@ RESEND_ERROR_MESSAGES = {
     'resend_limit': 'Alcanzaste el máximo de reenvíos. Podrás pedir otro código cuando venza el actual.',
 }
 # Columnas visibles del listado de funcionarios; la exportación usa las mismas.
-OFFICIAL_COLUMNS = ['Nombre completo', 'RUT / identificador', 'Correo', 'Área', 'Cargo', 'Estado']
+OFFICIAL_COLUMNS = ['Nombre completo', 'RUT o RUN chileno', 'Correo', 'Área', 'Cargo', 'Estado']
 
 
 class MaintainerListView(ProtectedViewMixin, TemplateView):
@@ -666,7 +666,7 @@ def official_snapshot(official):
     """Valores auditables del perfil de funcionario, leídos de la base (roles y delegaciones al día)."""
     return {
         "Nombre completo": official.full_name,
-        "RUT / identificador": official.national_id,
+        "RUT o RUN chileno": official.national_id,
         "Correo de contacto": official.email,
         "Teléfono": official.phone or "—",
         "Área": official.area.area_name if official.area else "—",
@@ -1140,7 +1140,7 @@ class UserExportView(ProtectedViewMixin, View):
                 "Nombre de usuario",
                 "Nombre",
                 "Correo electrónico",
-                "RUT / identificador",
+                "RUT o RUN chileno",
                 "Rol",
                 "Delegación",
                 "Estado",

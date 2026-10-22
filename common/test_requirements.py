@@ -142,7 +142,7 @@ class FieldLengthAndRelationTests(TestCase):
             reverse("user_create"),
             {"username": "con.inactivo", "email": "con.inactivo@example.test", "password1": PASSWORD,
              "password2": PASSWORD, "status": Official.Status.ACTIVE, "has_official": "on",
-             "full_name": "Con Inactivo", "national_id": "RUT-CON-INACT", "roles": [inactive_role.pk]},
+             "full_name": "Con Inactivo", "national_id": "12.345.678-5", "roles": [inactive_role.pk]},
         )
 
         self.assertTrue(response.context["form"].has_error("roles"))
@@ -159,7 +159,7 @@ class FieldLengthAndRelationTests(TestCase):
 
         response = self.client.post(
             reverse("attention_entry"),
-            {"recipient_national_id": "RUT-SOL-LIM", "recipient_full_name": "Persona Límite",
+            {"recipient_national_id": "12.345.678-5", "recipient_full_name": "Persona Límite",
              "delegation": delegation.pk, "attention_type": self.attention_type.pk,
              "subattention_type": subattention_type.pk, "description": "Prueba de tipo inactivo."},
         )
