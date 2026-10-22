@@ -25,8 +25,9 @@ class ActivityFrontendRouteTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertTemplateUsed(response, "activities/attention_entry.html")
 		self.assertContains(response, 'id="attention-entry-form"')
-		self.assertContains(response, "RUT o identificador")
+		self.assertContains(response, "RUT o RUN chileno")
 		self.assertContains(response, 'id="id_subattention_type"')
+		self.assertEqual(response.context["form"].fields["recipient_national_id"].widget.attrs.get("data-chilean-rut"), "true")
 		self.assertNotContains(response, "Ana Ejemplo")
 		self.assertNotContains(response, "Demostración sin persistencia")
 

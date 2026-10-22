@@ -7,6 +7,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare, salted_hmac
 
+from common.chilean_rut import validate_chilean_rut
 from common.codes import AutoCodeMixin
 from common.mixins import BaseModel
 
@@ -99,7 +100,12 @@ class Official(BaseModel):
     )
 
     full_name = models.CharField(max_length=200, verbose_name="Nombre completo")
-    national_id = models.CharField(max_length=20, unique=True, verbose_name="RUT / identificador")
+    national_id = models.CharField(
+        max_length=20,
+        unique=True,
+        validators=[validate_chilean_rut],
+        verbose_name="RUT o RUN chileno",
+    )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Estado"
     )
@@ -250,7 +256,12 @@ class ServiceRecipient(BaseModel):
         INACTIVE = "INACTIVE", "Inactiva"
 
     full_name = models.CharField(max_length=200, verbose_name="Nombre")
-    national_id = models.CharField(max_length=20, unique=True, verbose_name="Identificador único")
+    national_id = models.CharField(
+        max_length=20,
+        unique=True,
+        validators=[validate_chilean_rut],
+        verbose_name="RUT o RUN chileno",
+    )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Estado"
     )

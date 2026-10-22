@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from accounts.models import Area, Delegation, Official, Position, Role
+from common.chilean_rut import normalize_chilean_rut
 
 GENERIC_LOGIN_ERROR = "Usuario, correo o contraseña incorrectos."
 
@@ -329,10 +330,18 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 200}),
     )
     national_id = forms.CharField(
-        label="RUT / identificador",
+        label="RUT o RUN chileno",
         max_length=20,
         required=False,
-        widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 20}),
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "maxlength": 20,
+                "inputmode": "text",
+                "data-chilean-rut": "true",
+            }
+        ),
+        help_text="Escribe el RUT o RUN; se validará su dígito verificador.",
     )
     phone = forms.CharField(
         label="Teléfono",
@@ -451,6 +460,10 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
             raise ValidationError("Ya existe una cuenta con este nombre de usuario.")
         return username
 
+    def clean_national_id(self):
+        value = (self.cleaned_data.get("national_id") or "").strip()
+        return normalize_chilean_rut(value) if value else value
+
     def clean(self):
         cleaned = super().clean()
         instance = self.instance
@@ -473,13 +486,14 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
                 self.add_error("full_name", "Ingresa el nombre completo del funcionario/a.")
             national_id = (cleaned.get("national_id") or "").strip()
             if not national_id:
-                self.add_error("national_id", "Ingresa el RUT o identificador.")
+                if "national_id" not in self.errors:
+                    self.add_error("national_id", "Ingresa el RUT o RUN chileno.")
             else:
                 duplicates = Official.objects.filter(national_id__iexact=national_id)
                 if official is not None:
                     duplicates = duplicates.exclude(pk=official.pk)
                 if duplicates.exists():
-                    self.add_error("national_id", "Ya existe un funcionario con este RUT o identificador.")
+                    self.add_error("national_id", "Ya existe un funcionario con este RUT o RUN.")
 
         password1 = cleaned.get("password1")
         password2 = cleaned.get("password2")
@@ -628,9 +642,17 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 200}),
     )
     national_id = forms.CharField(
-        label="RUT / identificador",
+        label="RUT o RUN chileno",
         max_length=20,
-        widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 20}),
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "maxlength": 20,
+                "inputmode": "text",
+                "data-chilean-rut": "true",
+            }
+        ),
+        help_text="Escribe el RUT o RUN; se validará su dígito verificador.",
     )
     email = forms.EmailField(
         label="Correo electrónico de contacto",
@@ -766,12 +788,12 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
                 )
 
     def clean_national_id(self):
-        value = (self.cleaned_data.get("national_id") or "").strip()
+        value = normalize_chilean_rut(self.cleaned_data.get("national_id"))
         duplicates = Official.objects.filter(national_id__iexact=value)
         if self.instance is not None and self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
         if duplicates.exists():
-            raise ValidationError("Ya existe un funcionario con este RUT o identificador.")
+            raise ValidationError("Ya existe un funcionario con este RUT o RUN.")
         return value
 
     def clean_email(self):

@@ -108,7 +108,7 @@ class SocialAttentionEntryTests(TestCase):
 
     def payload(self, **overrides):
         data = {
-            "recipient_national_id": "RUT-RECIPIENT-001",
+            "recipient_national_id": "12.345.678-5",
             "recipient_full_name": "Persona solicitante real",
             "delegation": self.delegation.pk,
             "attention_type": self.attention_type.pk,
@@ -133,7 +133,7 @@ class SocialAttentionEntryTests(TestCase):
             reverse("attention_entry"), self.payload(), follow=True
         )
 
-        recipient = ServiceRecipient.objects.get(national_id="RUT-RECIPIENT-001")
+        recipient = ServiceRecipient.objects.get(national_id="12345678-5")
         attention = SocialAttention.objects.get(recipient=recipient)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(recipient.full_name, "Persona solicitante real")
@@ -153,10 +153,21 @@ class SocialAttentionEntryTests(TestCase):
             ).exists()
         )
 
+    def test_post_rejects_an_arbitrary_recipient_identifier(self):
+        response = self.client.post(
+            reverse("attention_entry"),
+            self.payload(recipient_national_id="RUT-RECIPIENT-INVALID"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ingresa un RUT o RUN chileno válido")
+        self.assertFalse(ServiceRecipient.objects.exists())
+        self.assertFalse(SocialAttention.objects.exists())
+
     def test_post_reuses_existing_recipient_by_identifier(self):
         recipient = ServiceRecipient.objects.create(
             full_name="Persona ya registrada",
-            national_id="RUT-RECIPIENT-001",
+            national_id="12345678-5",
         )
 
         response = self.client.post(
@@ -204,7 +215,7 @@ class SocialAttentionEntryTests(TestCase):
     def test_existing_recipient_name_cannot_be_overwritten_by_intake(self):
         recipient = ServiceRecipient.objects.create(
             full_name="Nombre registrado",
-            national_id="RUT-RECIPIENT-001",
+            national_id="12345678-5",
         )
 
         response = self.client.post(
@@ -214,7 +225,7 @@ class SocialAttentionEntryTests(TestCase):
 
         recipient.refresh_from_db()
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "El identificador ya está asociado a otro nombre.")
+        self.assertContains(response, "El RUT ya está asociado a otro nombre.")
         self.assertEqual(recipient.full_name, "Nombre registrado")
         self.assertFalse(SocialAttention.objects.exists())
 
@@ -266,7 +277,7 @@ class SocialAttentionEntryTests(TestCase):
     def test_post_enforces_maximum_of_three_attentions_for_recipient(self):
         recipient = ServiceRecipient.objects.create(
             full_name="Persona con atenciones",
-            national_id="RUT-RECIPIENT-001",
+            national_id="12345678-5",
         )
         for _ in range(SocialAttention.MAX_ATTENTIONS_PER_RECIPIENT):
             SocialAttention.objects.create(

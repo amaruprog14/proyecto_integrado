@@ -45,7 +45,7 @@ class AttentionSubmissionTests(TestCase):
 
     def payload(self, **overrides):
         data = {
-            "recipient_national_id": "RUT-SOL-001",
+            "recipient_national_id": "12.345.678-5",
             "recipient_full_name": "Persona Solicitante",
             "delegation": self.delegation.pk,
             "attention_type": self.attention_type.pk,
