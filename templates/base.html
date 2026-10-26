@@ -31,7 +31,7 @@
                     <a class="municipal-brand d-flex align-items-center gap-3" href="{% url 'home' %}">
                         <img
                             class="municipal-brand-logo"
-                            src="https://framework.laserena.cl/img/horizontal-blanco.svg"
+                            src="{% static 'images/muni-blanco.png' %}"
                             alt="Ilustre Municipalidad de La Serena"
                             width="250"
                             height="64"
@@ -275,6 +275,7 @@
         {% if messages %}
             <script src="{% static 'js/messages.js' %}" defer></script>
         {% endif %}
+        <script src="{% static 'js/chilean-rut.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
         {% if can_select_active_delegation %}
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}

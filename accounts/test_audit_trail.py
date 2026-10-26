@@ -52,7 +52,7 @@ class FieldLevelAuditTests(TestCase):
         role = Role.objects.create(role_name="Rol Auditado")
         target = User.objects.create_user("auditado", "auditado@example.test", PASSWORD)
         Official.objects.create(
-            user=target, full_name="Persona Auditada", national_id="RUT-AUDITADO", email="auditado@example.test"
+            user=target, full_name="Persona Auditada", national_id="12345678-5", email="auditado@example.test"
         )
         new_password = "Otra-Clave-456"
 
@@ -64,7 +64,7 @@ class FieldLevelAuditTests(TestCase):
                 "password1": new_password,
                 "password2": new_password,
                 "full_name": "Persona Auditada",
-                "national_id": "RUT-AUDITADO",
+                "national_id": "12.345.678-5",
                 "phone": "+56911112222",
                 "delegation": self.delegation.pk,
                 "roles": [role.pk],
@@ -93,11 +93,11 @@ class FieldLevelAuditTests(TestCase):
         self.assertEqual(log.new_value, "Usuario: estado.auditado\nEstado: Inactivo")
 
     def test_official_update_records_the_changed_fields(self):
-        official = Official.objects.create(full_name="Funcionaria Antes", national_id="RUT-OFF-AUD", email="off.aud@example.test")
+        official = Official.objects.create(full_name="Funcionaria Antes", national_id="16666666-K", email="off.aud@example.test")
 
         self.client.post(
             reverse("official_update", args=[official.pk]),
-            {"full_name": "Funcionaria Después", "national_id": "RUT-OFF-AUD", "email": "off.aud@example.test",
+            {"full_name": "Funcionaria Después", "national_id": "16.666.666-k", "email": "off.aud@example.test",
              "status": Official.Status.ACTIVE},
         )
 

@@ -37,7 +37,7 @@ class OfficialCrudTests(TestCase):
     def payload(self, **overrides):
         payload = {
             "full_name": "Funcionario Independiente",
-            "national_id": "RUT-OFFICIAL-1",
+            "national_id": "12.345.678-5",
             "email": "funcionario.independiente@example.test",
             "phone": "+56912345678",
             "area": self.area.pk,
@@ -54,18 +54,30 @@ class OfficialCrudTests(TestCase):
         response = self.client.post(reverse("official_create"), self.payload(), follow=True)
 
         self.assertEqual(response.status_code, 200)
-        official = Official.objects.get(national_id="RUT-OFFICIAL-1")
+        official = Official.objects.get(national_id="12345678-5")
         self.assertIsNone(official.user)
         self.assertEqual(list(official.authorized_delegations.all()), [])
         self.assertEqual(list(official.roles.all()), [self.role])
         self.assertContains(response, "fue creado correctamente")
+
+    def test_new_official_rut_field_is_empty_and_editable(self):
+        response = self.client.get(reverse("official_create"))
+        rut_field = response.context["form"].fields["national_id"]
+        attrs = rut_field.widget.attrs
+
+        self.assertEqual(rut_field.initial, None)
+        self.assertEqual(attrs.get("data-chilean-rut"), "true")
+        self.assertNotIn("readonly", attrs)
+        self.assertNotIn("placeholder", attrs)
+        self.assertContains(response, 'name="national_id"')
+        self.assertNotContains(response, 'value="12.345.678-5"')
 
     def test_create_official_with_account_is_atomic_and_linked(self):
         response = self.client.post(
             reverse("official_create"),
             self.payload(
                 full_name="Funcionario Con Cuenta",
-                national_id="RUT-OFFICIAL-2",
+                national_id="16.666.666-K",
                 email="funcionario.cuenta@example.test",
                 create_account="on",
                 username="funcionario.cuenta",
@@ -78,7 +90,7 @@ class OfficialCrudTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        official = Official.objects.get(national_id="RUT-OFFICIAL-2")
+        official = Official.objects.get(national_id="16666666-K")
         user = User.objects.get(username="funcionario.cuenta")
         self.assertEqual(official.user_id, user.pk)
         self.assertTrue(user.check_password(PASSWORD))
@@ -97,7 +109,7 @@ class OfficialCrudTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ingresa una contraseña para la nueva cuenta")
-        self.assertFalse(Official.objects.filter(national_id="RUT-OFFICIAL-1").exists())
+        self.assertFalse(Official.objects.filter(national_id="12345678-5").exists())
         self.assertFalse(User.objects.filter(username="sin.clave.official").exists())
 
     def test_edit_official_keeps_linked_user_credentials(self):
@@ -105,7 +117,7 @@ class OfficialCrudTests(TestCase):
         official = Official.objects.create(
             user=user,
             full_name="Nombre Original",
-            national_id="RUT-OFFICIAL-3",
+            national_id="16666666-K",
             email="original@example.test",
             delegation=self.delegation,
         )
@@ -114,7 +126,7 @@ class OfficialCrudTests(TestCase):
             reverse("official_update", args=[official.pk]),
             self.payload(
                 full_name="Nombre Editado",
-                national_id="RUT-OFFICIAL-3",
+                national_id="16.666.666-K",
                 email="editado@example.test",
             ),
             follow=True,
@@ -142,6 +154,16 @@ class OfficialCrudTests(TestCase):
         self.assertContains(response, f'href="{reverse("official_create")}"')
         self.assertContains(response, f'href="{reverse("official_update", args=[official.pk])}"')
 
+    def test_create_official_rejects_invalid_rut(self):
+        response = self.client.post(
+            reverse("official_create"),
+            self.payload(national_id="RUT-OFFICIAL-INVALID"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ingresa un RUT o RUN chileno válido")
+        self.assertFalse(Official.objects.filter(email="funcionario.independiente@example.test").exists())
+
 
 def export_rows(response):
     return list(load_workbook(BytesIO(response.content), read_only=True).active.values)
@@ -150,7 +172,7 @@ def export_rows(response):
 class OfficialExportTests(TestCase):
     """Exportación a Excel del listado de funcionarios: mismas columnas, filtros y ámbito."""
 
-    HEADERS = ("Nombre completo", "RUT / identificador", "Correo", "Área", "Cargo", "Estado")
+    HEADERS = ("Nombre completo", "RUT o RUN chileno", "Correo", "Área", "Cargo", "Estado")
 
     @classmethod
     def setUpTestData(cls):
@@ -282,7 +304,7 @@ class OfficialRoleRulesTests(TestCase):
         cls.holder = Official.objects.create(
             user=holder_user,
             full_name="Titular Único",
-            national_id="RUT-TITULAR",
+            national_id="12345678-5",
             email="titular.unico@example.test",
         )
         cls.holder.roles.add(cls.global_role, cls.inactive_role)
@@ -293,7 +315,7 @@ class OfficialRoleRulesTests(TestCase):
     def payload(self, **overrides):
         payload = {
             "full_name": "Titular Único",
-            "national_id": "RUT-TITULAR",
+            "national_id": "12345678-5",
             "email": "titular.unico@example.test",
             "roles": [self.global_role.pk],
             "status": Official.Status.ACTIVE,

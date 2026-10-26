@@ -108,8 +108,9 @@
                     </div>
 
                     <div class="attention-entry-field">
-                        <label for="{{ form.national_id.id_for_label }}">RUT / identificador</label>
+                        <label for="{{ form.national_id.id_for_label }}">RUT o RUN chileno</label>
                         {{ form.national_id }}
+                        <p class="attention-entry-hint">{{ form.national_id.help_text }}</p>
                         {% for error in form.national_id.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </div>
 

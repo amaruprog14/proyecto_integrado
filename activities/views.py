@@ -139,7 +139,7 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                     raise ValidationError(
                         {
                             "recipient_national_id": (
-                                "La persona asociada a este identificador no está activa."
+                                "La persona asociada a este RUT no está activa."
                             )
                         }
                     )

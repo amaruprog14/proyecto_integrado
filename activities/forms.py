@@ -4,6 +4,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from accounts.models import Delegation, ServiceRecipient
+from common.chilean_rut import normalize_chilean_rut
 from common.text import normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 
@@ -26,13 +27,14 @@ class SubattentionSelect(forms.Select):
 
 class SocialAttentionForm(forms.Form):
     recipient_national_id = forms.CharField(
-        label="RUT o identificador",
+        label="RUT o RUN chileno",
         max_length=20,
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
                 "autocomplete": "off",
-                "placeholder": "RUT u otro identificador",
+                "inputmode": "text",
+                "data-chilean-rut": "true",
             }
         ),
     )
@@ -115,7 +117,7 @@ class SocialAttentionForm(forms.Form):
         return token if re.fullmatch(r"[0-9a-f]{32}", token) else ""
 
     def clean_recipient_national_id(self):
-        return (self.cleaned_data["recipient_national_id"] or "").strip().upper()
+        return normalize_chilean_rut(self.cleaned_data["recipient_national_id"])
 
     def clean_recipient_full_name(self):
         return normalize_spaces(self.cleaned_data.get("recipient_full_name"))
@@ -135,17 +137,17 @@ class SocialAttentionForm(forms.Form):
                 if recipient.deleted_at is not None:
                     self.add_error(
                         "recipient_national_id",
-                        "Este identificador pertenece a una persona archivada; solicita su revisión antes de registrar otra atención.",
+                        "Este RUT pertenece a una persona archivada; solicita su revisión antes de registrar otra atención.",
                     )
                 elif recipient.status != ServiceRecipient.Status.ACTIVE:
                     self.add_error(
                         "recipient_national_id",
-                        "La persona asociada a este identificador está inactiva.",
+                        "La persona asociada a este RUT está inactiva.",
                     )
                 elif full_name and normalize_spaces(recipient.full_name).casefold() != full_name.casefold():
                     self.add_error(
                         "recipient_full_name",
-                        "El identificador ya está asociado a otro nombre. Verifica los datos de la persona.",
+                        "El RUT ya está asociado a otro nombre. Verifica los datos de la persona.",
                     )
                 else:
                     self.recipient_record = recipient
@@ -153,7 +155,7 @@ class SocialAttentionForm(forms.Form):
             elif not full_name:
                 self.add_error(
                     "recipient_full_name",
-                    "Ingresa el nombre completo para registrar a una persona nueva.",
+                    "Ingresa el nombre completo para registrar a una persona con este RUT.",
                 )
 
         if (
@@ -182,7 +184,7 @@ class SocialAttentionForm(forms.Form):
             raise ValidationError(
                 {
                     "recipient_national_id": (
-                        "La persona asociada a este identificador no está activa."
+                        "La persona asociada a este RUT no está activa."
                     )
                 }
             )
