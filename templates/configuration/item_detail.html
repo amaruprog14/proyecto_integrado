@@ -20,7 +20,7 @@
                     <h1 id="maintainer-title">{{ item.item_name }}</h1>
                 </div>
                 {% if can_change %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'item_update' item.pk %}">Editar ítem</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'item_update' item.pk %}" data-modal-form>Editar ítem</a>
                 {% endif %}
             </header>
 
@@ -71,5 +71,4 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
 {% endblock %}

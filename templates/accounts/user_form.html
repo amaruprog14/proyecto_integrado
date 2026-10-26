@@ -188,6 +188,5 @@
 {% block extra_scripts %}
     {{ existing_usernames|json_script:"existing-usernames" }}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

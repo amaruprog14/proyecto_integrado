@@ -16,7 +16,7 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'user_create' %}">+ Nuevo registro</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'user_create' %}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
 
@@ -67,7 +67,7 @@
                                     <a class="auth-text-link" href="{% url 'user_detail' account.pk %}">Ver</a>
                                     {% if can_change %}
                                         {% if account.pk != request.user.pk %}
-                                            <a class="auth-text-link" href="{% url 'user_update' account.pk %}">Editar</a>
+                                            <a class="auth-text-link" href="{% url 'user_update' account.pk %}" data-modal-form>Editar</a>
                                         {% endif %}
                                         {% if account.status_is_active %}
                                             {% if account.pk == protected_user_pk %}
@@ -143,6 +143,5 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
+from common.modal_forms import ModalFormOnlyMixin
 from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
@@ -167,7 +168,7 @@ class RoleDetailView(ProtectedViewMixin, DetailView):
         return context
 
 
-class RoleCreateView(ProtectedViewMixin, CreateView):
+class RoleCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
     permission_required = "accounts.add_role"
     model = Role
     form_class = RoleForm
@@ -208,7 +209,7 @@ class RoleCreateView(ProtectedViewMixin, CreateView):
         return super().form_invalid(form)
 
 
-class RoleUpdateView(ProtectedViewMixin, UpdateView):
+class RoleUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
     permission_required = "accounts.change_role"
     model = Role
     form_class = RoleForm

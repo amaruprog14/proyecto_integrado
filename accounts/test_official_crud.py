@@ -61,7 +61,7 @@ class OfficialCrudTests(TestCase):
         self.assertContains(response, "fue creado correctamente")
 
     def test_new_official_rut_field_is_empty_and_editable(self):
-        response = self.client.get(reverse("official_create"))
+        response = self.client.get(reverse("official_create"), HTTP_X_MODAL_REQUEST="true")
         rut_field = response.context["form"].fields["national_id"]
         attrs = rut_field.widget.attrs
 
@@ -71,6 +71,27 @@ class OfficialCrudTests(TestCase):
         self.assertNotIn("placeholder", attrs)
         self.assertContains(response, 'name="national_id"')
         self.assertNotContains(response, 'value="12.345.678-5"')
+
+    def test_create_form_is_only_available_through_modal_and_returns_modal_status(self):
+        direct_response = self.client.get(reverse("official_create"))
+        self.assertEqual(direct_response.status_code, 404)
+
+        invalid_response = self.client.post(
+            reverse("official_create"),
+            self.payload(full_name=""),
+            HTTP_X_MODAL_REQUEST="true",
+        )
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertIn("full_name", invalid_response.context["form"].errors)
+
+        modal_response = self.client.post(
+            reverse("official_create"),
+            self.payload(),
+            HTTP_X_MODAL_REQUEST="true",
+        )
+
+        self.assertEqual(modal_response.status_code, 204)
+        self.assertTrue(Official.objects.filter(email="funcionario.independiente@example.test").exists())
 
     def test_create_official_with_account_is_atomic_and_linked(self):
         response = self.client.post(
@@ -344,7 +365,9 @@ class OfficialRoleRulesTests(TestCase):
         self.assertTrue(self.holder.roles.filter(pk=self.global_role.pk).exists())
 
     def test_editing_keeps_the_inactive_role_and_shows_it_locked(self):
-        form_page = self.client.get(reverse("official_update", args=[self.holder.pk]))
+        form_page = self.client.get(
+            reverse("official_update", args=[self.holder.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertContains(form_page, "Rol Histórico")
         self.assertContains(form_page, "Rol inactivo")
 
@@ -372,7 +395,7 @@ class OfficialRoleRulesTests(TestCase):
         )
         self.client.force_login(manager)
 
-        form_page = self.client.get(reverse("official_create"))
+        form_page = self.client.get(reverse("official_create"), HTTP_X_MODAL_REQUEST="true")
         self.assertContains(form_page, 'data-role-locked="true"')
 
         response = self.client.post(

@@ -75,7 +75,9 @@ class MaintainerLayoutTests(TestCase):
     def test_forms_mark_required_fields_and_show_loading_while_saving(self):
         for route_name in FORM_PAGES:
             with self.subTest(route=route_name):
-                response = self.client.get(reverse(route_name))
+                response = self.client.get(
+                    reverse(route_name), HTTP_X_MODAL_REQUEST="true"
+                )
 
                 self.assertContains(response, "Los campos marcados con * son obligatorios.")
                 self.assertContains(response, 'data-loading-text="Guardando…"')

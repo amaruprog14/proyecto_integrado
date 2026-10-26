@@ -193,7 +193,7 @@ class ActiveDelegationContextTests(TestCase):
             {"delegation_id": self.second.pk, "next": reverse("user_create")},
         )
 
-        response = self.client.get(reverse("user_create"))
+        response = self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true")
         form = response.context["form"]
 
         self.assertEqual(

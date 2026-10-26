@@ -16,7 +16,7 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'official_create' %}">+ Nuevo funcionario</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'official_create' %}" data-modal-form>+ Nuevo funcionario</a>
                 {% endif %}
             </header>
 
@@ -50,7 +50,7 @@
                                 {% endfor %}
                                 <td class="maintainer-actions">
                                     {% if can_change and not record.is_self %}
-                                        <a href="{% url 'official_update' record.pk %}">Editar</a>
+                                        <a href="{% url 'official_update' record.pk %}" data-modal-form>Editar</a>
                                     {% endif %}
                                 </td>
                             </tr>

@@ -123,7 +123,9 @@ class DelegationSwitchWarningTests(TestCase):
         # La foto de los formularios se toma después de que los scripts de la página los preparan.
         self.client.force_login(User.objects.create_superuser("orden", "orden@example.test", PASSWORD))
 
-        content = self.client.get(reverse("delegation_create")).content.decode()
+        content = self.client.get(
+            reverse("delegation_create"), HTTP_X_MODAL_REQUEST="true"
+        ).content.decode()
 
         self.assertIn("data-delegation-switch>", content)
         self.assertGreater(content.index("js/delegation-switch.js"), content.index("js/maintainer-states.js"))

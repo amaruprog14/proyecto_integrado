@@ -277,9 +277,22 @@
         {% endif %}
         <script src="{% static 'js/chilean-rut.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
+        <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
         {% if can_select_active_delegation %}
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}
             <script src="{% static 'js/delegation-switch.js' %}" defer></script>
         {% endif %}
+        <script src="{% static 'js/maintainer-modal.js' %}" defer></script>
+        <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 class="modal-title fs-5" id="maintainer-form-modal-title">Formulario</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body" id="maintainer-form-modal-body"></div>
+                </div>
+            </div>
+        </div>
     </body>
 </html>

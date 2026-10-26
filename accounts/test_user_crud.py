@@ -77,7 +77,7 @@ class UserCrudAdminTests(TestCase):
         self.assertContains(response, f'href="{reverse("user_create")}"')
 
     def test_new_user_rut_field_is_empty_and_editable(self):
-        response = self.client.get(reverse("user_create"))
+        response = self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true")
         rut_field = response.context["form"].fields["national_id"]
         attrs = rut_field.widget.attrs
 
@@ -483,11 +483,13 @@ class UserCrudAdminTests(TestCase):
         self.assertRedirects(self.client.get(url), f"{reverse('login')}?next={url}")
 
     def test_create_update_and_detail_views_render(self):
-        create_response = self.client.get(reverse("user_create"))
+        create_response = self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true")
         self.assertEqual(create_response.status_code, 200)
         self.assertTemplateUsed(create_response, "accounts/user_form.html")
 
-        update_response = self.client.get(reverse("user_update", args=[self.admin.pk]))
+        update_response = self.client.get(
+            reverse("user_update", args=[self.admin.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertEqual(update_response.status_code, 200)
         self.assertTemplateUsed(update_response, "accounts/user_form.html")
 
@@ -511,7 +513,9 @@ class UserCrudAdminTests(TestCase):
         official.authorized_delegations.add(delegation)
         official.roles.add(role)
 
-        response = self.client.get(reverse("user_update", args=[user.pk]))
+        response = self.client.get(
+            reverse("user_update", args=[user.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
 
         form = response.context["form"]
         self.assertIsInstance(form.fields["roles"].widget, forms.CheckboxSelectMultiple)
@@ -548,7 +552,9 @@ class UserCrudAdminTests(TestCase):
         )
 
         self.client.force_login(manager)
-        form_page = self.client.get(reverse("user_update", args=[target.pk]))
+        form_page = self.client.get(
+            reverse("user_update", args=[target.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertContains(form_page, f'value="{privileged_role.pk}"')
         self.assertContains(form_page, 'data-role-locked="true"')
 
@@ -706,7 +712,7 @@ class UserScopeTests(TestCase):
         self.assertNotIn("pertenece.ajena", content)
 
     def test_create_form_only_offers_authorized_delegations(self):
-        response = self.client.get(reverse("user_create"))
+        response = self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Zona Propia")
@@ -856,7 +862,9 @@ class InactiveRoleAssignmentTests(TestCase):
         self.client.force_login(self.admin)
 
     def test_edit_form_shows_the_inactive_role_locked(self):
-        response = self.client.get(reverse("user_update", args=[self.target.pk]))
+        response = self.client.get(
+            reverse("user_update", args=[self.target.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
 
         self.assertContains(response, "Rol Inactivo Asignado")
         self.assertContains(response, "Rol inactivo")
