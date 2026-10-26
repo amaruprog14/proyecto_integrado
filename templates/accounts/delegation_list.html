@@ -16,7 +16,7 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'delegation_create' %}">+ Nuevo registro</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'delegation_create' %}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
 
@@ -63,7 +63,7 @@
                                 <td class="maintainer-actions">
                                     <a class="auth-text-link" href="{% url 'delegation_detail' delegation.pk %}">Ver</a>
                                     {% if can_change %}
-                                        <a class="auth-text-link" href="{% url 'delegation_update' delegation.pk %}">Editar</a>
+                                        <a class="auth-text-link" href="{% url 'delegation_update' delegation.pk %}" data-modal-form>Editar</a>
                                         {% if delegation.status == 'ACTIVE' %}
                                             <form class="d-inline" method="post" action="{% url 'delegation_deactivate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} quedará inactiva. No se elimina su historial." data-swal-title="Desactivar delegación" data-swal-confirm-text="Sí, desactivar">
                                                 {% csrf_token %}
@@ -134,6 +134,5 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

@@ -16,7 +16,7 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'attention_type_create' %}">+ Nuevo registro</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'attention_type_create' %}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
 
@@ -51,7 +51,7 @@
                                 <td class="maintainer-actions">
                                     <a href="{% url 'attention_type_detail' record.pk %}">Ver</a>
                                     {% if can_change %}
-                                        <a href="{% url 'attention_type_update' record.pk %}">Editar</a>
+                                        <a href="{% url 'attention_type_update' record.pk %}" data-modal-form>Editar</a>
                                         {% if record.is_active %}
                                             <form class="d-inline" method="post" action="{% url 'attention_type_deactivate' record.pk %}" data-swal-confirm="El tipo quedará inactivo; su historial se conservará." data-swal-title="Desactivar tipo de atención" data-swal-confirm-text="Sí, desactivar">
                                                 {% csrf_token %}<button type="submit">Desactivar</button>
@@ -98,6 +98,5 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

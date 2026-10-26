@@ -291,11 +291,15 @@ class DelegationCrudAdminTests(TestCase):
         self.assertRedirects(self.client.get(url), f"{reverse('login')}?next={url}")
 
     def test_create_update_and_detail_views_render(self):
-        create_response = self.client.get(reverse("delegation_create"))
+        create_response = self.client.get(
+            reverse("delegation_create"), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertEqual(create_response.status_code, 200)
         self.assertTemplateUsed(create_response, "accounts/delegation_form.html")
 
-        update_response = self.client.get(reverse("delegation_update", args=[self.delegation.pk]))
+        update_response = self.client.get(
+            reverse("delegation_update", args=[self.delegation.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertEqual(update_response.status_code, 200)
         self.assertTemplateUsed(update_response, "accounts/delegation_form.html")
         self.assertContains(update_response, self.delegation.code)

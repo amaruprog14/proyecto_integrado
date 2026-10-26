@@ -7,6 +7,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from common.access import ProtectedViewMixin
 from common.exports import xlsx_response
+from common.modal_forms import ModalFormOnlyMixin
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
@@ -170,7 +171,7 @@ class AttentionTypeExportView(CatalogExportView):
 
 
 
-class CatalogCreateView(ProtectedViewMixin, CreateView):
+class CatalogCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
     model = None
     form_class = None
     template_name = ""
@@ -207,7 +208,7 @@ class CatalogCreateView(ProtectedViewMixin, CreateView):
         return super().form_invalid(form)
 
 
-class CatalogUpdateView(ProtectedViewMixin, UpdateView):
+class CatalogUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
     model = None
     form_class = None
     template_name = ""

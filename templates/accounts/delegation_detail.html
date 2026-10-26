@@ -20,7 +20,7 @@
                     <h1 id="maintainer-title">{{ delegation.delegation_name }}</h1>
                 </div>
                 {% if can_change %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'delegation_update' delegation.pk %}">Editar delegación</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'delegation_update' delegation.pk %}" data-modal-form>Editar delegación</a>
                 {% endif %}
             </header>
 
@@ -82,5 +82,4 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
 {% endblock %}

@@ -16,7 +16,7 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'role_create' %}">+ Nuevo registro</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'role_create' %}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
 
@@ -65,7 +65,7 @@
                                 <td class="maintainer-actions">
                                     <a class="auth-text-link" href="{% url 'role_detail' role.pk %}">Ver</a>
                                     {% if can_change %}
-                                        <a class="auth-text-link" href="{% url 'role_update' role.pk %}">Editar</a>
+                                        <a class="auth-text-link" href="{% url 'role_update' role.pk %}" data-modal-form>Editar</a>
                                         {% if role.is_active %}
                                             {% if role.pk == protected_role_pk %}
                                                 <button type="button" disabled title="Es el último rol Administrador global con funcionarios activos.">Desactivar</button>
@@ -141,6 +141,5 @@
 
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

@@ -178,7 +178,9 @@ class ItemCrudAdminTests(TestCase):
         self.assertFalse(AuditLog.objects.filter(action="Actualización de ítem").exists())
 
     def test_edit_form_marks_the_code_as_required(self):
-        response = self.client.get(reverse("item_update", args=[self.item.pk]))
+        response = self.client.get(
+            reverse("item_update", args=[self.item.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
 
         self.assertContains(response, f'value="{self.item.code}"')
         self.assertRegex(response.content.decode(), r'<input[^>]*name="code"[^>]*required')
@@ -324,11 +326,13 @@ class ItemCrudAdminTests(TestCase):
         self.assertEqual((rows[1][0], rows[1][1], rows[1][3]), (exported.code, "Ítem Exportado 00", "Activo"))
 
     def test_create_update_and_detail_views_render(self):
-        create_response = self.client.get(reverse("item_create"))
+        create_response = self.client.get(reverse("item_create"), HTTP_X_MODAL_REQUEST="true")
         self.assertEqual(create_response.status_code, 200)
         self.assertTemplateUsed(create_response, "configuration/item_form.html")
 
-        update_response = self.client.get(reverse("item_update", args=[self.item.pk]))
+        update_response = self.client.get(
+            reverse("item_update", args=[self.item.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertEqual(update_response.status_code, 200)
         self.assertContains(update_response, f"Editar ítem {self.item.code}")
 

@@ -40,15 +40,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    const userForm = document.querySelector("form[data-user-form-mode], form[data-official-form-mode]");
-    if (!userForm) return;
+    const initializeUserForm = (userForm) => {
 
     const firstName = userForm.querySelector("#id_first_name");
     const lastName = userForm.querySelector("#id_last_name");
     const username = userForm.querySelector("#id_username");
     const fullName = userForm.querySelector("#id_full_name");
     const mode = userForm.dataset.userFormMode || userForm.dataset.officialFormMode;
-    const existingElement = document.getElementById("existing-usernames");
+    const existingElement =
+        userForm.parentElement.querySelector("#existing-usernames") ||
+        document.getElementById("existing-usernames");
     const existingUsernames = new Set(
         existingElement ? JSON.parse(existingElement.textContent).map((value) => value.toLocaleLowerCase()) : [],
     );
@@ -170,4 +171,14 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     principal?.addEventListener("change", syncDelegations);
     syncDelegations();
+
+    };
+
+    const userForm = document.querySelector("form[data-user-form-mode], form[data-official-form-mode]");
+    if (userForm) initializeUserForm(userForm);
+    document.addEventListener("sgr:modal-form-loaded", (event) => {
+        if (event.detail.form.matches("form[data-user-form-mode], form[data-official-form-mode]")) {
+            initializeUserForm(event.detail.form);
+        }
+    });
 });

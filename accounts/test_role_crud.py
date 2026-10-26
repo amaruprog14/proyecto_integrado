@@ -373,11 +373,13 @@ class RoleCrudAdminTests(TestCase):
     def test_create_update_and_detail_views_render(self):
         official_with_role("operador.detalle", self.role)
 
-        create_response = self.client.get(reverse("role_create"))
+        create_response = self.client.get(reverse("role_create"), HTTP_X_MODAL_REQUEST="true")
         self.assertEqual(create_response.status_code, 200)
         self.assertTemplateUsed(create_response, "accounts/role_form.html")
 
-        update_response = self.client.get(reverse("role_update", args=[self.role.pk]))
+        update_response = self.client.get(
+            reverse("role_update", args=[self.role.pk]), HTTP_X_MODAL_REQUEST="true"
+        )
         self.assertEqual(update_response.status_code, 200)
         self.assertContains(update_response, "Operador Territorial")
         self.assertContains(update_response, "Actividades")
@@ -533,7 +535,10 @@ class RoleUserFormIntegrationTests(TestCase):
 
     def test_deactivated_role_disappears_from_user_forms(self):
         self.assertIn(self.role, OfficialUserForm(actor=self.superuser).fields["roles"].queryset)
-        self.assertContains(self.client.get(reverse("user_create")), "Verificador de Evidencias")
+        self.assertContains(
+            self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true"),
+            "Verificador de Evidencias",
+        )
 
         self.client.post(
             reverse("role_deactivate", args=[self.role.pk]), {"affected_officials": "0"}, follow=True
@@ -541,7 +546,10 @@ class RoleUserFormIntegrationTests(TestCase):
 
         self.assertNotIn(self.role, OfficialUserForm(actor=self.superuser).fields["roles"].queryset)
         self.assertNotIn(self.role, OfficialForm(actor=self.superuser).fields["roles"].queryset)
-        self.assertNotContains(self.client.get(reverse("user_create")), "Verificador de Evidencias")
+        self.assertNotContains(
+            self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true"),
+            "Verificador de Evidencias",
+        )
 
         self.client.post(reverse("role_activate", args=[self.role.pk]))
 
@@ -554,7 +562,7 @@ class RoleUserFormIntegrationTests(TestCase):
         )
         role = Role.objects.get(role_name="Administración Central")
 
-        response = self.client.get(reverse("user_create"))
+        response = self.client.get(reverse("user_create"), HTTP_X_MODAL_REQUEST="true")
 
         self.assertContains(response, f'value="{role.pk}"')
         self.assertContains(response, 'data-role-global-administrator="true"')
@@ -626,7 +634,7 @@ class RolePermissionTests(TestCase):
     def test_privileged_permissions_are_locked_in_the_creator_form(self):
         self.client.force_login(self.creator)
 
-        response = self.client.get(reverse("role_create"))
+        response = self.client.get(reverse("role_create"), HTTP_X_MODAL_REQUEST="true")
 
         self.assertContains(response, 'data-privileged="true" disabled')
 

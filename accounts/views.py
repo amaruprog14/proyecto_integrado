@@ -33,6 +33,7 @@ from common.access import (
     register_denied_access,
 )
 from common.exports import xlsx_response
+from common.modal_forms import ModalFormOnlyMixin
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
@@ -771,7 +772,7 @@ class DelegationExportView(ProtectedViewMixin, View):
         )
 
 
-class DelegationCreateView(ProtectedViewMixin, CreateView):
+class DelegationCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
     permission_required = "accounts.add_delegation"
     model = Delegation
     form_class = DelegationForm
@@ -802,7 +803,7 @@ class DelegationCreateView(ProtectedViewMixin, CreateView):
         return super().form_invalid(form)
 
 
-class DelegationUpdateView(ScopedObjectMixin, ProtectedViewMixin, UpdateView):
+class DelegationUpdateView(ScopedObjectMixin, ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
     permission_required = "accounts.change_delegation"
     model = Delegation
     form_class = DelegationForm
@@ -908,7 +909,7 @@ class OfficialExportView(ProtectedViewMixin, View):
         )
 
 
-class OfficialCreateView(ProtectedViewMixin, FormView):
+class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     permission_required = "accounts.add_official"
     template_name = "accounts/official_form.html"
     form_class = OfficialForm
@@ -959,7 +960,7 @@ class OfficialCreateView(ProtectedViewMixin, FormView):
             return super().form_invalid(form)
 
 
-class OfficialUpdateView(ProtectedViewMixin, FormView):
+class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     permission_required = "accounts.change_official"
     template_name = "accounts/official_form.html"
     form_class = OfficialForm
@@ -1150,7 +1151,7 @@ class UserExportView(ProtectedViewMixin, View):
         )
 
 
-class UserCreateView(ProtectedViewMixin, FormView):
+class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     permission_required = "auth.add_user"
     template_name = "accounts/user_form.html"
     form_class = OfficialUserForm
@@ -1233,7 +1234,7 @@ class OwnOfficialProfileView(LoginRequiredMixin, FormView):
         return super().form_invalid(form)
 
 
-class UserUpdateView(ProtectedViewMixin, FormView):
+class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     permission_required = "auth.change_user"
     template_name = "accounts/user_form.html"
     form_class = OfficialUserForm

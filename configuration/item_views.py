@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin
 from common.exports import xlsx_response
+from common.modal_forms import ModalFormOnlyMixin
 from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
@@ -132,7 +133,7 @@ class ItemDetailView(ProtectedViewMixin, DetailView):
         return context
 
 
-class ItemCreateView(ProtectedViewMixin, CreateView):
+class ItemCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
     permission_required = "configuration.add_item"
     model = Item
     form_class = ItemForm
@@ -160,7 +161,7 @@ class ItemCreateView(ProtectedViewMixin, CreateView):
         return super().form_invalid(form)
 
 
-class ItemUpdateView(ProtectedViewMixin, UpdateView):
+class ItemUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
     permission_required = "configuration.change_item"
     model = Item
     form_class = ItemForm

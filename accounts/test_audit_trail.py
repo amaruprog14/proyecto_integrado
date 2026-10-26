@@ -148,7 +148,12 @@ class OutOfScopeAccessAuditTests(TestCase):
             with self.subTest(url=url, method=method):
                 AuditLog.objects.all().delete()
 
-                response = getattr(self.client, method)(url)
+                request_headers = (
+                    {"HTTP_X_MODAL_REQUEST": "true"}
+                    if method == "get" and url.endswith("/editar/")
+                    else {}
+                )
+                response = getattr(self.client, method)(url, **request_headers)
 
                 self.assertEqual(response.status_code, 404)
                 log = AuditLog.objects.get(action="Acceso denegado")
