@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.password_validation import validate_password
@@ -222,13 +224,13 @@ class DelegationForm(forms.ModelForm):
         fields = ["delegation_name", "address", "commune", "status"]
         widgets = {
             "delegation_name": forms.TextInput(
-                attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
+                attrs={"class": "form-control", "maxlength": 100, "autocomplete": "off"}
             ),
             "address": forms.TextInput(
-                attrs={"class": "form-control", "maxlength": 255, "autocomplete": "off"}
+                attrs={"class": "form-control", "maxlength": 100, "autocomplete": "off"}
             ),
             "commune": forms.TextInput(
-                attrs={"class": "form-control", "maxlength": 100, "autocomplete": "off"}
+                attrs={"class": "form-control", "maxlength": 60, "autocomplete": "off"}
             ),
             "status": forms.Select(attrs={"class": "form-select"}),
         }
@@ -249,6 +251,8 @@ class DelegationForm(forms.ModelForm):
 
     def clean_delegation_name(self):
         name = (self.cleaned_data.get("delegation_name") or "").strip()
+        if not re.fullmatch(r"[^\W\d_]+(?:[ -][^\W\d_]+)*", name, flags=re.UNICODE):
+            raise ValidationError("Usa solo letras, tildes, espacios y guiones.")
         duplicates = Delegation.objects.filter(delegation_name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
@@ -257,10 +261,16 @@ class DelegationForm(forms.ModelForm):
         return name
 
     def clean_address(self):
-        return (self.cleaned_data.get("address") or "").strip()
+        address = (self.cleaned_data.get("address") or "").strip()
+        if not re.fullmatch(r"[^\W_#.,/'ºª°-]+(?:[ #.,/'ºª°-][^\W_#.,/'ºª°-]+)*", address, flags=re.UNICODE):
+            raise ValidationError("Usa letras, números, espacios y puntuación habitual (# . , / -).")
+        return address
 
     def clean_commune(self):
-        return (self.cleaned_data.get("commune") or "").strip()
+        commune = (self.cleaned_data.get("commune") or "").strip()
+        if not re.fullmatch(r"[^\W\d_]+(?:[ -][^\W\d_]+)*", commune, flags=re.UNICODE):
+            raise ValidationError("Usa solo letras, tildes, espacios y guiones.")
+        return commune
 
 
 class OfficialUserForm(RoleAssignmentMixin, forms.Form):

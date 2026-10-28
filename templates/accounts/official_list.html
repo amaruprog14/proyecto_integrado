@@ -50,7 +50,7 @@
                                 {% endfor %}
                                 <td class="maintainer-actions">
                                     {% if can_change and not record.is_self %}
-                                        <a href="{% url 'official_update' record.pk %}" data-modal-form>Editar</a>
+                                        <a href="{% url 'official_update' record.pk %}" data-modal-form class="action-icon action-icon--edit" aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
                                     {% endif %}
                                 </td>
                             </tr>

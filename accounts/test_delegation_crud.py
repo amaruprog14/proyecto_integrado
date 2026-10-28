@@ -8,6 +8,7 @@ búsqueda, filtros combinables, paginación, exportación Excel y el ámbito por
 
 from io import BytesIO
 
+from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
@@ -66,6 +67,7 @@ class DelegationCrudAdminTests(TestCase):
 
     def setUp(self):
         self.client.force_login(self.admin)
+        cache.delete(f"delegation-export:{self.admin.pk}")
 
     def test_list_renders_persisted_records(self):
         response = self.client.get(reverse("delegation_list"))
@@ -221,6 +223,47 @@ class DelegationCrudAdminTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].number, 1)
+
+    def test_page_size_is_selectable_and_invalid_values_fall_back_to_ten(self):
+        for index in range(105):
+            Delegation.objects.create(
+                delegation_name=f"Unidad paginada {index:03d}",
+                address="Calle Central 1",
+                commune="La Serena",
+            )
+        for size in (10, 25, 50, 100):
+            response = self.client.get(reverse("delegation_list"), {"page_size": size})
+            self.assertEqual(len(response.context["delegations"]), size)
+            self.assertEqual(response.context["selected_page_size"], size)
+        invalid = self.client.get(reverse("delegation_list"), {"page_size": 1000})
+        self.assertEqual(len(invalid.context["delegations"]), 10)
+        self.assertEqual(invalid.context["selected_page_size"], 10)
+        kept = self.client.get(reverse("delegation_list"), {"q": "unidad", "page_size": 25, "page": 2})
+        self.assertEqual(kept.context["querystring"], "q=unidad&page_size=25")
+        self.assertContains(kept, "page_size=25&amp;page=3")
+
+    def test_export_has_per_user_thirty_second_cooldown(self):
+        url = reverse("delegation_export")
+        first = self.client.get(url)
+        second = self.client.get(url)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 302)
+        self.assertRedirects(second, reverse("delegation_list"))
+        self.assertTrue(any("Espera 30 segundos" in str(message) for message in second.wsgi_request._messages))
+
+    def test_delegation_form_validates_contextual_characters_and_lengths(self):
+        from accounts.forms import DelegationForm
+
+        valid = DelegationForm(data=delegation_payload(
+            delegation_name="Delegación Ñuñoa-Sur",
+            address="Av. O'Higgins 123 #4",
+            commune="Peñalolén",
+        ))
+        self.assertTrue(valid.is_valid(), valid.errors)
+        invalid_name = DelegationForm(data=delegation_payload(delegation_name="Zona 123!"))
+        self.assertFalse(invalid_name.is_valid())
+        too_long = DelegationForm(data=delegation_payload(commune="C" * 61))
+        self.assertFalse(too_long.is_valid())
 
     def test_export_respects_filters_and_is_not_paginated(self):
         for index in range(12):

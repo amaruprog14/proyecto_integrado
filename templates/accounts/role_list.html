@@ -63,23 +63,23 @@
                                     <span class="maintainer-status-pill{% if role.is_active %} is-active{% else %} is-inactive{% endif %}">{% if role.is_active %}Activo{% else %}Inactivo{% endif %}</span>
                                 </td>
                                 <td class="maintainer-actions">
-                                    <a class="auth-text-link" href="{% url 'role_detail' role.pk %}">Ver</a>
+                                    <a class="auth-text-link action-icon action-icon--view" href="{% url 'role_detail' role.pk %}" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
                                     {% if can_change %}
-                                        <a class="auth-text-link" href="{% url 'role_update' role.pk %}" data-modal-form>Editar</a>
+                                        <a class="auth-text-link action-icon action-icon--edit" href="{% url 'role_update' role.pk %}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
                                         {% if role.is_active %}
                                             {% if role.pk == protected_role_pk %}
-                                                <button type="button" disabled title="Es el último rol Administrador global con funcionarios activos.">Desactivar</button>
+                                                <button type="button" disabled title="Es el último rol Administrador global con funcionarios activos." class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
                                             {% else %}
                                                 <form class="d-inline" method="post" action="{% url 'role_deactivate' role.pk %}" data-swal-confirm="El rol {{ role.role_name }} quedará inactivo; no se elimina su historial. {% if role.active_official_count %}{{ role.active_official_count }} funcionario{{ role.active_official_count|pluralize }} activo{{ role.active_official_count|pluralize }} quedará{{ role.active_official_count|pluralize:'n' }} sin los permisos de este rol.{% else %}Ningún funcionario activo tiene este rol asignado.{% endif %}" data-swal-title="Desactivar rol" data-swal-confirm-text="Sí, desactivar">
                                                     {% csrf_token %}
                                                     <input type="hidden" name="affected_officials" value="{{ role.active_official_count }}">
-                                                    <button type="submit">Desactivar</button>
+                                                    <button type="submit" class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
                                                 </form>
                                             {% endif %}
                                         {% else %}
                                             <form class="d-inline" method="post" action="{% url 'role_activate' role.pk %}" data-swal-confirm="El rol {{ role.role_name }} volverá a estar activo y sus funcionarios recuperarán sus permisos." data-swal-title="Activar rol" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
                                                 {% csrf_token %}
-                                                <button type="submit">Activar</button>
+                                                <button type="submit" class="action-icon action-icon--activate" aria-label="Activar" data-tooltip="Activar" title="Activar">{% include "includes/action_icon.html" with action="Activar" %}</button>
                                             </form>
                                         {% endif %}
                                     {% endif %}

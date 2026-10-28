@@ -35,6 +35,12 @@
                         {% endfor %}
                     </select>
                 </div>
+                <label class="maintainer-page-size-label" for="delegation-page-size">Registros por página</label>
+                <select class="form-select maintainer-page-size" id="delegation-page-size" name="page_size" data-swal-autosubmit aria-label="Registros por página">
+                    {% for size in page_size_options %}
+                        <option value="{{ size }}"{% if selected_page_size == size %} selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
@@ -60,22 +66,24 @@
                                 <td>
                                     <span class="maintainer-status-pill{% if delegation.status == 'ACTIVE' %} is-active{% else %} is-inactive{% endif %}">{{ delegation.get_status_display }}</span>
                                 </td>
-                                <td class="maintainer-actions">
-                                    <a class="auth-text-link" href="{% url 'delegation_detail' delegation.pk %}">Ver</a>
-                                    {% if can_change %}
-                                        <a class="auth-text-link" href="{% url 'delegation_update' delegation.pk %}" data-modal-form>Editar</a>
-                                        {% if delegation.status == 'ACTIVE' %}
-                                            <form class="d-inline" method="post" action="{% url 'delegation_deactivate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} quedará inactiva. No se elimina su historial." data-swal-title="Desactivar delegación" data-swal-confirm-text="Sí, desactivar">
-                                                {% csrf_token %}
-                                                <button type="submit">Desactivar</button>
-                                            </form>
-                                        {% else %}
-                                            <form class="d-inline" method="post" action="{% url 'delegation_activate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} volverá a estar activa." data-swal-title="Activar delegación" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
-                                                {% csrf_token %}
-                                                <button type="submit">Activar</button>
-                                            </form>
+                                <td class="maintainer-actions delegation-actions">
+                                    <div class="delegation-action-group">
+                                        <a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'delegation_detail' delegation.pk %}" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
+                                        {% if can_change %}
+                                            <a class="delegation-action delegation-action-edit action-icon action-icon--edit" href="{% url 'delegation_update' delegation.pk %}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
+                                            {% if delegation.status == 'ACTIVE' %}
+                                                <form method="post" action="{% url 'delegation_deactivate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} quedará inactiva. No se elimina su historial." data-swal-title="Desactivar delegación" data-swal-confirm-text="Sí, desactivar">
+                                                    {% csrf_token %}
+                                                    <button class="delegation-action delegation-action-deactivate action-icon action-icon--deactivate" type="submit" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
+                                                </form>
+                                            {% else %}
+                                                <form method="post" action="{% url 'delegation_activate' delegation.pk %}" data-swal-confirm="La delegación {{ delegation.delegation_name }} volverá a estar activa." data-swal-title="Activar delegación" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
+                                                    {% csrf_token %}
+                                                    <button class="delegation-action delegation-action-activate action-icon action-icon--activate" type="submit" aria-label="Activar" data-tooltip="Activar" title="Activar">{% include "includes/action_icon.html" with action="Activar" %}</button>
+                                                </form>
+                                            {% endif %}
                                         {% endif %}
-                                    {% endif %}
+                                    </div>
                                 </td>
                             </tr>
                         {% empty %}

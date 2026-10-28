@@ -54,9 +54,9 @@
                                     </td>
                                 {% endfor %}
                                 <td class="maintainer-actions">
-                                    <button type="button" disabled>Ver</button>
-                                    <button type="button" disabled>Editar</button>
-                                    <button type="button" disabled>Eliminar</button>
+                                    <button type="button" disabled class="action-icon action-icon--view" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</button>
+                                    <button type="button" disabled class="action-icon action-icon--edit" aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</button>
+                                    <button type="button" disabled class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
                                 </td>
                             </tr>
                         {% endfor %}

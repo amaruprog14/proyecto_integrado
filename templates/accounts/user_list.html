@@ -64,24 +64,24 @@
                                     <span class="maintainer-status-pill{% if account.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ account.status_label }}</span>
                                 </td>
                                 <td class="maintainer-actions">
-                                    <a class="auth-text-link" href="{% url 'user_detail' account.pk %}">Ver</a>
+                                    <a class="auth-text-link action-icon action-icon--view" href="{% url 'user_detail' account.pk %}" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
                                     {% if can_change %}
                                         {% if account.pk != request.user.pk %}
-                                            <a class="auth-text-link" href="{% url 'user_update' account.pk %}" data-modal-form>Editar</a>
+                                            <a class="auth-text-link action-icon action-icon--edit" href="{% url 'user_update' account.pk %}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
                                         {% endif %}
                                         {% if account.status_is_active %}
                                             {% if account.pk == protected_user_pk %}
-                                                <button type="button" disabled title="Es el único funcionario activo con el último rol Administrador global.">Desactivar</button>
+                                                <button type="button" disabled title="Es el único funcionario activo con el último rol Administrador global." class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
                                             {% elif account.pk != request.user.pk %}
                                                 <form class="d-inline" method="post" action="{% url 'user_deactivate' account.pk %}" data-swal-confirm="El usuario {{ account.username }} quedará inactivo y no podrá iniciar sesión." data-swal-title="Desactivar usuario" data-swal-confirm-text="Sí, desactivar">
                                                     {% csrf_token %}
-                                                    <button type="submit">Desactivar</button>
+                                                    <button type="submit" class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
                                                 </form>
                                             {% endif %}
                                         {% else %}
                                             <form class="d-inline" method="post" action="{% url 'user_activate' account.pk %}" data-swal-confirm="El usuario {{ account.username }} volverá a estar activo." data-swal-title="Activar usuario" data-swal-icon="question" data-swal-confirm-text="Sí, activar">
                                                 {% csrf_token %}
-                                                <button type="submit">Activar</button>
+                                                <button type="submit" class="action-icon action-icon--activate" aria-label="Activar" data-tooltip="Activar" title="Activar">{% include "includes/action_icon.html" with action="Activar" %}</button>
                                             </form>
                                         {% endif %}
                                     {% endif %}
