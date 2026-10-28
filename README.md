@@ -1,5 +1,8 @@
 # Proyecto Integrado
 
+oe cierra la cuenta despues 
+
+
 Sistema de Gestión de Resultados (SGR) de la Municipalidad de La Serena: aplicación web en Django
 con Django Admin personalizado y base de datos MySQL. Proyecto de la asignatura Programación Back
 End (TI3041) – Evaluación Sumativa II.
