@@ -2,6 +2,8 @@
 
 {% block title %}Atención {{ attention.identifier }} · SGR{% endblock %}
 
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="attention_entry" %}{% endblock %}
+
 {% block content %}
     <section class="attention-entry" aria-labelledby="attention-detail-title">
         <header class="attention-entry-heading">

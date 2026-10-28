@@ -4,9 +4,9 @@
 {% block title %}Ingreso al sistema · SGR{% endblock %}
 
 {% block content %}
-    <div class="login-layout d-flex justify-content-center align-items-center">
+    <div class="login-layout">
         <section class="login-panel" aria-labelledby="login-title">
-            <p class="page-intro-kicker">Acceso de usuarios</p>
+            <p class="page-intro-kicker mb-0">Acceso de usuarios</p>
             <h1 id="login-title">Ingreso al sistema</h1>
             <p class="login-description">
                 Ingresa tu usuario o correo y tu contraseña para continuar al Sistema de Gestión de Resultados.
@@ -31,7 +31,10 @@
                     {% endfor %}
                 </p>
                 <p>
-                    <label for="{{ form.password.id_for_label }}">Contraseña</label>
+                    <span class="login-label-row">
+                        <label for="{{ form.password.id_for_label }}">Contraseña</label>
+                        <a class="auth-text-link login-recovery-link" href="{% url 'recovery_request' %}">¿Olvidaste tu contraseña?</a>
+                    </span>
                     <span class="password-input-group">
                         {{ form.password }}
                         <button
@@ -50,9 +53,7 @@
                 </p>
                 <button class="btn btn-primary login-submit" type="submit">Ingresar</button>
             </form>
-            <a class="auth-text-link login-recovery-link" href="{% url 'recovery_request' %}">
-                ¿Olvidaste tu contraseña?
-            </a>
+            <p class="login-footnote">Sistema de Gestión de Resultados · SGR</p>
         </section>
     </div>
 {% endblock %}

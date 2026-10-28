@@ -9,226 +9,187 @@
             name="description"
             content="Prototipo académico del Sistema de Gestión de Resultados de la Municipalidad de La Serena."
         />
-        <meta name="theme-color" content="#920000" />
+        <meta name="theme-color" content="#5b0000" />
         <title>{% block title %}SGR · Gestión de Resultados · Municipalidad de La Serena{% endblock %}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-actions" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-redesign" />
         {% block extra_head %}{% endblock %}
     </head>
-    <body class="d-flex min-vh-100 flex-column">
-        <header>
-            <div class="municipal-topbar py-2">
-                <div class="container d-flex flex-wrap justify-content-between gap-2">
-                    <span>Proyecto académico · Municipalidad de La Serena</span>
-                    <a href="https://laserena.cl/" target="_blank" rel="noopener noreferrer">
-                        Portal municipal oficial
-                    </a>
-                </div>
-            </div>
+    <body>
+        {% if user.is_authenticated %}
+            <div class="app-shell">
+                <aside class="app-sidebar" aria-label="Navegación principal">
+                    <div class="app-brand-row">
+                        <a class="app-brand" href="{% url 'home' %}">
+                            <img
+                                class="app-brand-logo"
+                                src="{% static 'images/muni-blanco.png' %}"
+                                alt="Ilustre Municipalidad de La Serena"
+                                width="176"
+                                height="44"
+                            />
+                            <span class="app-brand-name">
+                                <strong>Gestión de Resultados</strong>
+                                SGR · Prototipo académico
+                            </span>
+                        </a>
+                        <button
+                            class="app-menu-toggle"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#navegacionPrincipal"
+                            aria-controls="navegacionPrincipal"
+                            aria-expanded="false"
+                            aria-label="Mostrar navegación"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                        </button>
+                    </div>
+                    <div class="app-sidebar-nav collapse" id="navegacionPrincipal">
+                        {% comment %}
+                            El menú solo refleja los permisos; el acceso real se valida en cada vista.
+                            Cada pantalla indica su enlace activo sobrescribiendo el bloque «sidebar».
+                        {% endcomment %}
+                        {% block sidebar %}
+                            {% include "includes/maintainer_sidebar.html" with active=request.resolver_match.url_name %}
+                        {% endblock %}
+                    </div>
+                </aside>
 
-            <div class="municipal-masthead py-3">
-                <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
-                    <a class="municipal-brand d-flex align-items-center gap-3" href="{% url 'home' %}">
+                <div class="app-main">
+                    <header class="app-topbar">
+                        <section class="municipal-context" aria-label="Usuario y delegación activa">
+                            {% comment %}
+                                Distintivos con texto e ícono: el color nunca es la única señal del contexto.
+                            {% endcomment %}
+                            <div class="municipal-context-item">
+                                <span class="municipal-context-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
+                                </span>
+                                <span>
+                                    <span class="municipal-context-label">Usuario</span>
+                                    <strong>
+                                        {% if user.official %}
+                                            {{ user.official.full_name }}
+                                        {% else %}
+                                            {{ user.get_full_name|default:user.username }}
+                                        {% endif %}
+                                    </strong>
+                                </span>
+                            </div>
+                            <div class="municipal-context-item">
+                                <span class="municipal-context-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path d="M8 1 2 3.5V8c0 3.5 2.6 6 6 7 3.4-1 6-3.5 6-7V3.5z"/></svg>
+                                </span>
+                                <span>
+                                    <span class="municipal-context-label">Rol</span>
+                                    <strong>
+                                        {% if user.is_superuser %}
+                                            Administrador del sistema
+                                        {% elif user.official %}
+                                            {% for role in user.official.roles.all %}
+                                                {{ role.role_name }}{% if not role.is_active %} (inactivo){% endif %}{% if not forloop.last %}, {% endif %}
+                                            {% empty %}
+                                                Sin rol asignado
+                                            {% endfor %}
+                                        {% else %}
+                                            Sin perfil asignado
+                                        {% endif %}
+                                    </strong>
+                                </span>
+                            </div>
+                            <div class="municipal-context-item">
+                                <span class="municipal-context-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path fill-rule="evenodd" d="M8 1a5 5 0 0 0-5 5c0 3.8 5 9 5 9s5-5.2 5-9a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>
+                                </span>
+                                <span>
+                                    <span class="municipal-context-label">Delegación activa</span>
+                                    <strong>
+                                        {% if active_delegation %}
+                                            {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
+                                        {% else %}
+                                            Sin delegación asignada
+                                        {% endif %}
+                                    </strong>
+                                    {% if can_select_active_delegation %}
+                                        <form class="d-flex flex-wrap align-items-center gap-2 active-delegation-switch" method="post" action="{% url 'active_delegation_select' %}" data-delegation-switch>
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <label class="visually-hidden" for="active-delegation-select">Cambiar delegación activa</label>
+                                            <select class="form-select form-select-sm" id="active-delegation-select" name="delegation_id">
+                                                {% for delegation in authorized_active_delegations %}
+                                                    <option value="{{ delegation.pk }}"{% if active_delegation.pk == delegation.pk %} selected{% endif %}>
+                                                        {{ delegation.code }} · {{ delegation.delegation_name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                            <button class="btn btn-sm active-delegation-switch-button" type="submit">Cambiar</button>
+                                        </form>
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </section>
+                        <div class="app-topbar-actions">
+                            {% if user.official %}
+                                <a class="app-topbar-link" href="{% url 'my_profile' %}"{% if request.resolver_match.url_name == 'my_profile' %} aria-current="page"{% endif %}>Mi perfil</a>
+                            {% endif %}
+                            <form class="nav-session-form" method="post" action="{% url 'logout' %}">
+                                {% csrf_token %}
+                                <button class="nav-session-action" type="submit">Cerrar sesión</button>
+                            </form>
+                        </div>
+                    </header>
+        {% else %}
+            <div class="auth-shell">
+                <section class="auth-brand" aria-label="Sistema de Gestión de Resultados">
+                    <svg class="auth-brand-rings" viewBox="0 0 640 640" fill="none" aria-hidden="true" focusable="false">
+                        <circle cx="320" cy="320" r="120" stroke="#7a0000" stroke-width="2"/>
+                        <circle cx="320" cy="320" r="190" stroke="#7a0000" stroke-width="2"/>
+                        <circle cx="320" cy="320" r="260" stroke="#7a0000" stroke-width="2"/>
+                        <circle cx="320" cy="320" r="318" stroke="#660000" stroke-width="2"/>
+                    </svg>
+                    <a href="{% url 'login' %}">
                         <img
-                            class="municipal-brand-logo"
+                            class="auth-brand-logo"
                             src="{% static 'images/muni-blanco.png' %}"
                             alt="Ilustre Municipalidad de La Serena"
-                            width="250"
-                            height="64"
+                            width="220"
+                            height="56"
                         />
-                        <span class="municipal-brand-divider" aria-hidden="true"></span>
-                        <span>
-                            <span class="d-block fs-5 fw-bold">Sistema de Gestión</span>
-                            <span class="d-block">de Resultados · SGR</span>
-                        </span>
                     </a>
-                    <span class="municipal-project-label">Prototipo académico</span>
-                </div>
-            </div>
-
-            <nav class="municipal-nav navbar navbar-expand-lg" aria-label="Navegación principal">
-                <div class="container">
-                    <button
-                        class="navbar-toggler ms-auto"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#navegacionPrincipal"
-                        aria-controls="navegacionPrincipal"
-                        aria-expanded="false"
-                        aria-label="Mostrar navegación"
-                    >
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
-                    <div class="collapse navbar-collapse" id="navegacionPrincipal">
-                        <ul class="navbar-nav gap-lg-3">
-                            <li class="nav-item">
-                                <a
-                                    class="nav-link"
-                                    href="{% url 'home' %}"
-                                    {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}
-                                >
-                                    Inicio
-                                </a>
+                    <div class="auth-brand-body">
+                        <p class="auth-brand-kicker">Ilustre Municipalidad de La Serena</p>
+                        <p class="auth-brand-title">Sistema de Gestión de Resultados</p>
+                        <p class="auth-brand-lead">
+                            Plataforma de apoyo a la gestión municipal para registrar, dar seguimiento
+                            y medir la gestión de funcionarios y delegaciones.
+                        </p>
+                        <ul class="auth-brand-features">
+                            <li>
+                                <span class="auth-brand-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+                                Registro de atención ciudadana
                             </li>
-                            {% block primary_navigation %}{% endblock %}
-                            {% comment %}
-                                El menú solo refleja los permisos; el acceso real se valida en cada vista.
-                            {% endcomment %}
-                            {% if perms.accounts.view_delegation or perms.accounts.view_role or perms.accounts.view_position or perms.accounts.view_area or perms.accounts.view_official or perms.auth.view_user or perms.auth.view_group %}
-                                <li class="nav-item dropdown">
-                                    <a
-                                        class="nav-link dropdown-toggle"
-                                        href="#"
-                                        role="button"
-                                        data-bs-toggle="dropdown"
-                                        aria-expanded="false"
-                                    >
-                                        Cuentas
-                                    </a>
-                                    <ul class="dropdown-menu">
-                                        {% if perms.accounts.view_delegation %}<li><a class="dropdown-item" href="{% url 'delegation_list' %}">Delegaciones</a></li>{% endif %}
-                                        {% if perms.accounts.view_role %}<li><a class="dropdown-item" href="{% url 'role_list' %}">Roles</a></li>{% endif %}
-                                        {% if perms.accounts.view_position %}<li><a class="dropdown-item" href="{% url 'position_maintainer' %}">Cargos · demostración</a></li>{% endif %}
-                                        {% if perms.accounts.view_area %}<li><a class="dropdown-item" href="{% url 'area_maintainer' %}">Áreas · demostración</a></li>{% endif %}
-                                        {% if perms.accounts.view_official %}<li><a class="dropdown-item" href="{% url 'official_maintainer' %}">Funcionarios</a></li>{% endif %}
-                                        {% if perms.auth.view_user %}<li><a class="dropdown-item" href="{% url 'user_maintainer' %}">Usuarios</a></li>{% endif %}
-                                        {% if perms.auth.view_group %}<li><a class="dropdown-item" href="{% url 'group_maintainer' %}">Grupos · demostración</a></li>{% endif %}
-                                    </ul>
-                                </li>
-                            {% endif %}
-                            {% if perms.activities.view_activity or perms.activities.add_socialattention %}
-                                <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                        Operación
-                                    </a>
-                                    <ul class="dropdown-menu">
-                                        {% if perms.activities.view_activity %}<li><a class="dropdown-item" href="{% url 'activity_maintainer' %}">Actividades · demostración</a></li>{% endif %}
-                                        {% if perms.activities.add_socialattention %}<li><a class="dropdown-item" href="{% url 'attention_entry' %}">Ingreso de atención</a></li>{% endif %}
-                                    </ul>
-                                </li>
-                            {% endif %}
-                            {% if perms.configuration.view_item or perms.configuration.view_period or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype %}
-                                <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                        Configuración
-                                    </a>
-                                    <ul class="dropdown-menu">
-                                        {% if perms.configuration.view_item %}<li><a class="dropdown-item" href="{% url 'item_maintainer' %}">Ítems y metas</a></li>{% endif %}
-                                        {% if perms.configuration.view_period %}<li><a class="dropdown-item" href="{% url 'period_maintainer' %}">Períodos · demostración</a></li>{% endif %}
-                                        {% if perms.configuration.view_attentiontype %}<li><a class="dropdown-item" href="{% url 'attention_type_maintainer' %}">Tipo de Atención</a></li>{% endif %}
-                                        {% if perms.configuration.view_subattentiontype %}<li><a class="dropdown-item" href="{% url 'subattention_type_maintainer' %}">Sub Atención</a></li>{% endif %}
-                                    </ul>
-                                </li>
-                            {% endif %}
-                        </ul>
-                        <ul class="navbar-nav ms-lg-auto gap-lg-3 align-items-lg-center">
-                            {% if user.is_authenticated %}
-                                <li class="nav-item">
-                                    {% if user.official %}
-                                        <a class="nav-link" href="{% url 'my_profile' %}">Mi perfil</a>
-                                    {% endif %}
-                                </li>
-                                <li class="nav-item">
-                                    <span class="nav-link nav-session-user">
-                                        Sesión: {{ user.get_username }}
-                                    </span>
-                                </li>
-                                <li class="nav-item">
-                                    <form class="nav-session-form" method="post" action="{% url 'logout' %}">
-                                        {% csrf_token %}
-                                        <button class="nav-link nav-session-action" type="submit">
-                                            Cerrar sesión
-                                        </button>
-                                    </form>
-                                </li>
-                            {% else %}
-                                <li class="nav-item">
-                                    <a class="nav-link" href="{% url 'login' %}">Ingresar</a>
-                                </li>
-                            {% endif %}
+                            <li>
+                                <span class="auth-brand-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 21s-7-5.6-7-11a7 7 0 0 1 14 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+                                Gestión por delegación
+                            </li>
+                            <li>
+                                <span class="auth-brand-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 2l8 3.5V11c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5.5z"/></svg></span>
+                                Roles y permisos por perfil
+                            </li>
                         </ul>
                     </div>
-                </div>
-            </nav>
-
-            {% if user.is_authenticated %}
-                <section class="municipal-context" aria-label="Usuario y delegación activa">
-                    <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
-                        {% comment %}
-                            Distintivos con texto e ícono: el color nunca es la única señal del contexto.
-                        {% endcomment %}
-                        <div class="municipal-context-item">
-                            <span class="municipal-context-icon" aria-hidden="true">
-                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
-                            </span>
-                            <span>
-                                <span class="municipal-context-label">Usuario</span>
-                                <strong>
-                                    {% if user.official %}
-                                        {{ user.official.full_name }}
-                                    {% else %}
-                                        {{ user.get_full_name|default:user.username }}
-                                    {% endif %}
-                                </strong>
-                            </span>
-                        </div>
-                        <div class="municipal-context-item">
-                            <span class="municipal-context-icon" aria-hidden="true">
-                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path d="M8 1 2 3.5V8c0 3.5 2.6 6 6 7 3.4-1 6-3.5 6-7V3.5z"/></svg>
-                            </span>
-                            <span>
-                                <span class="municipal-context-label">Rol</span>
-                                <strong>
-                                    {% if user.is_superuser %}
-                                        Administrador del sistema
-                                    {% elif user.official %}
-                                        {% for role in user.official.roles.all %}
-                                            {{ role.role_name }}{% if not role.is_active %} (inactivo){% endif %}{% if not forloop.last %}, {% endif %}
-                                        {% empty %}
-                                            Sin rol asignado
-                                        {% endfor %}
-                                    {% else %}
-                                        Sin perfil asignado
-                                    {% endif %}
-                                </strong>
-                            </span>
-                        </div>
-                        <div class="municipal-context-item">
-                            <span class="municipal-context-icon" aria-hidden="true">
-                                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path fill-rule="evenodd" d="M8 1a5 5 0 0 0-5 5c0 3.8 5 9 5 9s5-5.2 5-9a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>
-                            </span>
-                            <span>
-                                <span class="municipal-context-label">Delegación activa</span>
-                                <strong>
-                                    {% if active_delegation %}
-                                        {{ active_delegation.code }} · {{ active_delegation.delegation_name }}
-                                    {% else %}
-                                        Sin delegación asignada
-                                    {% endif %}
-                                </strong>
-                                {% if can_select_active_delegation %}
-                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2 active-delegation-switch" method="post" action="{% url 'active_delegation_select' %}" data-delegation-switch>
-                                        {% csrf_token %}
-                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                        <label class="visually-hidden" for="active-delegation-select">Cambiar delegación activa</label>
-                                        <select class="form-select form-select-sm" id="active-delegation-select" name="delegation_id">
-                                            {% for delegation in authorized_active_delegations %}
-                                                <option value="{{ delegation.pk }}"{% if active_delegation.pk == delegation.pk %} selected{% endif %}>
-                                                    {{ delegation.code }} · {{ delegation.delegation_name }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                        <button class="btn btn-sm btn-outline-light active-delegation-switch-button" type="submit">Cambiar</button>
-                                    </form>
-                                {% endif %}
-                            </span>
-                        </div>
+                    <div class="auth-brand-footer">
+                        <span>Prototipo académico; no representa un sistema oficial aprobado.</span>
+                        <a href="https://laserena.cl/" target="_blank" rel="noopener noreferrer">Portal municipal oficial</a>
                     </div>
                 </section>
-            {% endif %}
-        </header>
+        {% endif %}
 
-        <main id="contenido" class="container page-content flex-grow-1 py-4 py-md-5">
+        <main id="contenido" class="{% if user.is_authenticated %}app-content{% else %}auth-main{% endif %}">
             {% comment %}
                 Las peticiones de la búsqueda en tiempo real (X-Live-Search) solo reemplazan el
                 listado: no muestran ni consumen los mensajes pendientes del usuario.
@@ -241,33 +202,108 @@
                 </div>
             {% endif %}
             {% block content %}
-                <section class="page-intro" aria-labelledby="inicioTitulo">
-                    <p class="page-intro-kicker">Municipalidad de La Serena</p>
-                    <h1 id="inicioTitulo">Sistema de Gestión de Resultados</h1>
-                    <p>
-                        Plataforma de apoyo a la gestión municipal para registrar, dar seguimiento
-                        y medir la gestión de funcionarios y delegaciones.
-                    </p>
-                    <p class="page-intro-note">
-                        En esta evaluación, el prototipo prioriza el acceso, los mantenedores y el
-                        registro de atención ciudadana. Las funciones disponibles dependen del
-                        avance del proyecto y la integración del backend.
-                    </p>
+                <section class="home" aria-labelledby="inicioTitulo">
+                    <header class="home-heading">
+                        <p class="page-intro-kicker">Municipalidad de La Serena</p>
+                        <h1 id="inicioTitulo">Sistema de Gestión de Resultados</h1>
+                        <p class="home-lead">
+                            Plataforma de apoyo a la gestión municipal para registrar, dar seguimiento
+                            y medir la gestión de funcionarios y delegaciones. Solo ves los módulos
+                            habilitados para tu perfil.
+                        </p>
+                    </header>
+
+                    <div class="home-grid">
+                        <section class="home-quick" aria-labelledby="home-quick-title">
+                            <h2 id="home-quick-title">Accesos rápidos</h2>
+                            {% if perms.activities.add_socialattention %}
+                                <a class="home-feature" href="{% url 'attention_entry' %}">
+                                    <span class="home-feature-text">
+                                        <strong>Ingreso de atención</strong>
+                                        <span>Registra una atención con una persona solicitante y catálogos vigentes.</span>
+                                    </span>
+                                    <span class="home-feature-cta">
+                                        Registrar atención
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+                                    </span>
+                                </a>
+                            {% endif %}
+                            <div class="home-tiles">
+                                {% if perms.auth.view_user %}
+                                    <a class="home-tile" href="{% url 'user_maintainer' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span>
+                                        <strong>Usuarios</strong>
+                                        Cuentas de acceso, roles y estado.
+                                    </a>
+                                {% endif %}
+                                {% if perms.accounts.view_official %}
+                                    <a class="home-tile" href="{% url 'official_maintainer' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M14 10h4M14 14h4M5.5 17c.6-1.6 2-2.5 3.5-2.5s2.9.9 3.5 2.5"/></svg></span>
+                                        <strong>Funcionarios</strong>
+                                        Datos del personal municipal.
+                                    </a>
+                                {% endif %}
+                                {% if perms.accounts.view_delegation %}
+                                    <a class="home-tile" href="{% url 'delegation_list' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 21s-7-5.6-7-11a7 7 0 0 1 14 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+                                        <strong>Delegaciones</strong>
+                                        Territorios y su código.
+                                    </a>
+                                {% endif %}
+                                {% if perms.accounts.view_role %}
+                                    <a class="home-tile" href="{% url 'role_list' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 2l8 3.5V11c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5.5z"/></svg></span>
+                                        <strong>Roles</strong>
+                                        Permisos por perfil.
+                                    </a>
+                                {% endif %}
+                                {% if perms.configuration.view_item %}
+                                    <a class="home-tile" href="{% url 'item_maintainer' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span>
+                                        <strong>Ítems y metas</strong>
+                                        Indicadores de gestión.
+                                    </a>
+                                {% endif %}
+                                {% if perms.configuration.view_attentiontype %}
+                                    <a class="home-tile" href="{% url 'attention_type_maintainer' %}">
+                                        <span class="home-tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+                                        <strong>Tipo de Atención</strong>
+                                        Catálogo y subatenciones.
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </section>
+
+                        <aside class="home-aside" aria-labelledby="home-note-title">
+                            <h2 id="home-note-title">Sobre el prototipo</h2>
+                            <p class="home-note">
+                                <strong>Prototipo académico</strong>
+                                En esta evaluación, el prototipo prioriza el acceso, los mantenedores y el
+                                registro de atención ciudadana. Las funciones disponibles dependen del
+                                avance del proyecto y la integración del backend.
+                            </p>
+                        </aside>
+                    </div>
                 </section>
             {% endblock %}
         </main>
 
-        <footer class="municipal-footer py-4">
-            <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div>
-                    <span class="d-block fw-semibold">Sistema de Gestión de Resultados · SGR</span>
-                    <span class="small">Ilustre Municipalidad de La Serena</span>
-                </div>
-                <span class="municipal-footer-note">
+        {% if user.is_authenticated %}
+            <footer class="app-footer">
+                <span>Sistema de Gestión de Resultados · Ilustre Municipalidad de La Serena</span>
+                <span>
                     Prototipo académico; no representa un sistema oficial aprobado.
+                    <a href="https://laserena.cl/" target="_blank" rel="noopener noreferrer">Portal municipal oficial</a>
                 </span>
+            </footer>
+            {# Cierra .app-main y .app-shell abiertos antes de <main>. #}
             </div>
-        </footer>
+            </div>
+        {% else %}
+            {# Cierra .auth-shell abierto antes de <main>. #}
+            </div>
+        {% endif %}
+
         {% bootstrap_javascript %}
         {% if messages or can_select_active_delegation %}
             <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
