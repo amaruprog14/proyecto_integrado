@@ -68,6 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (liveForm) {
         const searchInput = liveForm.querySelector('input[name="q"]');
         const statusFilter = liveForm.querySelector('select[name="status"]');
+        const pageSizeFilter = liveForm.querySelector('select[name="page_size"]');
         const exportLink = liveForm.querySelector("a[data-export-base]");
         const liveStatus = document.querySelector("[data-live-status]");
         let controller = null;
@@ -160,6 +161,10 @@ document.addEventListener("DOMContentLoaded", () => {
             timer = window.setTimeout(refresh, LIVE_SEARCH_DELAY_MS);
         });
         statusFilter?.addEventListener("change", () => {
+            syncExportLink();
+            refresh();
+        });
+        pageSizeFilter?.addEventListener("change", () => {
             syncExportLink();
             refresh();
         });

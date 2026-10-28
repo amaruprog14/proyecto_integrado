@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
@@ -724,6 +725,14 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     template_name = "accounts/delegation_list.html"
     context_object_name = "delegations"
     paginate_by = 10
+    page_size_options = (3,5,10, 25, 50, 100)
+
+    def get_paginate_by(self, queryset):
+        try:
+            page_size = int(self.request.GET.get("page_size", self.paginate_by))
+        except (TypeError, ValueError):
+            page_size = self.paginate_by
+        return page_size if page_size in self.page_size_options else self.paginate_by
 
     def get_queryset(self):
         queryset = scoped_delegations(self.request.user).order_by("delegation_name", "pk")
@@ -733,11 +742,14 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
         context = super().get_context_data(**kwargs)
         params = self.request.GET.copy()
         params.pop(self.page_kwarg, None)
+        selected_page_size = self.get_paginate_by(self.get_queryset())
         context.update(
             maintainer_title="Delegaciones municipales",
             maintainer_kind="delegations",
             query=(self.request.GET.get("q") or "").strip(),
             selected_status=(self.request.GET.get("status") or "").strip(),
+            page_size_options=self.page_size_options,
+            selected_page_size=selected_page_size,
             status_choices=Delegation.Status.choices,
             querystring=params.urlencode(),
             total=context["paginator"].count,
@@ -749,8 +761,13 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
 
 class DelegationExportView(ProtectedViewMixin, View):
     permission_required = "accounts.view_delegation"
+    cooldown_seconds = 30
 
     def get(self, request):
+        cache_key = f"delegation-export:{request.user.pk}"
+        if not cache.add(cache_key, True, timeout=self.cooldown_seconds):
+            messages.error(request, "Espera 30 segundos entre exportaciones a Excel.")
+            return redirect("delegation_list")
         queryset = filter_delegations(
             scoped_delegations(request.user).order_by("delegation_name", "pk"), request.GET
         )

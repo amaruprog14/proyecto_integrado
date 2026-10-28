@@ -12,7 +12,7 @@
         <meta name="theme-color" content="#920000" />
         <title>{% block title %}SGR · Gestión de Resultados · Municipalidad de La Serena{% endblock %}</title>
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-actions" />
         {% block extra_head %}{% endblock %}
     </head>
     <body class="d-flex min-vh-100 flex-column">
@@ -207,7 +207,7 @@
                                     {% endif %}
                                 </strong>
                                 {% if can_select_active_delegation %}
-                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2" method="post" action="{% url 'active_delegation_select' %}" data-delegation-switch>
+                                    <form class="d-flex flex-wrap align-items-center gap-2 mt-2 active-delegation-switch" method="post" action="{% url 'active_delegation_select' %}" data-delegation-switch>
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <label class="visually-hidden" for="active-delegation-select">Cambiar delegación activa</label>
@@ -218,7 +218,7 @@
                                                 </option>
                                             {% endfor %}
                                         </select>
-                                        <button class="btn btn-sm btn-outline-light" type="submit">Cambiar</button>
+                                        <button class="btn btn-sm btn-outline-light active-delegation-switch-button" type="submit">Cambiar</button>
                                     </form>
                                 {% endif %}
                             </span>

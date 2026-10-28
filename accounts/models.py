@@ -151,10 +151,10 @@ class Delegation(AutoCodeMixin, BaseModel):
         INACTIVE = "INACTIVE", "Inactiva"
 
     delegation_name = models.CharField(
-        max_length=150, unique=True, verbose_name="Nombre de la delegación"
+        max_length=100, unique=True, verbose_name="Nombre de la delegación"
     )
-    address = models.CharField(max_length=255, verbose_name="Dirección")
-    commune = models.CharField(max_length=100, verbose_name="Comuna")
+    address = models.CharField(max_length=100, verbose_name="Dirección")
+    commune = models.CharField(max_length=60, verbose_name="Comuna")
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Estado"
     )
