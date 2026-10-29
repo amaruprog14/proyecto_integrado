@@ -29,3 +29,5 @@ urlpatterns = [
     path('analytics/', include('analytics.urls')),
     path('configuration/', include('configuration.urls'))
 ]
+
+handler404 = 'common.views.page_not_found'
