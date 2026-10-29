@@ -85,7 +85,10 @@ ROLES = {
     ),
 }
 
-# Contexto de Funcionario Demo 1 a 5: (delegación principal, roles, delegaciones autorizadas).
+# Nombres sin dígitos: el formulario de funcionarios no los acepta en el nombre completo.
+DEMO_OFFICIAL_NAMES = ["Uno", "Dos", "Tres", "Cuatro", "Cinco"]
+
+# Contexto de Funcionario Demo Uno a Cinco: (delegación principal, roles, delegaciones autorizadas).
 # Coordinador y Supervisor no registran atenciones por sí solos; funcionario3 y funcionario4 suman
 # el rol Operador para conservar esa capacidad (ninguno es Administrador global, así que pueden
 # combinarse).
@@ -206,7 +209,7 @@ class Command(BaseCommand):
             official, _ = Official.objects.get_or_create(
                 national_id=f"{10000000 + i}-{i}",
                 defaults=dict(
-                    full_name=f"Funcionario Demo {i+1}",
+                    full_name=f"Funcionario Demo {DEMO_OFFICIAL_NAMES[i]}",
                     email=f"funcionario{i+1}@demo.cl",
                     position=positions[i],
                 ),

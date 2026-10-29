@@ -3,13 +3,11 @@
 
 {% block title %}{{ maintainer_title }} (datos de demostración) · SGR{% endblock %}
 
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="activities" %}{% endblock %}
+
 {% block content %}
     <div class="maintainer-layout">
-        {% include "includes/maintainer_sidebar.html" with active="activities" %}
-
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            {% include "includes/active_delegation_strip.html" %}
-
             <header class="maintainer-heading">
                 <div>
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>

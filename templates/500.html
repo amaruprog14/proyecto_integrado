@@ -9,23 +9,23 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Error del sistema · SGR</title>
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-redesign" />
     </head>
     <body>
-        <header class="municipal-masthead py-3">
-            <div class="container">
-                <span class="d-block fs-5 fw-bold">Sistema de Gestión de Resultados · SGR</span>
-                <span class="d-block">Ilustre Municipalidad de La Serena</span>
-            </div>
-        </header>
-        <main class="container page-content py-4">
-            <section class="page-intro" aria-labelledby="server-error-title">
-                <p class="page-intro-kicker">Error del sistema</p>
-                <h1 id="server-error-title">No pudimos completar la operación</h1>
-                <p>Ocurrió un error inesperado. Antes de repetir la operación, revisa si quedó registrada.</p>
-                <p class="page-intro-note">Si el problema continúa, informa al administrador la hora en que ocurrió.</p>
-                <a class="auth-text-link" href="/">Volver al inicio</a>
-            </section>
-        </main>
+        <div class="error-shell">
+            <header class="error-shell-header">
+                <strong>Sistema de Gestión de Resultados · SGR</strong>
+                <span>Ilustre Municipalidad de La Serena</span>
+            </header>
+            <main class="error-shell-main">
+                <section class="page-intro" aria-labelledby="server-error-title">
+                    <p class="page-intro-kicker">Error del sistema</p>
+                    <h1 id="server-error-title">No pudimos completar la operación</h1>
+                    <p>Ocurrió un error inesperado. Antes de repetir la operación, revisa si quedó registrada.</p>
+                    <p class="page-intro-note">Si el problema continúa, informa al administrador la hora en que ocurrió.</p>
+                    <a class="auth-text-link" href="/">Volver al inicio</a>
+                </section>
+            </main>
+        </div>
     </body>
 </html>

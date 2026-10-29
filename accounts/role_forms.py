@@ -25,7 +25,7 @@ from django.db.models import Exists, OuterRef, Q
 
 from accounts.forms import privileged_permission_query
 from accounts.models import Official, Role
-from common.text import normalize_spaces
+from common.text import DESCRIPTION_MAX_LENGTH, clean_description_text, normalize_spaces
 
 SGR_APP_LABELS = ("accounts", "activities", "agenda", "analytics", "configuration")
 ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "delete": "Eliminar"}
@@ -268,7 +268,9 @@ class RoleForm(forms.ModelForm):
             "role_name": forms.TextInput(
                 attrs={"class": "form-control", "maxlength": 100, "autocomplete": "off"}
             ),
-            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "description": forms.Textarea(
+                attrs={"class": "form-control", "rows": 3, "maxlength": DESCRIPTION_MAX_LENGTH}
+            ),
             "scope": forms.Select(attrs={"class": "form-select"}),
         }
         labels = {
@@ -325,7 +327,7 @@ class RoleForm(forms.ModelForm):
         return name
 
     def clean_description(self):
-        return (self.cleaned_data.get("description") or "").strip()
+        return clean_description_text(self.cleaned_data.get("description"))
 
     def clean(self):
         cleaned = super().clean()

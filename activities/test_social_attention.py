@@ -304,3 +304,33 @@ class SocialAttentionEntryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(ServiceRecipient.objects.exists())
         self.assertFalse(SocialAttention.objects.exists())
+
+    def crlf_description(self, length):
+        """Texto de `length` caracteres para el navegador: 49 letras y un salto "\r\n" por línea."""
+        lines = (length - 1) // 50
+        text = ("a" * 49 + "\r\n") * lines + "a" * (length - 50 * lines)
+        self.assertEqual(len(text.replace("\r\n", "\n")), length)
+        return text
+
+    def test_description_of_5000_characters_with_crlf_is_accepted_and_kept(self):
+        description = self.crlf_description(5000)
+        self.assertGreater(len(description), 5000)  # más de 5000 contando cada "\r\n" como 2
+
+        self.client.post(reverse("attention_entry"), self.payload(description=description))
+
+        attention = SocialAttention.objects.get()
+        self.assertEqual(attention.description, description)
+
+    def test_description_of_5001_characters_is_rejected(self):
+        response = self.client.post(
+            reverse("attention_entry"), self.payload(description=self.crlf_description(5001))
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("description", response.context["form"].errors)
+        self.assertFalse(SocialAttention.objects.exists())
+
+    def test_description_textarea_keeps_maxlength_5000(self):
+        response = self.client.get(reverse("attention_entry"))
+
+        self.assertContains(response, 'maxlength="5000"')

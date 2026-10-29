@@ -2,6 +2,7 @@ import re
 
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -9,8 +10,14 @@ from django.db.models import Q
 
 from accounts.models import Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
+from common.text import normalize_spaces
 
 GENERIC_LOGIN_ERROR = "Usuario, correo o contraseña incorrectos."
+# Mismo validador que auth.User.username: estos formularios no son ModelForm y guardan sin
+# full_clean(), así que sin él se aceptarían espacios u otros caracteres no permitidos.
+username_validator = UnicodeUsernameValidator(
+    message="Usa solo letras, números y los caracteres @ . + - _ (sin espacios)."
+)
 
 PRIVILEGED_ROLE_PERMISSIONS = frozenset(
     {
@@ -159,6 +166,39 @@ def sole_global_administrator_errors(official, status, roles):
     return errors
 
 
+# Palabras de letras separadas por un espacio, guion o apóstrofo; cada palabra puede terminar en
+# punto para las abreviaturas ("Ma. José", "J. Pablo").
+PERSON_NAME_PATTERN = re.compile(r"[^\W\d_]+\.?(?:(?: |['’-])[^\W\d_]+\.?)*")
+PHONE_PATTERN = re.compile(r"\+?[0-9 ()-]+")
+PHONE_MIN_DIGITS = 8
+PHONE_MAX_DIGITS = 15
+
+
+def clean_person_name(value):
+    """Nombre de persona: letras (con tildes), un espacio entre palabras, guiones, apóstrofos y puntos."""
+    name = normalize_spaces(value)
+    if name and not PERSON_NAME_PATTERN.fullmatch(name):
+        raise ValidationError("Usa solo letras, tildes, espacios, guiones, apóstrofos y puntos.")
+    return name
+
+
+def clean_phone(value):
+    """
+    Teléfono opcional: dígitos con + inicial, espacios, guiones o paréntesis, y entre 8 y 15
+    dígitos (8 o 9 en Chile sin código de país, 11 con +56; 15 es el máximo internacional).
+    """
+    phone = normalize_spaces(value)
+    if not phone:
+        return phone
+    digits = sum(char.isdigit() for char in phone)
+    if not PHONE_PATTERN.fullmatch(phone) or not PHONE_MIN_DIGITS <= digits <= PHONE_MAX_DIGITS:
+        raise ValidationError(
+            f"Ingresa un teléfono válido: entre {PHONE_MIN_DIGITS} y {PHONE_MAX_DIGITS} dígitos; "
+            "puede incluir +, espacios, guiones y paréntesis."
+        )
+    return phone
+
+
 def can_assign_privileged_roles(actor):
     """Asignar o quitar roles privilegiados exige accounts.change_role, igual que en Roles."""
     return actor is None or actor.is_superuser or actor.has_perm("accounts.change_role")
@@ -287,6 +327,7 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
     username = forms.CharField(
         label="Nombre de usuario",
         max_length=150,
+        validators=[username_validator],
         widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}),
         error_messages={"required": "Ingresa el nombre de usuario."},
     )
@@ -473,6 +514,12 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
     def clean_national_id(self):
         value = (self.cleaned_data.get("national_id") or "").strip()
         return normalize_chilean_rut(value) if value else value
+
+    def clean_full_name(self):
+        return clean_person_name(self.cleaned_data.get("full_name"))
+
+    def clean_phone(self):
+        return clean_phone(self.cleaned_data.get("phone"))
 
     def clean(self):
         cleaned = super().clean()
@@ -724,6 +771,7 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         label="Nombre de usuario",
         max_length=150,
         required=False,
+        validators=[username_validator],
         widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 150}),
     )
     first_name = forms.CharField(
@@ -813,7 +861,20 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
             duplicates = duplicates.exclude(pk=self.instance.pk)
         if duplicates.exists():
             raise ValidationError("Ya existe un funcionario con este correo electrónico.")
+        # Mismo criterio que OfficialUserForm: el correo identifica el ingreso, así que tampoco
+        # puede repetirse en otra cuenta de usuario (se excluye la cuenta vinculada al funcionario).
+        users = get_user_model_class().objects.filter(email__iexact=value)
+        if self.instance is not None and self.instance.user_id:
+            users = users.exclude(pk=self.instance.user_id)
+        if users.exists():
+            raise ValidationError("Este correo ya está asociado a otra cuenta de acceso.")
         return value
+
+    def clean_full_name(self):
+        return clean_person_name(self.cleaned_data.get("full_name"))
+
+    def clean_phone(self):
+        return clean_phone(self.cleaned_data.get("phone"))
 
     def clean_username(self):
         value = (self.cleaned_data.get("username") or "").strip()
@@ -937,6 +998,9 @@ class OwnOfficialProfileForm(forms.ModelForm):
         if user_duplicates.exists():
             raise ValidationError("Este correo ya está asociado a otra cuenta de acceso.")
         return value
+
+    def clean_phone(self):
+        return clean_phone(self.cleaned_data.get("phone"))
 
     def save(self, commit=True):
         official = super().save(commit=False)

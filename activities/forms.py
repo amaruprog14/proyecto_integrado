@@ -5,8 +5,11 @@ from django.core.exceptions import ValidationError
 
 from accounts.models import Delegation, ServiceRecipient
 from common.chilean_rut import normalize_chilean_rut
-from common.text import normalize_spaces
+from common.text import clean_description_text, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
+
+
+DESCRIPTION_MAX_LENGTH = 5000
 
 
 class CatalogChoiceField(forms.ModelChoiceField):
@@ -63,14 +66,15 @@ class SocialAttentionForm(forms.Form):
     )
     # Token de un solo uso que emite la vista al abrir el formulario (ver SocialAttention).
     submission_token = forms.CharField(required=False, max_length=32, widget=forms.HiddenInput)
+    # Sin max_length en el campo: Django contaría cada salto "\r\n" como 2 caracteres y
+    # rechazaría textos que el maxlength del navegador acepta. El límite lo aplica clean_description.
     description = forms.CharField(
         label="Descripción de la atención",
-        max_length=5000,
         widget=forms.Textarea(
             attrs={
                 "class": "form-control",
                 "rows": 3,
-                "maxlength": 5000,
+                "maxlength": DESCRIPTION_MAX_LENGTH,
                 "placeholder": "Describa la solicitud y los antecedentes necesarios.",
             }
         ),
@@ -121,6 +125,9 @@ class SocialAttentionForm(forms.Form):
 
     def clean_recipient_full_name(self):
         return normalize_spaces(self.cleaned_data.get("recipient_full_name"))
+
+    def clean_description(self):
+        return clean_description_text(self.cleaned_data.get("description"), DESCRIPTION_MAX_LENGTH)
 
     def clean(self):
         cleaned_data = super().clean()

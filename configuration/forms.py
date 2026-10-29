@@ -3,7 +3,7 @@ import re
 from django import forms
 from django.core.exceptions import ValidationError
 
-from common.text import normalize_spaces
+from common.text import DESCRIPTION_MAX_LENGTH, clean_description_text, normalize_spaces
 from configuration.models import AttentionType, Item, SubattentionType
 
 ITEM_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
@@ -85,7 +85,9 @@ class ItemForm(forms.ModelForm):
             "item_name": forms.TextInput(
                 attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
             ),
-            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "description": forms.Textarea(
+                attrs={"class": "form-control", "rows": 3, "maxlength": DESCRIPTION_MAX_LENGTH}
+            ),
         }
         labels = {
             "code": "Código",
@@ -149,7 +151,7 @@ class ItemForm(forms.ModelForm):
         return name
 
     def clean_description(self):
-        return (self.cleaned_data.get("description") or "").strip()
+        return clean_description_text(self.cleaned_data.get("description"))
 
 
 class AttentionTypeForm(forms.ModelForm):
@@ -160,7 +162,9 @@ class AttentionTypeForm(forms.ModelForm):
             "name": forms.TextInput(
                 attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
             ),
-            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "description": forms.Textarea(
+                attrs={"class": "form-control", "rows": 3, "maxlength": DESCRIPTION_MAX_LENGTH}
+            ),
             "is_active": forms.Select(
                 choices=((True, "Activo"), (False, "Inactivo")),
                 attrs={"class": "form-select"},
@@ -174,7 +178,7 @@ class AttentionTypeForm(forms.ModelForm):
         error_messages = {"name": {"required": "Ingresa el nombre del tipo de atención."}}
 
     def clean_name(self):
-        name = (self.cleaned_data.get("name") or "").strip()
+        name = normalize_spaces(self.cleaned_data.get("name"))
         duplicates = AttentionType.objects.filter(
             name__iexact=name, service_type=self.instance.service_type
         )
@@ -183,6 +187,9 @@ class AttentionTypeForm(forms.ModelForm):
         if duplicates.exists():
             raise ValidationError("Ya existe un tipo de atención con ese nombre.")
         return name
+
+    def clean_description(self):
+        return clean_description_text(self.cleaned_data.get("description"))
 
     def clean(self):
         cleaned_data = super().clean()
@@ -231,7 +238,7 @@ class SubattentionTypeForm(forms.ModelForm):
         ).order_by("name")
 
     def clean_name(self):
-        return (self.cleaned_data.get("name") or "").strip()
+        return normalize_spaces(self.cleaned_data.get("name"))
 
     def clean(self):
         cleaned_data = super().clean()
