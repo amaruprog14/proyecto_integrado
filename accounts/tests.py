@@ -54,7 +54,7 @@ class AccountMaintainerFrontendRouteTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertTemplateUsed(response, template_name)
                 self.assertContains(response, 'id="maintainer-table"')
-                self.assertContains(response, 'class="maintainer-actions"')
+                self.assertRegex(response.content.decode(), r'class="maintainer-actions(?: [^"]*)?"')
                 if route_name in create_routes:
                     self.assertContains(response, f'href="{reverse(create_routes[route_name])}"')
                 else:
@@ -76,7 +76,7 @@ class AccountMaintainerFrontendRouteTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertTemplateUsed(response, template_name)
                 self.assertContains(response, 'id="maintainer-table"')
-                self.assertContains(response, 'class="maintainer-actions"')
+                self.assertRegex(response.content.decode(), r'class="maintainer-actions(?: [^"]*)?"')
                 self.assertNotContains(response, 'disabled>+ Nuevo registro</button>')
 
         delegation_response = self.client.get(reverse("delegation_list"))

@@ -2,104 +2,20 @@ from datetime import timedelta
 
 from django.contrib.auth.models import Group, Permission, User
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import Area, Delegation, Official, Position, Role
-from activities.models import Activity
-from configuration.models import Item, Period
+from accounts.models import Area, Delegation, Official, Position, Role, ServiceRecipient
+from activities.models import Activity, SocialAttention
+from configuration.models import Item, Period, ActivityType, ServiceType, AttentionType, SubattentionType
 
-# Ningún perfil, salvo el superusuario, elimina registros: se archivan o desactivan.
-# Los permisos de los funcionarios vienen solo de sus roles SGR, de modo que desactivar un rol
-# retira efectivamente lo que otorgaba.
-OPERATOR_PERMISSIONS = [
-    "activities.view_activity", "activities.add_activity", "activities.change_activity",
-    "activities.view_socialattention", "activities.add_socialattention",
-    "accounts.view_official", "configuration.view_item",
-]
-CONSULTA_PERMISSIONS = [
-    "activities.view_activity", "accounts.view_official", "configuration.view_item",
-]
-
-# Versiones anteriores del seed daban permisos por estos grupos. Se quita a los usuarios de
-# demostración de ellos (los grupos no se eliminan, por si se usan para otra cosa).
-LEGACY_GROUPS = ("Funcionarios", "Consulta")
-
-# (código, nombre, dirección, comuna, estado). Direcciones ficticias.
-DELEGATIONS = [
-    ("D01", "Centro", "Calle Demo 101", "La Serena", Delegation.Status.ACTIVE),
-    ("D02", "Norte", "Calle Demo 202", "La Serena", Delegation.Status.ACTIVE),
-    ("D03", "Sur", "Calle Demo 303", "La Serena", Delegation.Status.ACTIVE),
-    ("D04", "Rural", "Camino Demo km 4", "La Serena", Delegation.Status.INACTIVE),
-]
-
-# Rol: (alcance, descripción, permisos). Los permisos del Administrador se calculan aparte.
-ROLES = {
-    "Administrador": (
-        Role.Scope.ALL,
-        "Configura delegaciones, usuarios, roles, catálogos y períodos.",
-        None,
-    ),
-    "Coordinador": (
-        Role.Scope.ALL,
-        "Supervisa la operación transversal y administra ítems y períodos.",
-        [
-            "activities.view_activity", "activities.view_socialattention",
-            "activities.view_evidence", "activities.view_evidencevalidation",
-            "accounts.view_official", "accounts.view_delegation",
-            "configuration.view_item", "configuration.add_item", "configuration.change_item",
-            "configuration.view_period", "configuration.add_period", "configuration.change_period",
-            "configuration.view_attentiontype", "configuration.view_subattentiontype",
-        ],
-    ),
-    "Supervisor": (
-        Role.Scope.DELEGATION,
-        "Consulta la gestión de sus delegaciones autorizadas.",
-        [
-            "activities.view_activity", "activities.view_socialattention",
-            "activities.view_evidence", "activities.view_evidencevalidation",
-            "accounts.view_official", "accounts.view_delegation",
-            "configuration.view_item", "configuration.view_period",
-        ],
-    ),
-    "Operador": (
-        Role.Scope.DELEGATION,
-        "Registra actividades y atenciones de su delegación.",
-        OPERATOR_PERMISSIONS,
-    ),
-    "Verificador": (
-        Role.Scope.DELEGATION,
-        "Revisa evidencias y registra su validación.",
-        [
-            "activities.view_activity", "activities.view_socialattention",
-            "activities.view_evidence", "activities.view_evidencevalidation",
-            "activities.add_evidencevalidation", "activities.change_evidencevalidation",
-            "accounts.view_official", "configuration.view_item",
-        ],
-    ),
-    "Consulta": (
-        Role.Scope.DELEGATION,
-        "Solo lectura sobre la información de su delegación.",
-        CONSULTA_PERMISSIONS,
-    ),
-}
-
-# Nombres sin dígitos: el formulario de funcionarios no los acepta en el nombre completo.
-DEMO_OFFICIAL_NAMES = ["Uno", "Dos", "Tres", "Cuatro", "Cinco"]
-
-# Contexto de Funcionario Demo Uno a Cinco: (delegación principal, roles, delegaciones autorizadas).
-# Coordinador y Supervisor no registran atenciones por sí solos; funcionario3 y funcionario4 suman
-# el rol Operador para conservar esa capacidad (ninguno es Administrador global, así que pueden
-# combinarse).
-OFFICIAL_CONTEXT = [
-    ("Centro", ["Operador"], []),
-    ("Norte", ["Operador", "Verificador"], []),
-    ("Sur", ["Coordinador", "Operador"], []),
-    ("Sur", ["Supervisor", "Operador"], ["Sur", "Norte"]),  # dos delegaciones autorizadas: prueba del selector
-    ("Centro", ["Operador"], []),  # archivado y sin usuario: funcionario5 sigue sin contexto
-]
-
+from common.demo_data import (
+    DELEGATIONS, ROLES,
+    DEMO_OFFICIAL_NAMES, DEMO_PASSWORD, AREA_NAMES, POSITION_NAMES,
+    ITEM_NAMES, CATALOG_CHAINS, DEMO_GROUPS, demo_accounts, demo_rut,
+    batch_letters,
+)
 
 def get_permissions(names):
     """Permisos a partir de "app_label.codename"; falla si alguno no existe."""
@@ -126,157 +42,159 @@ def get_administrator_permissions():
     )
 
 
-def sync_fields(instance, **fields):
-    """Guarda solo los campos que cambiaron, para no alterar updated_at en cada seed."""
-    changed = [name for name, value in fields.items() if getattr(instance, name) != value]
-    if changed:
-        for name in changed:
-            setattr(instance, name, fields[name])
-        instance.save(update_fields=[*changed, "updated_at"])
-
-
-def assign_context(official, delegation, roles, authorized_delegations=()):
-    sync_fields(official, delegation=delegation)
-    official.roles.set(roles)
-    official.authorized_delegations.set(authorized_delegations)
-
-
 class Command(BaseCommand):
-    help = (
-        "Carga datos de prueba: áreas, cargos, delegaciones, roles y funcionarios con su contexto, "
-        "para demostrar el scoping y el acceso por perfil."
-    )
+    help = "Completa los datos de demostración una vez y crea nuevos usuarios y funcionarios en cada ejecución."
 
-    @transaction.atomic
+    def batch_is_used(self, batch):
+        accounts = demo_accounts(batch)
+        checks = (
+            (User, Q(username__in=[a["username"] for a in accounts]) | Q(email__in=[a["email"] for a in accounts])),
+            (Official, Q(national_id__in=[a["national_id"] for a in accounts]) | Q(email__in=[a["email"] for a in accounts])),
+        )
+        return any(model.objects.filter(query).exists() for model, query in checks)
+
+    @staticmethod
+    def catalog_code(prefix, batch, index):
+        return f"{prefix}-DEMO-{batch_letters(batch)}-{index + 1}"
+
     def handle(self, *args, **options):
-        today = timezone.now().date()
-        legacy_groups = list(Group.objects.filter(name__in=LEGACY_GROUPS))
-
-        # ---------- 5 Áreas ----------
-        area_names = ["Área Norte", "Área Sur", "Área Centro", "Área Cordillera", "Área Costa"]
-        areas = [Area.objects.get_or_create(area_name=n)[0] for n in area_names]
-
-        # ---------- 5 Cargos ----------
-        position_names = ["Analista", "Coordinador", "Administrativo", "Supervisor", "Encargado de Terreno"]
-        positions = [Position.objects.get_or_create(position_name=n)[0] for n in position_names]
-
-        # ---------- 4 Delegaciones: 3 activas y 1 inactiva ----------
-        delegations = {}
-        for code, name, address, commune, status in DELEGATIONS:
-            delegations[name], _ = Delegation.objects.get_or_create(
-                delegation_name=name,
-                defaults=dict(code=code, address=address, commune=commune, status=status),
-            )
-
-        # ---------- 6 Roles SGR con sus permisos y alcance ----------
-        roles = {}
-        for role_name, (scope, description, permission_names) in ROLES.items():
-            role, _ = Role.objects.get_or_create(
-                role_name=role_name, defaults=dict(scope=scope, description=description)
-            )
-            sync_fields(role, scope=scope, is_active=True)
-            role.permissions.set(
-                get_administrator_permissions() if permission_names is None
-                else get_permissions(permission_names)
-            )
-            roles[role_name] = role
-
-        # ---------- Superusuario técnico, con funcionario Administrador (alcance ALL) ----------
-        admin_user = User.objects.filter(username="admin_demo").first()
-        if admin_user is None:
-            admin_user = User.objects.create_superuser("admin_demo", "admin@demo.cl", "demo1234")
-        admin_official, _ = Official.objects.get_or_create(
-            national_id="10000098-8",
-            defaults=dict(full_name="Administrador Demo", email="admin@demo.cl", user=admin_user),
-        )
-        sync_fields(admin_official, user=admin_user)
-        assign_context(admin_official, delegations["Centro"], [roles["Administrador"]])
-
-        # ---------- 5 Usuarios de Django (funcionario1-4 se vinculan a un Official; funcionario5 queda SIN contexto) ----------
-        users = []
-        for i in range(5):
-            username = f"funcionario{i+1}"
-            user, created = User.objects.get_or_create(username=username, defaults={"is_staff": True})
-            if created:
-                user.set_password("demo1234")
-                user.save()
-            user.groups.remove(*legacy_groups)
-            users.append(user)
-
-        # ---------- 5 Funcionarios: 1-2 en Norte, 3-4 en Sur, 5 en Centro (archivado) ----------
-        officials = []
-        for i in range(5):
-            official, _ = Official.objects.get_or_create(
-                national_id=f"{10000000 + i}-{i}",
-                defaults=dict(
-                    full_name=f"Funcionario Demo {DEMO_OFFICIAL_NAMES[i]}",
-                    email=f"funcionario{i+1}@demo.cl",
-                    position=positions[i],
-                ),
-            )
-            # Vincular área y usuario
-            sync_fields(
-                official,
-                area=areas[[0, 0, 1, 1, 2][i]],
-                user=users[i] if i < 4 else None,
-            )
-            delegation_name, role_names, authorized_names = OFFICIAL_CONTEXT[i]
-            assign_context(
-                official,
-                delegations[delegation_name],
-                [roles[name] for name in role_names],
-                [delegations[name] for name in authorized_names],
-            )
-            officials.append(official)
-
-        # ---------- Usuario de consulta (solo lectura) en Área Norte ----------
-        consulta_user, created = User.objects.get_or_create(username="consulta_norte", defaults={"is_staff": True})
-        if created:
-            consulta_user.set_password("demo1234")
-            consulta_user.save()
-        consulta_user.groups.remove(*legacy_groups)
-        consulta_official, _ = Official.objects.get_or_create(
-            national_id="10000099-9",
-            defaults=dict(full_name="Consulta Demo Norte", email="consulta_norte@demo.cl",
-                          position=positions[0], area=areas[0], user=consulta_user),
-        )
-        assign_context(consulta_official, delegations["Norte"], [roles["Consulta"]])
-
-        # ---------- Evidencia de borrado lógico (deleted_at) ----------
-        last_official = officials[4]
-        if last_official.deleted_at is None:
-            last_official.deleted_at = timezone.now()
-            last_official.save(update_fields=["deleted_at", "updated_at"])
-
-        # ---------- 5 Ítems ----------
-        item_names = ["Atención ciudadana", "Terreno", "Reunión de coordinación",
-                      "Levantamiento de datos", "Seguimiento de caso"]
-        items = [Item.objects.get_or_create(item_name=n)[0] for n in item_names]
-
-        # ---------- 5 Períodos (no se crea uno que se solape con otro existente) ----------
-        for i in range(5):
-            start = today.replace(day=1) - timedelta(days=30 * i)
-            end = start + timedelta(days=29)
-            if not Period.objects.filter(start_date__lte=end, end_date__gte=start).exists():
-                Period.objects.create(
-                    start_date=start, end_date=end,
-                    status=Period.Status.OPEN if i == 0 else Period.Status.CLOSED,
-                )
-
-        # ---------- 10 Actividades (2 por funcionario, para ver datos en ambas áreas) ----------
-        # Se identifican por funcionario, ítem y descripción (no por fecha) para no duplicarlas
-        # al ejecutar el seed otro día.
-        for i, official in enumerate(officials):
-            for j in range(2):
-                item = items[(i + j) % 5]
-                description = f"Actividad de prueba - {official.full_name} - {official.area.area_name}"
-                if not Activity.objects.filter(official=official, item=item, action_description=description).exists():
-                    Activity.objects.create(
-                        official=official, item=item, date=today,
-                        record_type="Registro", action_description=description,
-                    )
+        batch = 0
+        # Si dos procesos eligen el mismo lote, la restricción única revierte todo
+        # el intento perdedor y se busca otro lote; no quedan registros parciales.
+        for attempt in range(5):
+            while self.batch_is_used(batch):
+                batch += 1
+            try:
+                with transaction.atomic():
+                    self.create_batch(batch)
+            except IntegrityError as error:
+                duplicate = error.args and error.args[0] == 1062
+                if not duplicate and "UNIQUE constraint failed" not in str(error):
+                    raise
+                batch += 1
+                continue
+            break
+        else:
+            raise CommandError("No se pudo reservar un lote libre. Vuelve a ejecutar seed_demo.")
 
         self.stdout.write(self.style.SUCCESS(
-            "Seed cargado: 5 áreas, 5 cargos, 4 delegaciones (3 activas), 6 roles, 7 usuarios Django, "
-            "7 funcionarios con delegación y rol, 5 ítems, 5 períodos y 10 actividades."
+            f"Lote {batch_letters(batch)} creado: 7 usuarios y 7 funcionarios nuevos. "
+            "Los demás datos de demostración se reutilizan y solo se completan si faltan."
         ))
+        self.stdout.write(f"Contraseña inicial de las cuentas nuevas: {DEMO_PASSWORD}")
+        for account in demo_accounts(batch):
+            note = " (sin contexto: funcionario archivado)" if account["username"].startswith("funcionario5") else ""
+            self.stdout.write(f"  {account['username']} | {account['email']} | {account['delegation']}{note}")
+
+    def create_batch(self, batch):
+        today = timezone.localdate()
+        areas = {n: Area.objects.get_or_create(area_name=n)[0] for n in AREA_NAMES}
+        positions = {n: Position.objects.get_or_create(
+            position_name=n, defaults={"description": f"Funciones de {n.lower()} en la gestión municipal."}
+        )[0] for n in POSITION_NAMES}
+        delegations = {}
+        for code, n, address, _, status in DELEGATIONS:
+            delegation = Delegation.objects.filter(delegation_name=n).first()
+            if delegation is None:
+                available_code = self.available_code(Delegation, code)
+                delegation = Delegation.objects.create(code=available_code, delegation_name=n,
+                    address=address, commune="La Serena", status=status)
+            delegations[n] = delegation
+        roles = {}
+        for role_name, (scope, description, permissions) in ROLES.items():
+            role, created = Role.objects.get_or_create(role_name=role_name,
+                defaults={"scope": scope, "description": description})
+            if created:
+                role.permissions.set(get_administrator_permissions() if permissions is None else get_permissions(permissions))
+            roles[role_name] = role
+
+        officials = []
+        for i, account in enumerate(demo_accounts(batch)):
+            first, _, last = account["full_name"].partition(" ")
+            user = User.objects.create_user(
+                username=account["username"], email=account["email"], password=DEMO_PASSWORD,
+                first_name=first, last_name=last, is_staff=True, is_superuser=(i == 0),
+            )
+            area = areas[account["area"]]
+            position = positions[account["position"]]
+            delegation = delegations[account["delegation"]]
+            official = Official.objects.create(
+                full_name=account["full_name"], national_id=account["national_id"],
+                email=account["email"], phone=account["phone"], area=area, position=position,
+                delegation=delegation, user=None if i == 5 else user,
+                deleted_at=timezone.now() if i == 5 else None,
+            )
+            official.roles.set([role for key, role in roles.items() if key in account["roles"]])
+            official.authorized_delegations.set([
+                delegation for key, delegation in delegations.items() if key in account.get("authorized", [])
+            ])
+            if 1 <= i <= 5:
+                officials.append(official)
+        for group_name in DEMO_GROUPS:
+            Group.objects.get_or_create(name=group_name)
+        items = []
+        for i, n in enumerate(ITEM_NAMES):
+            item = Item.objects.filter(item_name=n).first()
+            if item is None:
+                item = Item.objects.create(code=self.available_code(Item, self.catalog_code("ITM", 0, i)),
+                    item_name=n, description=f"Registro municipal de {n.lower()}.")
+            items.append(item)
+
+        # Completar hasta cinco períodos; nunca agregar otros cinco por ejecución.
+        end = today.replace(day=1) + timedelta(days=29)
+        earliest = Period.objects.order_by("start_date").values_list("start_date", flat=True).first()
+        if earliest is not None:
+            end = min(end, earliest - timedelta(days=1))
+        for i in range(max(0, 5 - Period.objects.count())):
+            start = end - timedelta(days=29)
+            Period.objects.create(start_date=start, end_date=end,
+                                  status=Period.Status.OPEN if i == 0 else Period.Status.CLOSED)
+            end = start - timedelta(days=1)
+
+        activities = []
+        base_accounts = demo_accounts()
+        for i, official in enumerate(officials):
+            for j in range(2):
+                # Clave estable independiente del lote de usuarios actual.
+                description = f"Actividad de prueba - {base_accounts[i+1]['full_name']} - {base_accounts[i+1]['area']}"
+                activity = Activity.objects.filter(item=items[(i+j) % 5], action_description=description).order_by("pk").first()
+                if activity is None:
+                    activity = Activity.objects.create(official=official, item=items[(i+j) % 5],
+                        date=today, record_type="Registro", action_description=description)
+                if j == 0:
+                    activities.append(activity)
+        for i, (activity_name, service_name, attention_name, sub_name) in enumerate(CATALOG_CHAINS):
+            activity_type, _ = ActivityType.objects.get_or_create(area=areas[AREA_NAMES[i]], name=activity_name)
+            service, _ = ServiceType.objects.get_or_create(activity_type=activity_type, name=service_name)
+            attention = AttentionType.objects.filter(service_type=service, name=attention_name).first()
+            if attention is None:
+                attention = AttentionType.objects.create(
+                    code=self.available_code(AttentionType, self.catalog_code("TAT", 0, i)), service_type=service,
+                    name=attention_name, description=f"Atención municipal de {attention_name.lower()}.")
+            subattention = SubattentionType.objects.filter(attention_type=attention, name=sub_name).first()
+            if subattention is None:
+                subattention = SubattentionType.objects.create(
+                    code=self.available_code(SubattentionType, self.catalog_code("SAT", 0, i)), attention_type=attention,
+                    name=sub_name, description=f"Gestión municipal de {sub_name.lower()}.")
+            recipient, _ = ServiceRecipient.objects.get_or_create(national_id=demo_rut(20000000+i),
+                defaults={"full_name": f"Solicitante Demo {DEMO_OFFICIAL_NAMES[i]}"})
+            token = f"seed-A-attention-{i+1}"
+            # Compatibilidad con los tokens de la versión original.
+            if SocialAttention.objects.filter(submission_token__in=[token, f"seed-demo-attention-{i+1}"]).exists():
+                continue
+            responsible = activities[i % 4].official
+            if not SocialAttention.validate_attention_limit(recipient.pk):
+                continue
+            SocialAttention.objects.create(
+                submission_token=token, recipient=recipient, attention_type=attention, subattention_type=subattention,
+                delegation=responsible.delegation, responsible=responsible, date=today,
+                activity=activities[i % 4], description=f"Solicitud de demostración de {attention_name.lower()}.")
+
+    @staticmethod
+    def available_code(model, base):
+        code = base
+        index = 0
+        while model.objects.filter(code=code).exists():
+            code = f"{base}-{batch_letters(index)}"
+            index += 1
+        return code

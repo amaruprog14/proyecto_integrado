@@ -313,6 +313,7 @@
         {% endif %}
         <script src="{% static 'js/chilean-rut.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
+        <script src="{% static 'js/field-validation.js' %}" defer></script>
         <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
         {% if can_select_active_delegation %}
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}

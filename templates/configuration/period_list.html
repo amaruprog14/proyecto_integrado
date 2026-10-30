@@ -26,7 +26,7 @@
             <section class="maintainer-tools" aria-label="Búsqueda y filtros">
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
-                    <input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off">
+                    <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off"><button class="btn btn-primary" type="button" data-maintainer-search>Buscar</button></div>
                     <button class="btn maintainer-export-button" type="button" disabled>Exportar a Excel</button>
                     {% if statuses %}
                         <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
@@ -36,10 +36,14 @@
                         </select>
                     {% endif %}
                 </div>
+                <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
+                <select class="form-select maintainer-page-size" id="maintainer-page-size" aria-label="Registros por página">
+                    <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
             </section>
 
             <div class="table-responsive maintainer-table-wrap">
-                <table class="table maintainer-table" id="maintainer-table" data-page-size="3">
+                <table class="table maintainer-table" id="maintainer-table" data-page-size="10">
                     <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th scope="col">Acciones</th></tr></thead>
                     <tbody>
                         {% for record in records %}
@@ -51,11 +55,11 @@
                                         {% else %}{{ value }}{% endif %}
                                     </td>
                                 {% endfor %}
-                                <td class="maintainer-actions">
+                                <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">
                                     <button type="button" disabled class="action-icon action-icon--view" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</button>
                                     <button type="button" disabled class="action-icon action-icon--edit" aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</button>
-                                    <button type="button" disabled class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>
-                                </td>
+                                    {% if record.status_is_active %}<button type="button" disabled class="action-icon action-icon--deactivate" aria-label="Desactivar" data-tooltip="Desactivar" title="Desactivar">{% include "includes/action_icon.html" with action="Desactivar" %}</button>{% else %}<button type="button" disabled class="action-icon action-icon--activate" aria-label="Activar" data-tooltip="Activar" title="Activar">{% include "includes/action_icon.html" with action="Activar" %}</button>{% endif %}
+                                </div></td>
                             </tr>
                         {% endfor %}
                     </tbody>

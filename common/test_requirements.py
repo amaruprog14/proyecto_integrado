@@ -94,7 +94,7 @@ class FieldLengthAndRelationTests(TestCase):
     def cases(self):
         """(ruta, campo, longitud máxima, datos base, modelo, campo del modelo)."""
         return (
-            ("delegation_create", "delegation_name", 150,
+            ("delegation_create", "delegation_name", Delegation._meta.get_field("delegation_name").max_length,
              {"address": "Calle 1", "commune": "La Serena", "status": "ACTIVE"}, Delegation, "delegation_name"),
             ("role_create", "role_name", 100,
              {"scope": Role.Scope.DELEGATION, "is_active": "True",

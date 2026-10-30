@@ -33,6 +33,10 @@
                         {% endfor %}
                     </select>
                 </div>
+                <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
+                <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" data-swal-autosubmit aria-label="Registros por página">
+                    {% for size in page_size_options %}<option value="{{ size }}"{% if selected_page_size == size %} selected{% endif %}>{{ size }}</option>{% endfor %}
+                </select>
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
@@ -60,7 +64,7 @@
                                 <td>
                                     <span class="maintainer-status-pill{% if role.is_active %} is-active{% else %} is-inactive{% endif %}">{% if role.is_active %}Activo{% else %}Inactivo{% endif %}</span>
                                 </td>
-                                <td class="maintainer-actions">
+                                <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">
                                     <a class="auth-text-link action-icon action-icon--view" href="{% url 'role_detail' role.pk %}" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
                                     {% if can_change %}
                                         <a class="auth-text-link action-icon action-icon--edit" href="{% url 'role_update' role.pk %}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
@@ -81,7 +85,7 @@
                                             </form>
                                         {% endif %}
                                     {% endif %}
-                                </td>
+                                </div></td>
                             </tr>
                         {% empty %}
                             <tr>

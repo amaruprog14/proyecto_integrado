@@ -95,7 +95,7 @@ class SeedDemoDataTests(TestCase):
                     set(official.roles.values_list("role_name", flat=True)), {main_role, "Operador"}
                 )
 
-    def test_reseeding_removes_demo_users_from_legacy_groups(self):
+    def test_reseeding_preserves_existing_users_and_groups(self):
         group = Group.objects.create(name="Funcionarios")
         group.permissions.add(Permission.objects.get(content_type__app_label="activities", codename="add_activity"))
         user = User.objects.get(username="funcionario1")
@@ -103,7 +103,7 @@ class SeedDemoDataTests(TestCase):
 
         run_seed()
 
-        self.assertFalse(user.groups.exists())
+        self.assertTrue(user.groups.filter(pk=group.pk).exists())
         self.assertTrue(Group.objects.filter(name="Funcionarios").exists())
 
     def test_administrator_role_manages_the_system_but_cannot_alter_the_audit_log(self):
@@ -169,26 +169,63 @@ class SeedDemoDataTests(TestCase):
                 self.assertNotContains(response, "Sin delegación asignada")
                 self.assertNotContains(response, "Sin rol asignado")
 
-    def test_running_twice_does_not_duplicate_or_touch_data(self):
+    def test_running_twice_creates_new_batch_without_touching_previous(self):
         before = snapshot()
-        last_update = Official.objects.order_by("-updated_at").values_list("updated_at", flat=True).first()
-
+        original = list(Official.objects.order_by("pk").values())
         run_seed()
+        after = snapshot()
+        for model in ("User", "Area", "Position", "Delegation", "Role", "Official", "Item", "Period", "Activity"):
+            self.assertEqual(after[model], before[model] * (2 if model in ("User", "Official") else 1), model)
+        self.assertEqual(list(Official.objects.order_by("pk").values())[:7], original)
+        self.assertTrue(User.objects.filter(username="funcionario1_lote_b").exists())
 
-        self.assertEqual(snapshot(), before)
-        self.assertEqual(
-            Official.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
-            last_update,
-        )
-
-    def test_running_on_another_day_does_not_duplicate_data(self):
-        before = snapshot()
+    def test_running_on_another_day_creates_new_batch(self):
         now = timezone.now()
-        another_day = now.replace(day=2 if now.day != 2 else 3)
-
+        another_day = now + timedelta(days=2)
         with mock.patch("django.utils.timezone.now", return_value=another_day):
             run_seed()
+        self.assertEqual(User.objects.count(), 14)
+        self.assertEqual(Period.objects.count(), 5)
+        periods = list(Period.objects.order_by("start_date"))
+        for previous, current in zip(periods, periods[1:]):
+            self.assertLess(previous.end_date, current.start_date)
 
+    def test_existing_catalog_code_does_not_skip_user_batch(self):
+        foreign = Delegation.objects.create(
+            code="D01-B", delegation_name="Delegación ajena", address="Calle 1", commune="Coquimbo"
+        )
+        run_seed()
+        self.assertTrue(User.objects.filter(username="admin_demo_lote_b").exists())
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.commune, "Coquimbo")
+
+    def test_skips_batch_when_only_an_email_collides(self):
+        foreign = User.objects.create_user("ajeno", email="admin.lote.b@demo.cl", password="OtraClave-123")
+        run_seed()
+        self.assertTrue(User.objects.filter(username="admin_demo_lote_c").exists())
+        foreign.refresh_from_db()
+        self.assertTrue(foreign.check_password("OtraClave-123"))
+
+    def test_three_runs_have_distinct_valid_business_keys(self):
+        from common.chilean_rut import normalize_chilean_rut
+        from common.field_validation import clean_catalog_name
+
+        run_seed()
+        run_seed()
+        self.assertEqual(User.objects.count(), 21)
+        self.assertEqual(Period.objects.count(), 5)
+        for official in Official.objects.all():
+            normalize_chilean_rut(official.national_id)
+        for role in Role.objects.all():
+            self.assertEqual(clean_catalog_name(role.role_name), role.role_name)
+
+    def test_failure_rolls_back_entire_new_batch(self):
+        from django.core.management.base import CommandError
+
+        before = snapshot()
+        with mock.patch("common.management.commands.seed_demo.User.objects.create_user", side_effect=CommandError("Fallo simulado")):
+            with self.assertRaises(CommandError):
+                run_seed()
         self.assertEqual(snapshot(), before)
 
 

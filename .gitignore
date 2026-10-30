@@ -218,7 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Documentos de la asignatura (requisitos, plan de pruebas): no se versionan
-docs/
+docs/*
+!docs/datos_demostracion.docx
 /Requisitos_y_Plan_Pruebas_*.pdf
 
 

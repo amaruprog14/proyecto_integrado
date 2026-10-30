@@ -124,7 +124,11 @@ python manage.py seed_demo
 
 > Las migraciones ya están versionadas en el repositorio, por lo que no es necesario
 > ejecutar `makemigrations` para levantar el proyecto.
-> `seed_demo` es idempotente: puede ejecutarse varias veces sin duplicar datos.
+> `seed_demo` crea nuevos usuarios y funcionarios en cada ejecución, con sufijos como
+> `funcionario1_lote_b` cuando ya existen las cuentas originales. Reutiliza áreas, cargos,
+> delegaciones, roles y los demás datos de demostración; solo crea los que falten.
+> Los períodos se completan hasta cinco, sin solapamientos. Al finalizar muestra las cuentas
+> nuevas, su contexto y la contraseña inicial; conserva los registros y contraseñas anteriores.
 
 ### 7. Levantar el servidor
 
