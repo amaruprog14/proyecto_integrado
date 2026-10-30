@@ -16,7 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const rows = [...table.tBodies[0].rows];
-    const pageSize = Number.parseInt(table.dataset.pageSize || "3", 10);
+    const pageSizeSelect = document.querySelector("#maintainer-page-size");
+    let pageSize = Number.parseInt(pageSizeSelect?.value || table.dataset.pageSize || "10", 10);
     const rowText = (row) =>
         [...row.cells]
             .slice(0, -1)
@@ -103,5 +104,14 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
+    document.querySelector("[data-maintainer-search]")?.addEventListener("click", () => {
+        currentPage = 1;
+        render();
+    });
+    pageSizeSelect?.addEventListener("change", () => {
+        pageSize = Number.parseInt(pageSizeSelect.value, 10);
+        currentPage = 1;
+        render();
+    });
     render();
 });

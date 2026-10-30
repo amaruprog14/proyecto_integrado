@@ -6,6 +6,21 @@ class ClampedPaginationMixin:
     número inválido, se muestra la página válida más cercana en lugar de responder 404.
     """
 
+    page_size_options = (5, 10, 25, 50, 100)
+
+    def get_paginate_by(self, queryset):
+        try:
+            size = int(self.request.GET.get("page_size", self.paginate_by))
+        except (TypeError, ValueError):
+            size = self.paginate_by
+        return size if size in self.page_size_options else self.paginate_by
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(page_size_options=self.page_size_options,
+                       selected_page_size=self.get_paginate_by(None))
+        return context
+
     def paginate_queryset(self, queryset, page_size):
         paginator = self.get_paginator(
             queryset,

@@ -3,6 +3,8 @@ import re
 from django import forms
 from django.core.exceptions import ValidationError
 
+from accounts.forms import clean_person_name
+from common.field_validation import configure_text_widgets
 from accounts.models import Delegation, ServiceRecipient
 from common.chilean_rut import normalize_chilean_rut
 from common.text import clean_description_text, normalize_spaces
@@ -82,6 +84,7 @@ class SocialAttentionForm(forms.Form):
 
     def __init__(self, *args, official=None, active_delegation=None, **kwargs):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         self.official = official
         self.recipient_record = None
 
@@ -124,7 +127,7 @@ class SocialAttentionForm(forms.Form):
         return normalize_chilean_rut(self.cleaned_data["recipient_national_id"])
 
     def clean_recipient_full_name(self):
-        return normalize_spaces(self.cleaned_data.get("recipient_full_name"))
+        return clean_person_name(self.cleaned_data.get("recipient_full_name"))
 
     def clean_description(self):
         return clean_description_text(self.cleaned_data.get("description"), DESCRIPTION_MAX_LENGTH)

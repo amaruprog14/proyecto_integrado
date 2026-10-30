@@ -31,8 +31,8 @@ class FieldLevelAuditTests(TestCase):
         )
 
         log = AuditLog.objects.get(action="Actualización de delegación")
-        self.assertEqual(log.previous_value, "Dirección: Calle 1\nComuna: La Serena")
-        self.assertEqual(log.new_value, "Dirección: Calle 2\nComuna: Coquimbo")
+        self.assertEqual(log.previous_value, "Dirección: Calle 1")
+        self.assertEqual(log.new_value, "Dirección: Calle 2")
 
     def test_delegation_creation_and_state_changes_are_described(self):
         self.client.post(

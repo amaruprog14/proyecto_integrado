@@ -15,6 +15,8 @@ Mantenedor de Roles: formulario y reglas que lo mantienen coherente con el CRUD 
   serlo (ni reactivarse como tal) si algún funcionario lo tiene junto con otro rol vigente.
 """
 
+from common.field_validation import clean_catalog_name, configure_text_widgets
+
 import unicodedata
 
 from django import forms
@@ -288,6 +290,7 @@ class RoleForm(forms.ModelForm):
 
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         self.actor = actor
         catalog = assignable_permissions()
         privileged_ids = frozenset(
@@ -318,7 +321,7 @@ class RoleForm(forms.ModelForm):
         return group_permissions(self["permissions"], lambda checkbox: checkbox.data["value"].instance)
 
     def clean_role_name(self):
-        name = normalize_spaces(self.cleaned_data.get("role_name"))
+        name = clean_catalog_name(self.cleaned_data.get("role_name"))
         duplicates = Role.objects.filter(role_name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)

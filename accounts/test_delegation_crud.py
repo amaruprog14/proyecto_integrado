@@ -109,7 +109,8 @@ class DelegationCrudAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ingresa el nombre de la delegación")
         self.assertContains(response, "Ingresa la dirección")
-        self.assertContains(response, "Ingresa la comuna")
+        self.assertNotContains(response, "Ingresa la comuna")
+        self.assertEqual(response.context["form"].fields["commune"].initial, "La Serena")
         self.assertEqual(Delegation.objects.count(), 1)
 
     def test_update_persists_changes_and_keeps_code(self):
@@ -262,7 +263,7 @@ class DelegationCrudAdminTests(TestCase):
         self.assertTrue(valid.is_valid(), valid.errors)
         invalid_name = DelegationForm(data=delegation_payload(delegation_name="Zona 123!"))
         self.assertFalse(invalid_name.is_valid())
-        too_long = DelegationForm(data=delegation_payload(commune="C" * 61))
+        too_long = DelegationForm(data=delegation_payload(address="C" * 101))
         self.assertFalse(too_long.is_valid())
 
     def test_export_respects_filters_and_is_not_paginated(self):

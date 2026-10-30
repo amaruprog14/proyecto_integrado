@@ -14,14 +14,14 @@
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{% url 'official_create' %}" data-modal-form>+ Nuevo funcionario</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{% url 'official_create' %}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
 
             <section class="maintainer-tools" aria-label="Búsqueda y filtros">
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
-                    <input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off">
+                    <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off"><button class="btn btn-primary" type="button" data-maintainer-search>Buscar</button></div>
                     <a class="btn maintainer-export-button" href="{% url 'official_export' %}" data-export-url="{% url 'official_export' %}">Exportar a Excel</a>
                     {% if statuses %}
                         <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
@@ -31,6 +31,10 @@
                         </select>
                     {% endif %}
                 </div>
+                <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
+                <select class="form-select maintainer-page-size" id="maintainer-page-size" aria-label="Registros por página">
+                    <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
             </section>
 
             <div class="table-responsive maintainer-table-wrap">
@@ -46,11 +50,11 @@
                                         {% else %}{{ value }}{% endif %}
                                     </td>
                                 {% endfor %}
-                                <td class="maintainer-actions">
+                                <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">
                                     {% if can_change and not record.is_self %}
                                         <a href="{% url 'official_update' record.pk %}" data-modal-form class="action-icon action-icon--edit" aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
                                     {% endif %}
-                                </td>
+                                </div></td>
                             </tr>
                         {% endfor %}
                     </tbody>

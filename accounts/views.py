@@ -725,7 +725,7 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     template_name = "accounts/delegation_list.html"
     context_object_name = "delegations"
     paginate_by = 10
-    page_size_options = (3,5,10, 25, 50, 100)
+    page_size_options = (5, 10, 25, 50, 100)
 
     def get_paginate_by(self, queryset):
         try:

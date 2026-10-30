@@ -10,6 +10,7 @@ from django.db.models import Q
 
 from accounts.models import Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
+from common.field_validation import DEFAULT_COMMUNE, clean_catalog_name, clean_address, configure_text_widgets
 from common.text import normalize_spaces
 
 GENERIC_LOGIN_ERROR = "Usuario, correo o contraseña incorrectos."
@@ -289,10 +290,15 @@ class DelegationForm(forms.ModelForm):
             "commune": {"required": "Ingresa la comuna."},
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
+        self.fields["commune"].initial = DEFAULT_COMMUNE
+        self.fields["commune"].disabled = True
+        self.initial["commune"] = DEFAULT_COMMUNE
+
     def clean_delegation_name(self):
-        name = (self.cleaned_data.get("delegation_name") or "").strip()
-        if not re.fullmatch(r"[^\W\d_]+(?:[ -][^\W\d_]+)*", name, flags=re.UNICODE):
-            raise ValidationError("Usa solo letras, tildes, espacios y guiones.")
+        name = clean_catalog_name(self.cleaned_data.get("delegation_name"))
         duplicates = Delegation.objects.filter(delegation_name__iexact=name)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
@@ -301,16 +307,10 @@ class DelegationForm(forms.ModelForm):
         return name
 
     def clean_address(self):
-        address = (self.cleaned_data.get("address") or "").strip()
-        if not re.fullmatch(r"[^\W_#.,/'ºª°-]+(?:[ #.,/'ºª°-][^\W_#.,/'ºª°-]+)*", address, flags=re.UNICODE):
-            raise ValidationError("Usa letras, números, espacios y puntuación habitual (# . , / -).")
-        return address
+        return clean_address(self.cleaned_data.get("address"))
 
     def clean_commune(self):
-        commune = (self.cleaned_data.get("commune") or "").strip()
-        if not re.fullmatch(r"[^\W\d_]+(?:[ -][^\W\d_]+)*", commune, flags=re.UNICODE):
-            raise ValidationError("Usa solo letras, tildes, espacios y guiones.")
-        return commune
+        return DEFAULT_COMMUNE
 
 
 class OfficialUserForm(RoleAssignmentMixin, forms.Form):
@@ -451,6 +451,7 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         self.actor = actor
         self.instance = instance
         self.official_instance = (
@@ -501,6 +502,12 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
                     "status",
                     Official.Status.ACTIVE if instance.is_active else Official.Status.INACTIVE,
                 )
+
+    def clean_first_name(self):
+        return clean_person_name(self.cleaned_data.get("first_name"))
+
+    def clean_last_name(self):
+        return clean_person_name(self.cleaned_data.get("last_name"))
 
     def clean_username(self):
         username = (self.cleaned_data.get("username") or "").strip()
@@ -808,6 +815,7 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         self.actor = actor
         self.instance = instance
         self.existing_usernames = set(existing_usernames or [])
@@ -875,6 +883,12 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
 
     def clean_phone(self):
         return clean_phone(self.cleaned_data.get("phone"))
+
+    def clean_first_name(self):
+        return clean_person_name(self.cleaned_data.get("first_name"))
+
+    def clean_last_name(self):
+        return clean_person_name(self.cleaned_data.get("last_name"))
 
     def clean_username(self):
         value = (self.cleaned_data.get("username") or "").strip()

@@ -1,3 +1,4 @@
+from common.field_validation import clean_catalog_name, clean_code, configure_text_widgets
 import re
 
 from django import forms
@@ -105,6 +106,7 @@ class ItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         if self.instance.pk:
             self.fields.pop("is_active")
             self.previous_snapshot = item_snapshot(self.instance)
@@ -119,7 +121,7 @@ class ItemForm(forms.ModelForm):
             self.previous_snapshot = None
 
     def clean_code(self):
-        code = normalize_spaces(self.cleaned_data.get("code")).upper()
+        code = clean_code(self.cleaned_data.get("code"))
         if not code:
             return ""
         if len(code) > CODE_MAX_LENGTH:
@@ -138,7 +140,7 @@ class ItemForm(forms.ModelForm):
         return code
 
     def clean_item_name(self):
-        name = normalize_spaces(self.cleaned_data.get("item_name"))
+        name = clean_catalog_name(self.cleaned_data.get("item_name"))
         duplicates = Item.objects.only("pk", "item_name").all()
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
@@ -155,6 +157,10 @@ class ItemForm(forms.ModelForm):
 
 
 class AttentionTypeForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
+
     class Meta:
         model = AttentionType
         fields = ("name", "description", "is_active")
@@ -178,7 +184,7 @@ class AttentionTypeForm(forms.ModelForm):
         error_messages = {"name": {"required": "Ingresa el nombre del tipo de atención."}}
 
     def clean_name(self):
-        name = normalize_spaces(self.cleaned_data.get("name"))
+        name = clean_catalog_name(self.cleaned_data.get("name"))
         duplicates = AttentionType.objects.filter(
             name__iexact=name, service_type=self.instance.service_type
         )
@@ -233,12 +239,13 @@ class SubattentionTypeForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        configure_text_widgets(self)
         self.fields["attention_type"].queryset = AttentionType.objects.filter(
             deleted_at__isnull=True
         ).order_by("name")
 
     def clean_name(self):
-        return normalize_spaces(self.cleaned_data.get("name"))
+        return clean_catalog_name(self.cleaned_data.get("name"))
 
     def clean(self):
         cleaned_data = super().clean()

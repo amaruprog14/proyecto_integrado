@@ -21,16 +21,18 @@
             <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-loading data-loading-target="#maintainer-table-wrap" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda por código, nombre o descripción</label>
                 <div class="maintainer-controls">
-                    <input class="form-control maintainer-search" id="maintainer-search" name="q" type="search" value="{{ query }}" placeholder="Buscar tipos de atención...">
-                    <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
+                    <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" name="q" type="search" value="{{ query }}" placeholder="Buscar tipos de atención..."><button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button></div>
+                    <a class="btn maintainer-export-button" data-export-base="{% url 'attention_type_export' %}" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit>
-                        <option value="">Todos los estados</option>
+                        <option value="">Filtrar estado</option>
                         <option value="1"{% if selected_status == "1" %} selected{% endif %}>Activo</option>
                         <option value="0"{% if selected_status == "0" %} selected{% endif %}>Inactivo</option>
                     </select>
-                    <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
-                    <a class="btn maintainer-export-button" data-export-base="{% url 'attention_type_export' %}" href="{% url 'attention_type_export' %}?q={{ query|urlencode }}&amp;status={{ selected_status|urlencode }}">Exportar a Excel</a>
                 </div>
+                <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
+                <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" data-swal-autosubmit aria-label="Registros por página">
+                    {% for size in page_size_options %}<option value="{{ size }}"{% if selected_page_size == size %} selected{% endif %}>{{ size }}</option>{% endfor %}
+                </select>
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
@@ -46,7 +48,7 @@
                                 <td>{{ record.name }}</td>
                                 <td>{{ record.description|default:"—"|truncatechars:100 }}</td>
                                 <td><span class="maintainer-status-pill{% if record.is_active %} is-active{% else %} is-inactive{% endif %}">{% if record.is_active %}Activo{% else %}Inactivo{% endif %}</span></td>
-                                <td class="maintainer-actions">
+                                <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">
                                     <a href="{% url 'attention_type_detail' record.pk %}" class="action-icon action-icon--view" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
                                     {% if can_change %}
                                         <a href="{% url 'attention_type_update' record.pk %}" data-modal-form class="action-icon action-icon--edit" aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
@@ -60,7 +62,7 @@
                                             </form>
                                         {% endif %}
                                     {% endif %}
-                                </td>
+                                </div></td>
                             </tr>
                         {% empty %}
                             <tr><td colspan="5" class="text-center">{% if query or selected_status %}No hay tipos de atención que coincidan con la búsqueda o el filtro aplicado.{% else %}Aún no hay tipos de atención registrados.{% endif %}</td></tr>
