@@ -90,3 +90,19 @@ class LoginThrottleAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser
+
+from common.maintainer_admin import MaintainerAdmin
+admin.site.unregister(Position)
+admin.site.register(Position, type("PositionMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "position"}))
+admin.site.unregister(Area)
+admin.site.register(Area, type("AreaMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "area"}))
+from django.contrib.auth.models import Group
+admin.site.unregister(Group)
+admin.site.register(Group, type("GroupMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "group"}))
+
+from django.contrib.auth import get_user_model
+admin.site.unregister(get_user_model())
+admin.site.register(get_user_model(), type("UserMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "user"}))
+
+admin.site.unregister(Official)
+admin.site.register(Official, type("OfficialMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "official"}))

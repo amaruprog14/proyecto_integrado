@@ -51,3 +51,6 @@ class ActivityAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False   # solo se archiva, no se elimina físicamente
+from common.maintainer_admin import MaintainerAdmin
+admin.site.unregister(Activity)
+admin.site.register(Activity, type("ActivityMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "activity"}))

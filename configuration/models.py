@@ -149,6 +149,9 @@ class AttentionType(AutoCodeMixin, BaseModel):
     description = models.TextField(blank=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Vigente")
 
+    activity_item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="attention_types", verbose_name="Ítem para actividad automática")
+
     class Meta:
         verbose_name = "Tipo de atención"
         verbose_name_plural = "Tipos de atención"
@@ -243,3 +246,7 @@ class AuditLog(BaseModel):
             new_value=str(new_value or ""),
             origin_ip=origin_ip,
         )
+
+class PeriodMutex(models.Model):
+    """Fila única para serializar definición, cierre e ingreso en períodos."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)

@@ -15,9 +15,9 @@
                 {% if perms.accounts.view_role %}<a class="maintainer-sidebar-link{% if active == 'roles' %} is-active{% endif %}" href="{% url 'role_list' %}"{% if active == 'roles' %} aria-current="page"{% endif %}>Roles</a>{% endif %}
                 {% if perms.auth.view_user %}<a class="maintainer-sidebar-link{% if active == 'users' %} is-active{% endif %}" href="{% url 'user_maintainer' %}"{% if active == 'users' %} aria-current="page"{% endif %}>Usuarios</a>{% endif %}
                 {% if perms.accounts.view_official %}<a class="maintainer-sidebar-link{% if active == 'officials' %} is-active{% endif %}" href="{% url 'official_maintainer' %}"{% if active == 'officials' %} aria-current="page"{% endif %}>Funcionarios</a>{% endif %}
-                {% if perms.accounts.view_position %}<a class="maintainer-sidebar-link{% if active == 'positions' %} is-active{% endif %}" href="{% url 'position_maintainer' %}"{% if active == 'positions' %} aria-current="page"{% endif %}>Cargos <span class="nav-demo-tag" title="Datos de demostración">Demo</span></a>{% endif %}
-                {% if perms.accounts.view_area %}<a class="maintainer-sidebar-link{% if active == 'areas' %} is-active{% endif %}" href="{% url 'area_maintainer' %}"{% if active == 'areas' %} aria-current="page"{% endif %}>Áreas <span class="nav-demo-tag" title="Datos de demostración">Demo</span></a>{% endif %}
-                {% if perms.auth.view_group %}<a class="maintainer-sidebar-link{% if active == 'groups' %} is-active{% endif %}" href="{% url 'group_maintainer' %}"{% if active == 'groups' %} aria-current="page"{% endif %}>Grupos <span class="nav-demo-tag" title="Datos de demostración">Demo</span></a>{% endif %}
+                {% if perms.accounts.view_position %}<a class="maintainer-sidebar-link{% if active == 'positions' %} is-active{% endif %}" href="{% url 'position_maintainer' %}"{% if active == 'positions' %} aria-current="page"{% endif %}>Cargos</a>{% endif %}
+                {% if perms.accounts.view_area %}<a class="maintainer-sidebar-link{% if active == 'areas' %} is-active{% endif %}" href="{% url 'area_maintainer' %}"{% if active == 'areas' %} aria-current="page"{% endif %}>Áreas</a>{% endif %}
+                {% if perms.auth.view_group %}<a class="maintainer-sidebar-link{% if active == 'groups' %} is-active{% endif %}" href="{% url 'group_maintainer' %}"{% if active == 'groups' %} aria-current="page"{% endif %}>Grupos</a>{% endif %}
             </nav>
         </div>
     {% endif %}
@@ -26,7 +26,7 @@
             <p class="maintainer-sidebar-title" id="menu-operacion">Operación</p>
             <nav aria-labelledby="menu-operacion">
                 {% if perms.activities.add_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_entry' %} is-active{% endif %}" href="{% url 'attention_entry' %}"{% if active == 'attention_entry' %} aria-current="page"{% endif %}>Ingreso de atención</a>{% endif %}
-                {% if perms.activities.view_activity %}<a class="maintainer-sidebar-link{% if active == 'activities' %} is-active{% endif %}" href="{% url 'activity_maintainer' %}"{% if active == 'activities' %} aria-current="page"{% endif %}>Actividades <span class="nav-demo-tag" title="Datos de demostración">Demo</span></a>{% endif %}
+                {% if perms.activities.view_activity %}<a class="maintainer-sidebar-link{% if active == 'activities' %} is-active{% endif %}" href="{% url 'activity_maintainer' %}"{% if active == 'activities' %} aria-current="page"{% endif %}>Actividades</a>{% endif %}
             </nav>
         </div>
     {% endif %}
@@ -37,7 +37,7 @@
                 {% if perms.configuration.view_item %}<a class="maintainer-sidebar-link{% if active == 'items' %} is-active{% endif %}" href="{% url 'item_maintainer' %}"{% if active == 'items' %} aria-current="page"{% endif %}>Ítems y metas</a>{% endif %}
                 {% if perms.configuration.view_attentiontype %}<a class="maintainer-sidebar-link{% if active == 'attention_types' %} is-active{% endif %}" href="{% url 'attention_type_maintainer' %}"{% if active == 'attention_types' %} aria-current="page"{% endif %}>Tipo de Atención</a>{% endif %}
                 {% if perms.configuration.view_subattentiontype %}<a class="maintainer-sidebar-link{% if active == 'subattention_types' %} is-active{% endif %}" href="{% url 'subattention_type_maintainer' %}"{% if active == 'subattention_types' %} aria-current="page"{% endif %}>Sub Atención</a>{% endif %}
-                {% if perms.configuration.view_period %}<a class="maintainer-sidebar-link{% if active == 'periods' %} is-active{% endif %}" href="{% url 'period_maintainer' %}"{% if active == 'periods' %} aria-current="page"{% endif %}>Períodos <span class="nav-demo-tag" title="Datos de demostración">Demo</span></a>{% endif %}
+                {% if perms.configuration.view_period %}<a class="maintainer-sidebar-link{% if active == 'periods' %} is-active{% endif %}" href="{% url 'period_maintainer' %}"{% if active == 'periods' %} aria-current="page"{% endif %}>Períodos</a>{% endif %}
             </nav>
         </div>
     {% endif %}

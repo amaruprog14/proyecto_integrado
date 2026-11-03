@@ -39,7 +39,7 @@ class AccountMaintainerFrontendRouteTests(TestCase):
     def test_reference_maintainers_render_and_official_crud_is_enabled(self):
         # Cargos y Áreas siguen siendo mantenedores visuales; Funcionarios y Roles ya
         # disponen de creación y edición persistentes.
-        create_routes = {"official_maintainer": "official_create", "role_list": "role_create"}
+        create_routes = {"official_maintainer": "official_create", "role_list": "role_create", "position_maintainer": "position_create", "area_maintainer": "area_create"}
         routes_and_templates = (
             ("role_list", "accounts/role_list.html"),
             ("position_maintainer", "accounts/position_list.html"),

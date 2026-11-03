@@ -16,3 +16,14 @@ def audit_logout(sender, request, user, **kwargs):
     if user is None:
         return
     audit_login_event(request, "Cierre de sesión", user, f"Usuario: {user.get_username()}")
+
+
+from django.db.models.signals import post_save
+from django.contrib.auth.models import Group
+from .models import GroupProfile
+
+
+@receiver(post_save, sender=Group, dispatch_uid="sgr_group_profile")
+def create_group_profile(sender, instance, created, raw=False, **kwargs):
+    if created and not raw:
+        GroupProfile.objects.get_or_create(group=instance)

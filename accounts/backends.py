@@ -99,6 +99,11 @@ class SGRAuthBackend(ModelBackend):
             user_obj._role_perm_cache = {f"{app_label}.{codename}" for app_label, codename in perms}
         return user_obj._role_perm_cache
 
+    def _get_group_permissions(self, user_obj):
+        # ModelBackend también usa este método desde get_group_permissions().
+        return Permission.objects.filter(group__user=user_obj,
+            group__sgr_profile__is_active=True, group__sgr_profile__deleted_at__isnull=True)
+
     def get_all_permissions(self, user_obj, obj=None):
         if not user_obj.is_active or user_obj.is_anonymous or obj is not None:
             return set()

@@ -332,44 +332,6 @@ class RecoveryPasswordView(RecoveryFlowMixin, FormView):
 
 # --- Mantenedores (SCRUM-30: acceso validado en el servidor) ---
 
-class PositionMaintainerView(MaintainerListView):
-    permission_required = 'accounts.view_position'
-    template_name = 'accounts/position_list.html'
-    extra_context = {
-        'maintainer_title': 'Cargos',
-        'maintainer_kind': 'positions',
-        'columns': ['Cargo', 'Descripción', 'Vigencia'],
-        'statuses': ['Vigente', 'No vigente'],
-        'records': [
-            {'cells': ['Alcalde', 'Autoridad comunal', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Director', 'Dirección municipal', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Jefe de departamento', 'Jefatura de unidad', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Profesional', 'Gestión profesional', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Administrativo', 'Apoyo administrativo', 'No vigente'], 'status': 'No vigente', 'status_is_active': False},
-            {'cells': ['Técnico', 'Gestión técnica', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-        ],
-    }
-
-
-class AreaMaintainerView(MaintainerListView):
-    permission_required = 'accounts.view_area'
-    template_name = 'accounts/area_list.html'
-    extra_context = {
-        'maintainer_title': 'Áreas',
-        'maintainer_kind': 'areas',
-        'columns': ['Área', 'Vigencia'],
-        'statuses': ['Vigente', 'No vigente'],
-        'records': [
-            {'cells': ['Administración Municipal', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Desarrollo Comunitario', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Obras Municipales', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Tránsito y Transporte', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-            {'cells': ['Medio Ambiente', 'No vigente'], 'status': 'No vigente', 'status_is_active': False},
-            {'cells': ['Secretaría Municipal', 'Vigente'], 'status': 'Vigente', 'status_is_active': True},
-        ],
-    }
-
-
 class OfficialMaintainerView(MaintainerListView):
     permission_required = 'accounts.view_official'
     template_name = 'accounts/official_list.html'
@@ -402,25 +364,6 @@ class OfficialMaintainerView(MaintainerListView):
         return context
 
 
-class GroupMaintainerView(MaintainerListView):
-    permission_required = 'auth.view_group'
-    template_name = 'accounts/group_list.html'
-    extra_context = {
-        'maintainer_title': 'Grupos de usuarios',
-        'maintainer_kind': 'groups',
-        'columns': ['Grupo', 'Permisos asignados'],
-        'statuses': [],
-        'records': [
-            {'cells': ['Administradores', 'Permisos administrativos']},
-            {'cells': ['Funcionarios', 'Consulta y gestión de actividades']},
-            {'cells': ['Consulta', 'Solo lectura']},
-            {'cells': ['Supervisores', 'Consulta de delegaciones autorizadas']},
-            {'cells': ['Operadores', 'Registro de actividades']},
-            {'cells': ['Auditoría', 'Consulta de registros']},
-        ],
-    }
-
-
 # --- CRUD de Delegaciones y Usuarios (persistencia real, ámbito por delegación) ---
 #
 # El alcance del actor se calcula con la misma regla de Official.get_authorized_delegations()
@@ -438,8 +381,12 @@ def _authorized_delegation_ids(user):
     official = getattr(user, "official", None)
     if official is None:
         return set()
-    if official.roles.filter(is_active=True, scope=Role.Scope.ALL).exists():
+    from common.scopes import permission_scope, current_permission
+    scope = permission_scope(user, current_permission.get() or "accounts.view_official")
+    if scope == Role.Scope.ALL:
         return None
+    if scope in (None, Role.Scope.OWN):
+        return set()
     ids = set(official.get_authorized_delegations().values_list("pk", flat=True))
     ids |= set(official.authorized_delegations.values_list("pk", flat=True))
     if official.delegation_id:
@@ -457,6 +404,9 @@ def scoped_delegations(user):
 
 def scoped_users(user):
     """Cuentas cuyo funcionario pertenece al ámbito de delegaciones del actor."""
+    from common.scopes import permission_scope, current_permission
+    if permission_scope(user, current_permission.get() or "auth.view_user") == Role.Scope.OWN:
+        return get_user_model().objects.filter(pk=user.pk)
     ids = _authorized_delegation_ids(user)
     users = get_user_model().objects.all()
     if ids is None:
@@ -467,13 +417,9 @@ def scoped_users(user):
 
 
 def scoped_officials(user):
-    queryset = Official.objects.filter(deleted_at__isnull=True)
-    ids = _authorized_delegation_ids(user)
-    if ids is not None:
-        queryset = queryset.filter(
-            Q(delegation_id__in=ids) | Q(authorized_delegations__in=ids)
-        ).distinct()
-    return queryset
+    from common.scopes import scope_officials, current_permission
+    return scope_officials(Official.objects.filter(deleted_at__isnull=True), user,
+        current_permission.get() or "accounts.view_official")
 
 
 def is_same_identity(actor, target_user=None, target_official=None):
@@ -1320,6 +1266,11 @@ class UserDeactivateView(ProtectedViewMixin, View):
             messages.error(
                 request, sole_global_administrator_message(target.official, protected_role, "desactivar a")
             )
+            return redirect("user_maintainer")
+        from accounts.forms import sole_global_administrator_errors
+        errors = sole_global_administrator_errors(getattr(target, "official", None), Official.Status.INACTIVE, None)
+        if errors:
+            messages.error(request, next(iter(errors.values())))
             return redirect("user_maintainer")
         previous_status = Official.Status(display_status(target)).label
         target.is_active = False

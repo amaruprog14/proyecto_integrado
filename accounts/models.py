@@ -133,8 +133,20 @@ class Official(BaseModel):
         """
         if self.pk is None:
             return Delegation.objects.none()
-        if self.roles.filter(is_active=True, scope=Role.Scope.ALL).exists():
-            return Delegation.objects.filter(status=Delegation.Status.ACTIVE)
+        from common.scopes import current_permission, permission_scope
+        permission = current_permission.get()
+        if permission and self.user_id:
+            scope = permission_scope(self.user, permission)
+            if scope is None:
+                return Delegation.objects.none()
+            all_delegations = scope == Role.Scope.ALL
+        else:
+            all_delegations = self.roles.filter(is_active=True, deleted_at__isnull=True, scope=Role.Scope.ALL).exists()
+            if self.user_id:
+                all_delegations |= self.user.groups.filter(sgr_profile__is_active=True,
+                    sgr_profile__deleted_at__isnull=True, sgr_profile__scope=Role.Scope.ALL).exists()
+        if all_delegations:
+            return Delegation.objects.filter(status=Delegation.Status.ACTIVE, deleted_at__isnull=True)
         ids = set(self.authorized_delegations.values_list("pk", flat=True))
         if self.delegation_id:
             ids.add(self.delegation_id)
@@ -423,3 +435,11 @@ class PasswordResetCode(BaseModel):
         """Invalida el código tras cambiar la contraseña (no puede reutilizarse)."""
         self.used_at = timezone.now()
         self.save(update_fields=["used_at", "updated_at"])
+
+
+class GroupProfile(BaseModel):
+    """Vigencia y alcance de los grupos nativos de Django."""
+    group = models.OneToOneField("auth.Group", on_delete=models.CASCADE, related_name="sgr_profile")
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    is_active = models.BooleanField(default=True, verbose_name="Vigente")
+    scope = models.CharField(max_length=20, choices=Role.Scope.choices, default=Role.Scope.DELEGATION)

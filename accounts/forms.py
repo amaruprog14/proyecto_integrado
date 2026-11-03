@@ -156,6 +156,16 @@ def sole_global_administrator_errors(official, status, roles):
     # Importación local: accounts.role_forms importa este módulo.
     from accounts.role_forms import sole_global_administrator_message, sole_global_administrator_role
 
+    if official is not None and official.user_id and status and status != Official.Status.ACTIVE:
+        from common.maintainer_forms import protect_last_group_administrator
+        for group in official.user.groups.all():
+            profile = getattr(group, "sgr_profile", None)
+            if profile:
+                try:
+                    protect_last_group_administrator(group, profile.scope, group.permissions.all(),
+                        group.user_set.exclude(pk=official.user_id), profile.is_active)
+                except ValidationError as error:
+                    return {"status": error.messages[0]}
     role = sole_global_administrator_role(official)
     if role is None:
         return {}
@@ -467,8 +477,13 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
             )
             self.initial.setdefault("delegation", active_delegation.pk)
         self.setup_roles(actor, self.official_instance)
-        self.fields["area"].queryset = Area.objects.order_by("area_name")
-        self.fields["position"].queryset = Position.objects.order_by("position_name")
+        current_official = getattr(self, "official_instance", instance)
+        self.fields["area"].queryset = Area.objects.filter(
+            Q(is_active=True, deleted_at__isnull=True) | Q(pk=getattr(current_official, "area_id", None))
+        ).order_by("area_name")
+        self.fields["position"].queryset = Position.objects.filter(
+            Q(is_active=True, deleted_at__isnull=True) | Q(pk=getattr(current_official, "position_id", None))
+        ).order_by("position_name")
 
         # Un perfil existente no se elimina desde el formulario.
         if self.official_instance is not None:
@@ -820,8 +835,13 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         self.instance = instance
         self.existing_usernames = set(existing_usernames or [])
         self.fields["status"].initial = Official.Status.ACTIVE
-        self.fields["area"].queryset = Area.objects.order_by("area_name")
-        self.fields["position"].queryset = Position.objects.order_by("position_name")
+        current_official = getattr(self, "official_instance", instance)
+        self.fields["area"].queryset = Area.objects.filter(
+            Q(is_active=True, deleted_at__isnull=True) | Q(pk=getattr(current_official, "area_id", None))
+        ).order_by("area_name")
+        self.fields["position"].queryset = Position.objects.filter(
+            Q(is_active=True, deleted_at__isnull=True) | Q(pk=getattr(current_official, "position_id", None))
+        ).order_by("position_name")
         self.setup_roles(actor, instance)
         if delegation_queryset is not None:
             self.fields["delegation"].queryset = delegation_queryset

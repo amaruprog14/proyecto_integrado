@@ -15,7 +15,9 @@ from configuration.models import AttentionType, SubattentionType
 from configuration.services import AuditoriaService
 
 from .forms import SocialAttentionForm
-from .models import SocialAttention
+from .models import SocialAttention, Activity
+from configuration.period_services import lock_open_period, lock_period_registry
+from configuration.models import Item
 
 LAST_ATTENTION_SESSION_KEY = "last_registered_attention"
 
@@ -28,14 +30,17 @@ def scoped_attentions(user):
     queryset = SocialAttention.objects.filter(deleted_at__isnull=True).select_related(
         "recipient", "attention_type", "subattention_type", "delegation", "responsible"
     )
-    if user.is_superuser:
+    from common.scopes import permission_scope, current_permission, delegation_ids
+    from accounts.models import Role
+    scope = permission_scope(user, current_permission.get() or "activities.view_socialattention")
+    if scope == Role.Scope.ALL:
         return queryset
     official = getattr(user, "official", None)
-    if official is None or not official.is_enabled:
-        return queryset.none()
-    return queryset.filter(
-        Q(delegation__in=official.get_authorized_delegations()) | Q(responsible=official)
-    ).distinct()
+    if scope == Role.Scope.OWN:
+        return queryset.filter(responsible=official)
+    if scope == Role.Scope.DELEGATION:
+        return queryset.filter(Q(delegation_id__in=delegation_ids(user)) | Q(responsible=official)).distinct()
+    return queryset.none()
 
 
 def registered_attention(token, official):
@@ -43,49 +48,6 @@ def registered_attention(token, official):
     if not token or official is None:
         return None
     return SocialAttention.objects.filter(submission_token=token, responsible=official).first()
-
-
-class ActivityMaintainerView(ProtectedViewMixin, TemplateView):
-    permission_required = 'activities.view_activity'
-    template_name = 'activities/activity_list.html'
-    extra_context = {
-        'maintainer_title': 'Actividades',
-        'maintainer_kind': 'activities',
-        'columns': ['Código', 'Funcionario', 'Ítem', 'Fecha', 'Tipo de registro', 'Estado'],
-        'statuses': ['Vigente', 'Archivada'],
-        'records': [
-            {
-                'cells': ['ACT001', 'Camila Rojas', 'Atenciones realizadas', '16-10-2026', 'Registro mensual', 'Vigente'],
-                'status': 'Vigente',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ACT002', 'Diego Muñoz', 'Fiscalizaciones', '15-10-2026', 'Terreno', 'Vigente'],
-                'status': 'Vigente',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ACT003', 'Sofía González', 'Informes emitidos', '14-10-2026', 'Registro mensual', 'Archivada'],
-                'status': 'Archivada',
-                'status_is_active': False,
-            },
-            {
-                'cells': ['ACT004', 'Matías Fuentes', 'Atenciones realizadas', '13-10-2026', 'Terreno', 'Vigente'],
-                'status': 'Vigente',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ACT005', 'Valentina Pérez', 'Inspecciones', '12-10-2026', 'Registro mensual', 'Vigente'],
-                'status': 'Vigente',
-                'status_is_active': True,
-            },
-            {
-                'cells': ['ACT006', 'Tomás Silva', 'Informes emitidos', '11-10-2026', 'Terreno', 'Vigente'],
-                'status': 'Vigente',
-                'status_is_active': True,
-            },
-        ],
-    }
 
 
 class AttentionEntryView(ProtectedViewMixin, FormView):
@@ -130,6 +92,8 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
             return self.already_registered(duplicate)
         try:
             with transaction.atomic():
+                lock_period_registry()
+                lock_open_period(timezone.localdate())
                 recipient = form.get_or_create_recipient()
                 recipient = ServiceRecipient.objects.select_for_update().get(pk=recipient.pk)
                 if (
@@ -188,7 +152,19 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                 )
                 # La unicidad del token la resuelve la base (IntegrityError), también entre envíos simultáneos.
                 attention.full_clean(exclude=["submission_token"])
+                lock_open_period(attention.date)
+                try:
+                    item = Item.objects.select_for_update().get(pk=attention_type.activity_item_id,
+                        is_active=True, deleted_at__isnull=True)
+                except Item.DoesNotExist as error:
+                    raise ValidationError("Configura un ítem vigente en el Tipo de Atención antes de registrar.") from error
+                activity = Activity.objects.create(official=form.official, item=item, date=attention.date,
+                    record_type=Activity.RecordType.ATTENTION, action_description=attention.description)
+                attention.activity = activity
                 attention.save()
+                AuditoriaService.register_change(official=form.official, action="Creación de actividad automática",
+                    instance=activity, new_value=f"Atención: {attention.identifier}; Ítem: {item}",
+                    origin_ip=self.request.META.get("REMOTE_ADDR") or None)
                 AuditoriaService.register_change(
                     official=form.official,
                     action="Creación de atención",

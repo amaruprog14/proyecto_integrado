@@ -4,7 +4,7 @@ from django.contrib.auth.models import Permission, User
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import Area, Official, Position
+from accounts.models import Area, Official, Position, Delegation
 from configuration.models import Item
 from .models import Activity
 
@@ -36,6 +36,8 @@ class ActivityAdminScopingTests(TestCase):
 	def setUp(self):
 		self.north_area = Area.objects.create(area_name="Área Norte")
 		self.south_area = Area.objects.create(area_name="Área Sur")
+		self.north_delegation = Delegation.objects.create(delegation_name="Norte", address="Calle", commune="La Serena")
+		self.south_delegation = Delegation.objects.create(delegation_name="Sur", address="Calle", commune="La Serena")
 		position = Position.objects.create(position_name="Analista")
 		item = Item.objects.create(item_name="Atención ciudadana")
 
@@ -52,6 +54,7 @@ class ActivityAdminScopingTests(TestCase):
 		north_official = Official.objects.create(
 			user=users["north_user"],
 			area=self.north_area,
+			delegation=self.north_delegation,
 			position=position,
 			full_name="Funcionario Norte",
 			national_id="11111111-1",
@@ -60,6 +63,7 @@ class ActivityAdminScopingTests(TestCase):
 		south_official = Official.objects.create(
 			user=users["south_user"],
 			area=self.south_area,
+			delegation=self.south_delegation,
 			position=position,
 			full_name="Funcionario Sur",
 			national_id="22222222-2",
@@ -68,6 +72,7 @@ class ActivityAdminScopingTests(TestCase):
 		Official.objects.create(
 			user=users["consulta_norte"],
 			area=self.north_area,
+			delegation=self.north_delegation,
 			position=position,
 			full_name="Usuario Consulta Norte",
 			national_id="33333333-3",
@@ -102,7 +107,7 @@ class ActivityAdminScopingTests(TestCase):
 		user.user_permissions.add(*permissions)
 		return user
 
-	def test_each_user_only_sees_activities_from_own_area(self):
+	def test_admin_redirects_to_maintainer_scoped_by_delegation(self):
 		expected_activities = {
 			"north_user": [self.north_activity.pk],
 			"south_user": [self.south_activity.pk],
@@ -112,10 +117,10 @@ class ActivityAdminScopingTests(TestCase):
 		for username, expected_ids in expected_activities.items():
 			with self.subTest(username=username):
 				self.client.force_login(User.objects.get(username=username))
-				response = self.client.get(reverse("admin:activities_activity_changelist"))
+				response = self.client.get(reverse("admin:activities_activity_changelist"), follow=True)
 
 				self.assertEqual(response.status_code, 200)
-				actual_ids = [activity.pk for activity in response.context["cl"].result_list]
+				actual_ids = [activity.pk for activity in response.context["page_obj"].object_list]
 				self.assertEqual(actual_ids, expected_ids)
 
 	def test_north_user_cannot_open_south_activity_directly(self):

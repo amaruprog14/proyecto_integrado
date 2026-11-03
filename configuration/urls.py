@@ -33,7 +33,6 @@ from .views import (
     AttentionTypeExportView,
     AttentionTypeMaintainerView,
     AttentionTypeUpdateView,
-    PeriodMaintainerView,
     SubattentionTypeActivateView,
     SubattentionTypeCreateView,
     SubattentionTypeDeactivateView,
@@ -52,7 +51,6 @@ urlpatterns += [
     path('items/<int:pk>/editar/', ItemUpdateView.as_view(), name='item_update'),
     path('items/<int:pk>/desactivar/', ItemDeactivateView.as_view(), name='item_deactivate'),
     path('items/<int:pk>/activar/', ItemActivateView.as_view(), name='item_activate'),
-    path('periodos/', PeriodMaintainerView.as_view(), name='period_maintainer'),
     path(
         'tipos-atencion/',
         AttentionTypeMaintainerView.as_view(),
@@ -124,3 +122,6 @@ urlpatterns += [
         name='subattention_type_deactivate',
     ),
 ]
+
+from common.maintainers import maintainer_urls
+urlpatterns += maintainer_urls('period', 'periodos/')

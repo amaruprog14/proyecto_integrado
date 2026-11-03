@@ -81,6 +81,12 @@ class ProtectedViewMixin(PermissionRequiredMixin):
         return super().handle_no_permission()
 
     def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        add_never_cache_headers(response)
-        return response
+        from common.scopes import current_permission
+        permissions = self.get_permission_required()
+        token = current_permission.set(next(iter(permissions), None))
+        try:
+            response = super().dispatch(request, *args, **kwargs)
+            add_never_cache_headers(response)
+            return response
+        finally:
+            current_permission.reset(token)
