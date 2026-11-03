@@ -24,3 +24,6 @@ class PeriodAdmin(admin.ModelAdmin):
     def close_periods(self, request, queryset):
         for period in queryset.iterator():
             period.close_period()
+from common.maintainer_admin import MaintainerAdmin
+admin.site.unregister(Period)
+admin.site.register(Period, type("PeriodMaintainerAdmin", (MaintainerAdmin,), {"maintainer_key": "period"}))

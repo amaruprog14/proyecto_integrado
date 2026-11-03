@@ -30,6 +30,7 @@ def attention_type_snapshot(attention_type):
         "Nombre": attention_type.name,
         "Descripción": attention_type.description or "—",
         "Estado": "Activo" if attention_type.is_active else "Inactivo",
+        "Ítem automático": str(attention_type.activity_item or "—"),
     }
 
 
@@ -160,10 +161,16 @@ class AttentionTypeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         configure_text_widgets(self)
+        self.fields["activity_item"].queryset = Item.objects.filter(is_active=True, deleted_at__isnull=True)
+        if self.instance.pk:
+            from django.db.models import Q
+            self.fields["activity_item"].queryset = Item.objects.filter(
+                Q(is_active=True, deleted_at__isnull=True) | Q(pk=self.instance.activity_item_id))
+
 
     class Meta:
         model = AttentionType
-        fields = ("name", "description", "is_active")
+        fields = ("name", "description", "is_active", "activity_item")
         widgets = {
             "name": forms.TextInput(
                 attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}

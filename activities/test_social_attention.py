@@ -100,6 +100,12 @@ class SocialAttentionEntryTests(TestCase):
         self.attention_type = AttentionType.objects.create(
             name="Orientación ciudadana"
         )
+        from django.utils import timezone
+        from configuration.models import Item, Period
+        item = Item.objects.create(item_name="Atenciones automáticas")
+        self.attention_type.activity_item = item
+        self.attention_type.save(update_fields=["activity_item"])
+        Period.objects.create(start_date=timezone.localdate(), end_date=timezone.localdate())
         self.subattention_type = SubattentionType.objects.create(
             name="Orientación general",
             attention_type=self.attention_type,

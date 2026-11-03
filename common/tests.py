@@ -60,14 +60,13 @@ class ExportLabelTests(TestCase):
                 self.assertNotContains(response, "CSV")
                 self.assertNotContains(response, "Exportar Excel")
 
-    def test_mockups_do_not_offer_an_operational_export(self):
+    def test_former_mockups_offer_operational_export(self):
         for route_name in MOCKUP_LISTS:
             with self.subTest(route=route_name):
                 response = self.client.get(reverse(route_name))
 
-                self.assertContains(
-                    response, '<button class="btn maintainer-export-button" type="button" disabled>'
-                )
+                self.assertContains(response, f'data-export-base="{reverse(route_name.replace("_maintainer", "_export"))}"')
+                self.assertNotContains(response, 'type="button" disabled>Exportar')
 
 
 class PaginationImportTests(SimpleTestCase):

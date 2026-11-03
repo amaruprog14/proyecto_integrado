@@ -109,14 +109,13 @@ class MaintainerLayoutTests(TestCase):
                 self.assertContains(self.client.get(reverse(route_name)), empty)
                 self.assertContains(self.client.get(reverse(route_name), {"q": "inexistente"}), no_matches)
 
-    def test_mockups_are_clearly_identified_as_demo_data(self):
+    def test_former_mockups_are_persistent(self):
         for route_name in MOCKUP_PAGES:
             with self.subTest(route=route_name):
                 response = self.client.get(reverse(route_name))
 
-                self.assertContains(response, "<strong>Datos de demostración.</strong>", html=True)
-                self.assertContains(response, '<span class="maintainer-demo-badge">Demostración</span>', html=True)
-                self.assertContains(response, "(datos de demostración) · SGR")
+                self.assertNotContains(response, "maintainer-demo-banner")
+                self.assertContains(response, "Exportar a Excel")
 
     def test_real_maintainers_are_not_labelled_as_demo_data(self):
         for route_name in LIST_PAGES:

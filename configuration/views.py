@@ -16,49 +16,6 @@ from .forms import AttentionTypeForm, SubattentionTypeForm, catalog_snapshot
 from .models import AttentionType, Period, SubattentionType
 
 
-class PeriodMaintainerView(ProtectedViewMixin, TemplateView):
-    permission_required = "configuration.view_period"
-    template_name = "configuration/period_list.html"
-    extra_context = {
-        "maintainer_title": "Períodos",
-        "maintainer_kind": "periods",
-        "columns": ["Fecha de inicio", "Fecha de término", "Estado"],
-        "statuses": ["Abierto", "Cerrado"],
-        "records": [
-            {
-                "cells": ["01-01-2026", "31-03-2026", "Cerrado"],
-                "status": "Cerrado",
-                "status_is_active": False,
-            },
-            {
-                "cells": ["01-04-2026", "30-06-2026", "Cerrado"],
-                "status": "Cerrado",
-                "status_is_active": False,
-            },
-            {
-                "cells": ["01-07-2026", "30-09-2026", "Cerrado"],
-                "status": "Cerrado",
-                "status_is_active": False,
-            },
-            {
-                "cells": ["01-10-2026", "31-12-2026", "Abierto"],
-                "status": "Abierto",
-                "status_is_active": True,
-            },
-            {
-                "cells": ["01-01-2025", "31-03-2025", "Cerrado"],
-                "status": "Cerrado",
-                "status_is_active": False,
-            },
-            {
-                "cells": ["01-04-2025", "30-06-2025", "Cerrado"],
-                "status": "Cerrado",
-                "status_is_active": False,
-            },
-        ],
-    }
-
-
 class CatalogListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     paginate_by = 10
     context_object_name = "records"

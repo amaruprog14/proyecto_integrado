@@ -4,10 +4,18 @@ from django.utils import timezone
 
 from accounts.models import Delegation, Official, ServiceRecipient
 from common.mixins import BaseModel
+from common.codes import AutoCodeMixin
 from configuration.models import AttentionType, Item, SubattentionType
 
 
-class Activity(BaseModel):
+class Activity(AutoCodeMixin, BaseModel):
+    code_prefix = "ACT"
+
+    class RecordType(models.TextChoices):
+        MONTHLY = "Registro mensual", "Registro mensual"
+        FIELD = "Terreno", "Terreno"
+        ATTENTION = "Atención social", "Atención social"
+
     """Tabla operativa: registro de una actividad realizada por un Funcionario."""
 
     official = models.ForeignKey(
@@ -18,7 +26,7 @@ class Activity(BaseModel):
     )
 
     date = models.DateField(verbose_name="Fecha")
-    record_type = models.CharField(max_length=50, verbose_name="Tipo de registro")
+    record_type = models.CharField(max_length=50, choices=RecordType.choices, verbose_name="Tipo de registro")
     action_description = models.TextField(blank=True, verbose_name="Descripción de la acción")
 
     class Meta:
@@ -37,7 +45,7 @@ class SocialAttention(BaseModel):
 
     MAX_ATTENTIONS_PER_RECIPIENT = 3
 
-    activity = models.ForeignKey(
+    activity = models.OneToOneField(
         Activity,
         on_delete=models.PROTECT,
         related_name="social_attentions",

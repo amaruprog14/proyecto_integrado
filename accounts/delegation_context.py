@@ -15,25 +15,7 @@ def authorized_active_delegations(user):
     official = getattr(user, "official", None)
     if official is None or not official.is_enabled:
         return Delegation.objects.none()
-    if official.roles.filter(
-        is_active=True,
-        deleted_at__isnull=True,
-        scope=Role.Scope.ALL,
-    ).exists():
-        return Delegation.objects.filter(
-            status=Delegation.Status.ACTIVE,
-            deleted_at__isnull=True,
-        ).order_by("delegation_name", "pk")
-    delegation_ids = set(
-        official.authorized_delegations.values_list("pk", flat=True)
-    )
-    if official.delegation_id:
-        delegation_ids.add(official.delegation_id)
-    return Delegation.objects.filter(
-        pk__in=delegation_ids,
-        status=Delegation.Status.ACTIVE,
-        deleted_at__isnull=True
-    ).order_by("delegation_name", "pk")
+    return official.get_authorized_delegations().filter(deleted_at__isnull=True).order_by("delegation_name", "pk")
 
 
 def get_active_delegation(request, authorized_delegations=None):

@@ -133,3 +133,10 @@ Las pruebas de rendimiento y estrés (B16, B18) y las de despliegue (B17) requie
 prueba acordado y se registran aparte con sus métricas reales. Los casos de agenda, evidencias,
 cálculos y tableros (B7 a B12) corresponden a funciones que aún no forman parte del incremento y
 quedan como no ejecutados con esa justificación.
+
+## Mantenedores persistentes
+
+`python manage.py test common.test_persistent_maintainers` verifica CRUD, Excel, auditoría
+atómica, grupos vigentes y alcance por permiso, períodos cerrados, duplicados y generación
+atención–actividad. La suite completa también cubre los contratos comunes de interfaz y los
+flujos previos de atención con períodos e ítems configurados.

@@ -38,6 +38,12 @@ class AttentionSubmissionTests(TestCase):
             )
         )
         cls.attention_type = AttentionType.objects.create(name="Social")
+        from django.utils import timezone
+        from configuration.models import Item, Period
+        item = Item.objects.create(item_name="Atenciones automáticas")
+        cls.attention_type.activity_item = item
+        cls.attention_type.save(update_fields=["activity_item"])
+        Period.objects.create(start_date=timezone.localdate(), end_date=timezone.localdate())
         cls.subattention_type = SubattentionType.objects.create(name="Orientación", attention_type=cls.attention_type)
 
     def setUp(self):

@@ -20,12 +20,11 @@ End (TI3041) – Evaluación Sumativa II.
 | Tipo de Atención | Operativo con persistencia real |
 | Sub Atención | Operativo con persistencia real |
 | Ingreso de atención y consulta de la atención registrada | Operativo con persistencia real |
-| Cargos, Áreas, Grupos, Períodos y Actividades | **Maquetas con datos de demostración**: los registros son ficticios, no se guardan y las acciones no están disponibles. Cada pantalla lo indica con el aviso «Datos de demostración» |
+| Cargos, Áreas, Grupos, Períodos y Actividades | Operativos con persistencia, validación, Excel y auditoría |
 | Agenda, evidencias, cálculos y tableros | Pendientes para la siguiente etapa |
 | Pruebas de estrés | Pendientes de evidencia: no se han inventado métricas; requieren el entorno de prueba acordado, la concurrencia, la duración y los umbrales de aceptación |
 
-Los seis mantenedores (Delegaciones, Roles, Usuarios, Ítems y metas, Tipo de Atención y Sub
-Atención) y el ingreso de atención guardan y consultan registros en la base de datos, validan en
+Los mantenedores operativos y el ingreso de atención guardan y consultan registros en la base de datos, validan en
 el servidor y registran cada cambio en el log de auditoría.
 
 ## Requisitos previos
@@ -412,3 +411,31 @@ asignatura no se versionan.
 - **`KeyError: 'SECRET_KEY'` o `ImproperlyConfigured`**: falta el archivo `.env` o está incompleto (paso 4).
 - **«Demasiados intentos fallidos» al ingresar**: esperar `LOGIN_LOCKOUT_MINUTES` o pedir a un superusuario que borre el bloqueo en el Admin.
 - **`403 Forbidden` al entrar al Admin con `funcionario5`**: es el comportamiento esperado; ese usuario no tiene área asignada.
+
+## Mantenedores y control de períodos
+
+Cargos y Áreas se desactivan sin borrar sus relaciones. Los formularios de funcionarios ofrecen
+registros vigentes y conservan el valor actual al editar. Grupos administra miembros y permisos
+con vigencia y alcance propio. Roles y Grupos activos aportan permisos; cada operación utiliza
+el mayor alcance entre sus fuentes autorizantes. Los permisos directos conservan el ámbito de
+las delegaciones autorizadas. El Admin remite a estos mantenedores para aplicar las mismas reglas.
+
+Después de aplicar las migraciones con `python manage.py migrate`, configure un ítem vigente en
+cada Tipo de Atención y cree períodos abiertos que cubran las fechas de trabajo. Las migraciones
+no asignan ítems a los tipos existentes ni generan actividades para atenciones históricas.
+`python manage.py check_maintainer_readiness` comprueba la configuración para la fecha actual.
+
+Cada nueva atención genera una actividad de tipo Atención social, dentro de la misma transacción.
+Las actividades automáticas son de consulta; las manuales permiten Registro mensual o Terreno.
+Los períodos no se solapan, pueden coexistir abiertos y no admiten reapertura. Cerrarlos bloquea
+altas y cambios de actividades de sus fechas, incluidos archivo y restauración. El cierre y los
+registros concurrentes se serializan para impedir guardar después del cierre.
+
+La migración de actividades genera códigos ACT-NNNN y convierte el tipo histórico Registro en
+Registro mensual. Si detecta otros tipos o varias atenciones vinculadas a una misma actividad,
+se detiene antes de cambiar el esquema, mostrando los registros que deben corregirse.
+
+Si los históricos contienen actividades compartidas, `python manage.py repair_activity_links`
+las informa sin modificar datos. Tras revisar el resultado, `--apply` conserva las atenciones,
+duplica los datos de la actividad y registra cada reasignación en auditoría. Puede ejecutarse
+antes de migrar; no elimina evidencias ni atenciones.

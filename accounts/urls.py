@@ -28,7 +28,6 @@ from .role_views import (
     RoleUpdateView,
 )
 from .views import (
-    AreaMaintainerView,
     DelegationActivateView,
     DelegationCreateView,
     DelegationDeactivateView,
@@ -36,13 +35,11 @@ from .views import (
     DelegationExportView,
     DelegationListView,
     DelegationUpdateView,
-    GroupMaintainerView,
     OfficialCreateView,
     OfficialExportView,
     OfficialMaintainerView,
     OfficialUpdateView,
     OwnOfficialProfileView,
-    PositionMaintainerView,
     RecoveryCodeView,
     RecoveryPasswordView,
     RecoveryRequestView,
@@ -70,8 +67,6 @@ urlpatterns = [
     path('recuperar/', RecoveryRequestView.as_view(), name='recovery_request'),
     path('recuperar/codigo/', RecoveryCodeView.as_view(), name='recovery_code'),
     path('recuperar/nueva-clave/', RecoveryPasswordView.as_view(), name='recovery_password'),
-    path('cargos/', PositionMaintainerView.as_view(), name='position_maintainer'),
-    path('areas/', AreaMaintainerView.as_view(), name='area_maintainer'),
     path('funcionarios/', OfficialMaintainerView.as_view(), name='official_maintainer'),
     path('funcionarios/exportar/', OfficialExportView.as_view(), name='official_export'),
     path('funcionarios/nuevo/', OfficialCreateView.as_view(), name='official_create'),
@@ -84,7 +79,6 @@ urlpatterns = [
     path('usuarios/<int:pk>/editar/', UserUpdateView.as_view(), name='user_update'),
     path('usuarios/<int:pk>/desactivar/', UserDeactivateView.as_view(), name='user_deactivate'),
     path('usuarios/<int:pk>/activar/', UserActivateView.as_view(), name='user_activate'),
-    path('grupos/', GroupMaintainerView.as_view(), name='group_maintainer'),
     path(
         'delegaciones/',
         DelegationListView.as_view(),
@@ -104,3 +98,8 @@ urlpatterns = [
     path('roles/<int:pk>/desactivar/', RoleDeactivateView.as_view(), name='role_deactivate'),
     path('roles/<int:pk>/activar/', RoleActivateView.as_view(), name='role_activate'),
 ]
+
+from common.maintainers import maintainer_urls
+urlpatterns += maintainer_urls('position', 'cargos/')
+urlpatterns += maintainer_urls('area', 'areas/')
+urlpatterns += maintainer_urls('group', 'grupos/')

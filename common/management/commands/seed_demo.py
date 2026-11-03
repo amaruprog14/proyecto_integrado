@@ -6,7 +6,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import Area, Delegation, Official, Position, Role, ServiceRecipient
+from accounts.models import Area, Delegation, Official, Position, Role, ServiceRecipient, GroupProfile
 from activities.models import Activity, SocialAttention
 from configuration.models import Item, Period, ActivityType, ServiceType, AttentionType, SubattentionType
 
@@ -131,7 +131,8 @@ class Command(BaseCommand):
             if 1 <= i <= 5:
                 officials.append(official)
         for group_name in DEMO_GROUPS:
-            Group.objects.get_or_create(name=group_name)
+            group, _ = Group.objects.get_or_create(name=group_name)
+            GroupProfile.objects.get_or_create(group=group)
         items = []
         for i, n in enumerate(ITEM_NAMES):
             item = Item.objects.filter(item_name=n).first()
@@ -151,6 +152,8 @@ class Command(BaseCommand):
                                   status=Period.Status.OPEN if i == 0 else Period.Status.CLOSED)
             end = start - timedelta(days=1)
 
+        if not Period.objects.filter(start_date__lte=today, end_date__gte=today).exists():
+            Period.objects.create(start_date=today, end_date=today)
         activities = []
         base_accounts = demo_accounts()
         for i, official in enumerate(officials):
@@ -160,7 +163,7 @@ class Command(BaseCommand):
                 activity = Activity.objects.filter(item=items[(i+j) % 5], action_description=description).order_by("pk").first()
                 if activity is None:
                     activity = Activity.objects.create(official=official, item=items[(i+j) % 5],
-                        date=today, record_type="Registro", action_description=description)
+                        date=today, record_type=Activity.RecordType.MONTHLY, action_description=description)
                 if j == 0:
                     activities.append(activity)
         for i, (activity_name, service_name, attention_name, sub_name) in enumerate(CATALOG_CHAINS):
@@ -171,6 +174,9 @@ class Command(BaseCommand):
                 attention = AttentionType.objects.create(
                     code=self.available_code(AttentionType, self.catalog_code("TAT", 0, i)), service_type=service,
                     name=attention_name, description=f"Atención municipal de {attention_name.lower()}.")
+            if attention.activity_item_id is None:
+                attention.activity_item = items[i % len(items)]
+                attention.save(update_fields=["activity_item", "updated_at"])
             subattention = SubattentionType.objects.filter(attention_type=attention, name=sub_name).first()
             if subattention is None:
                 subattention = SubattentionType.objects.create(
@@ -185,10 +191,13 @@ class Command(BaseCommand):
             responsible = activities[i % 4].official
             if not SocialAttention.validate_attention_limit(recipient.pk):
                 continue
+            automatic_activity = Activity.objects.create(official=responsible, item=attention.activity_item,
+                date=today, record_type=Activity.RecordType.ATTENTION,
+                action_description=f"Solicitud de demostración de {attention_name.lower()}.")
             SocialAttention.objects.create(
                 submission_token=token, recipient=recipient, attention_type=attention, subattention_type=subattention,
                 delegation=responsible.delegation, responsible=responsible, date=today,
-                activity=activities[i % 4], description=f"Solicitud de demostración de {attention_name.lower()}.")
+                activity=automatic_activity, description=f"Solicitud de demostración de {attention_name.lower()}.")
 
     @staticmethod
     def available_code(model, base):

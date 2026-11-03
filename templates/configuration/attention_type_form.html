@@ -16,7 +16,7 @@
             </header>
 
             <form class="attention-entry-card" method="post" aria-label="{{ maintainer_title }}" data-loading>
-                {% csrf_token %}
+                {% csrf_token %}<div class="attention-entry-field"><label for="{{ form.activity_item.id_for_label }}">Ítem para actividad automática</label>{{ form.activity_item }}{{ form.activity_item.errors }}</div>
                 {% if form.non_field_errors %}
                     <div class="invalid-feedback d-block mb-3" role="alert">
                         {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
