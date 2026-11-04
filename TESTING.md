@@ -6,6 +6,23 @@ Atención), el ingreso de atención y los requisitos comunes de interfaz y conte
 
 ## Cómo ejecutarlas
 
+La actualización WebSocket de los doce CRUD se comprueba con:
+
+```bash
+python manage.py test activities.test_realtime common.test_realtime
+```
+
+La matriz de `common.test_realtime` abre conexiones independientes por cuenta y módulo,
+compara los permisos HTTP, comprueba los avisos de registros autorizados y la ausencia de
+avisos ajenos, e incluye creación y rollback de Funcionarios en Sur. Las cuentas sin contexto
+no obtienen acceso. Para la revisión local también se ejecutó con una copia aislada de las
+siete cuentas existentes y sus ocho funcionarios, sin copiar sus contraseñas.
+
+La comprobación visual se realizó con copias de `admin_demo` y `funcionario4`: crear un
+funcionario en Sur actualizó la tabla del lector sin F5, conservando tamaño y página.
+La prueba visual entre dos cuentas complementa la matriz automatizada; no sustituye las
+comprobaciones de permisos. Los catálogos transversales conservan su política compartida.
+
 Con el entorno virtual activo y el `.env` configurado (ver `README.md`):
 
 ```bash

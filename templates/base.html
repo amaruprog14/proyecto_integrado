@@ -201,6 +201,7 @@
                     {% endfor %}
                 </div>
             {% endif %}
+            {% if maintainer_ws_url %}<p class="container" data-maintainer-websocket="{{ maintainer_ws_url }}" role="status" aria-live="polite">Conectando actualización automática…</p>{% endif %}
             {% block content %}
                 <section class="home" aria-labelledby="inicioTitulo">
                     <header class="home-heading">

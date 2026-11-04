@@ -140,6 +140,69 @@ Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
 
 ## Pruebas
 
+### Actualización de todos los mantenedores por WebSocket (local)
+
+Los doce listados reciben avisos por `/ws/maintainers/<modulo>/` con Django Channels:
+Funcionarios, Usuarios, Delegaciones, Roles, Cargos, Áreas, Grupos, Períodos, Ítems,
+Tipo de Atención, Sub Atención y Actividades. `/ws/activities/` se conserva como alias.
+El aviso no contiene datos de la actividad: el navegador vuelve a consultar el listado
+HTTP protegido y reemplaza únicamente la tabla, el total y el paginador. Conserva filtros,
+tamaño y página, y ajusta la página si deja de existir. No hay polling.
+
+Después de instalar `requirements.txt`, iniciar **un único proceso**:
+
+```bash
+python manage.py runserver --noreload
+```
+
+Daphne sustituye el servidor de desarrollo al estar primero en `INSTALLED_APPS`.
+Para ejecutar ASGI directamente (sin servir estáticos de desarrollo):
+
+```bash
+daphne -b 127.0.0.1 -p 8000 config.asgi:application
+```
+
+Se usa `InMemoryChannelLayer` y un registro local de lectores conectados; ambos requieren
+que HTTP y WebSocket se atiendan en el mismo proceso. No necesita Redis ni migraciones
+nuevas. No funciona repartiendo peticiones entre los tres workers WSGI del manual AWS.
+Para varios procesos se deben sustituir tanto la capa en memoria como el registro de
+suscriptores por una solución compartida. Esta etapa no modifica el despliegue AWS.
+
+Funcionarios, Usuarios, Delegaciones y Actividades conservan su aislamiento por ámbito;
+en Funcionarios y Usuarios la consulta HTTP conserva además la delegación activa.
+Los catálogos compartidos (Roles, Cargos, Áreas, Grupos, Períodos, Ítems y tipos de atención)
+no tienen propietario por delegación: reciben cambios quienes tienen su permiso de consulta,
+con la misma política que sus vistas actuales. Los cambios de roles y asignaciones obligan
+a volver a comprobar los permisos de las cuentas afectadas. Si se retira el acceso, se cierra
+la conexión y se retira el contenido del listado de la pantalla.
+
+Solo conecta una cuenta con sesión vigente y permiso `activities.view_activity`, y un
+funcionario habilitado salvo el superusuario técnico. Los destinatarios se calculan en
+el servidor con el mismo alcance `ALL`, `DELEGATION` u `OWN` del listado, incluyendo las
+delegaciones autorizadas. El cliente no elige grupos ni delegaciones. Se valida el origen
+contra `ALLOWED_HOSTS` y se comprueban nuevamente sesión y permisos antes de entregar avisos.
+Los cambios se anuncian después del commit; los formularios inválidos y los rollbacks no
+anuncian éxito. También se cubren las actividades generadas por atenciones.
+
+Recorrido de comprobación:
+
+1. Abrir sesiones independientes con editor A, lector A y lector B. Se pueden usar perfiles
+   separados o `localhost` y `127.0.0.1` para dos sesiones con cookies independientes.
+2. Mantener abierto el listado del lector A con búsqueda/filtros y una página elegida.
+3. Crear o editar desde el editor A: el lector A se actualiza sin F5 y el lector B no recibe
+   eventos de A. Si la actividad deja de coincidir con el filtro, desaparece del listado.
+4. Probar archivado/restauración y formulario inválido; comprobar que solo los guardados
+   confirmados producen cambios. Cambiar de responsable refresca a lectores del ámbito
+   anterior y del nuevo, sin enviar datos del registro en el aviso.
+5. Detener el servidor: aparece el estado desconectado. Al iniciarlo nuevamente se reconecta
+   con espera progresiva y vuelve a consultar el listado para recuperar cambios perdidos.
+
+Pruebas automatizadas específicas:
+
+```bash
+python manage.py test activities.test_realtime common.test_realtime
+```
+
 ```bash
 python manage.py test
 ```

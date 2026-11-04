@@ -226,3 +226,4 @@ docs/*
 staticfiles/
 
 .claude
+.DS_Store

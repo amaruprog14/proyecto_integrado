@@ -117,6 +117,11 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (response.status === 204) {
                 modal.hide();
+                if (document.querySelector('[data-maintainer-websocket]')) {
+                    document.dispatchEvent(new CustomEvent('sgr:maintainer-saved'));
+                    if (window.Swal) window.Swal.fire({ icon: 'success', title: 'Registro guardado correctamente.', timer: 1800, showConfirmButton: false });
+                    return;
+                }
                 window.location.reload();
                 return;
             }
