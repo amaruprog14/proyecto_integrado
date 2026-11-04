@@ -71,7 +71,7 @@
                 </table>
             </div>
 
-            <div class="maintainer-table-footer" data-live-region="footer">
+            <div class="maintainer-table-footer" data-live-region="footer" data-current-page="{{ page_obj.number }}">
                 <p class="maintainer-record-count" aria-live="polite">Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros</p>
                 {% if page_obj.has_other_pages %}
                     <nav aria-label="Paginación de subatenciones">

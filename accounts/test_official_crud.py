@@ -305,7 +305,7 @@ class OfficialExportTests(TestCase):
 
         response = self.client.get(reverse("official_maintainer"))
 
-        self.assertContains(response, f'data-export-url="{reverse("official_export")}"')
+        self.assertContains(response, f'data-export-base="{reverse("official_export")}"')
         self.assertContains(response, "Exportar a Excel")
         self.assertNotContains(response, "CSV")
 

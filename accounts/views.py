@@ -345,7 +345,15 @@ class OfficialMaintainerView(MaintainerListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         records = []
-        for official in listed_officials(self.request):
+        from django.core.paginator import Paginator
+        try:
+            size = int(self.request.GET.get('page_size', 10))
+        except (TypeError, ValueError):
+            size = 10
+        sizes = (5, 10, 15, 25, 30, 50, 100)
+        size = size if size in sizes else 10
+        page = Paginator(listed_officials(self.request), size).get_page(self.request.GET.get('page', 1))
+        for official in page:
             records.append(
                 {
                     "cells": official_cells(official),
@@ -358,7 +366,11 @@ class OfficialMaintainerView(MaintainerListView):
                 }
             )
         context["records"] = records
-        context["total"] = len(records)
+        params = self.request.GET.copy()
+        params.pop('page', None)
+        context.update(total=page.paginator.count, page_obj=page, querystring=params.urlencode(),
+            page_sizes=sizes, page_size=size, query=self.request.GET.get('q', ''),
+            selected_status=self.request.GET.get('status', ''))
         context["can_add"] = self.request.user.has_perm("accounts.add_official")
         context["can_change"] = self.request.user.has_perm("accounts.change_official")
         return context

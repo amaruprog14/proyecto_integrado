@@ -84,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return params.toString();
         };
         let lastSearch = currentSearch();
+        let renderedSearch = lastSearch;
 
         const syncExportLink = () => {
             if (!exportLink) return;
@@ -107,12 +108,19 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         };
 
-        const refresh = async () => {
+        const refresh = async ({ preservePage = false, force = false } = {}) => {
             window.clearTimeout(timer);
             const search = currentSearch();
-            if (search === lastSearch && !controller) return;
+            if (!force && search === lastSearch && !controller) return;
+            const filtersChanged = search !== renderedSearch;
             lastSearch = search;
-            const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+            const params = new URLSearchParams(search);
+            if (preservePage && !filtersChanged) {
+                const page = new URLSearchParams(window.location.search).get("page");
+                if (page) params.set("page", page);
+            }
+            const url = new URL(window.location.pathname, window.location.origin);
+            url.search = params.toString();
 
             controller?.abort();
             const request = new AbortController();
@@ -125,6 +133,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     credentials: "same-origin",
                     signal: request.signal,
                 });
+                if (response.status === 403 || response.status === 401 || response.redirected) {
+                    document.querySelectorAll('[data-live-region]').forEach((region) => region.replaceChildren());
+                    throw new Error('La sesión o los permisos cambiaron');
+                }
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const page = new DOMParser().parseFromString(await response.text(), "text/html");
                 const replacements = [...document.querySelectorAll("[data-live-region]")].map((region) => [
@@ -135,11 +147,29 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!replacements.length || replacements.some(([, replacement]) => !replacement)) {
                     throw new Error("Respuesta sin el listado");
                 }
+                if (controller !== request || request.signal.aborted) return false;
                 replacements.forEach(([region, replacement]) => region.replaceWith(document.importNode(replacement, true)));
+                renderedSearch = search;
+                const currentPage = page.querySelector('[data-current-page]')?.dataset.currentPage;
+                if (preservePage && currentPage) url.searchParams.set("page", currentPage);
+                // Actualizar opciones dependientes sin perder la selección ni el modal.
+                if (document.querySelector('[data-maintainer-websocket]')) {
+                    ["official", "item"].forEach((name) => {
+                        const select = liveForm.querySelector(`select[name="${name}"]`);
+                        const fresh = page.querySelector(`form[data-live-search] select[name="${name}"]`);
+                        if (!select || !fresh) return;
+                        const selected = select.value;
+                        const old = select.selectedOptions[0]?.cloneNode(true);
+                        select.replaceChildren(...[...fresh.options].map((option) => option.cloneNode(true)));
+                        if (selected && ![...select.options].some((option) => option.value === selected) && old) select.append(old);
+                        select.value = selected;
+                    });
+                }
                 window.history.replaceState(window.history.state, "", url);
                 syncExportLink();
                 const count = document.querySelector('[data-live-region="footer"] .maintainer-record-count');
                 showStatus(count ? count.textContent.trim() : "", { onlyForScreenReaders: true });
+                return true;
             } catch (error) {
                 if (error.name === "AbortError") return;
                 lastSearch = null;
@@ -147,6 +177,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     "No se pudo actualizar la búsqueda. Revisa tu conexión y vuelve a intentarlo, o pulsa Buscar.",
                     { error: true },
                 );
+                return false;
             } finally {
                 if (controller === request) {
                     setRegionsBusy(false);
@@ -158,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
         searchInput?.addEventListener("input", () => {
             syncExportLink();
             window.clearTimeout(timer);
-            timer = window.setTimeout(refresh, LIVE_SEARCH_DELAY_MS);
+            timer = window.setTimeout(() => refresh(), LIVE_SEARCH_DELAY_MS);
         });
         statusFilter?.addEventListener("change", () => {
             syncExportLink();
@@ -168,6 +199,63 @@ document.addEventListener("DOMContentLoaded", () => {
             syncExportLink();
             refresh();
         });
+        liveForm.querySelectorAll('select[name="official"], select[name="item"], select[name="record_type"], input[type="date"]').forEach((control) => {
+            control.addEventListener("change", () => { syncExportLink(); refresh(); });
+        });
+        document.addEventListener('sgr:maintainer-saved', () => refresh({ preservePage: true, force: true }));
+
+        const connectionStatus = document.querySelector('[data-maintainer-websocket]');
+        if (connectionStatus) {
+            let socket;
+            let retry = 1000;
+            let retryTimer;
+            let updateTimer;
+            let stopped = false;
+            const refreshFromSocket = async () => {
+                const result = await refresh({ preservePage: true, force: true });
+                if (result !== undefined && socket.readyState === WebSocket.OPEN) {
+                    connectionStatus.textContent = result ? 'Actualización automática conectada.' : 'No se pudo actualizar el listado. Pulsa Buscar para intentarlo nuevamente.';
+                }
+            };
+            const connect = () => {
+                connectionStatus.textContent = 'Conectando actualización automática…';
+                const url = new URL(connectionStatus.dataset.maintainerWebsocket, window.location.origin);
+                url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                socket = new WebSocket(url);
+                socket.addEventListener('open', () => {
+                    retry = 1000;
+                    refreshFromSocket();
+                });
+                socket.addEventListener('message', (event) => {
+                    try {
+                        if (!['activities.changed', 'maintainer.changed'].includes(JSON.parse(event.data).type)) return;
+                    } catch { return; }
+                    window.clearTimeout(updateTimer);
+                    updateTimer = window.setTimeout(refreshFromSocket, 100);
+                });
+                socket.addEventListener('close', (event) => {
+                    connectionStatus.textContent = 'Actualización automática desconectada. Los datos pueden estar desactualizados.';
+                    if (event.code === 4403) {
+                        document.querySelectorAll('[data-live-region]').forEach((region) => region.replaceChildren());
+                        connectionStatus.textContent = 'La sesión o los permisos cambiaron. Inicia sesión o vuelve a una sección autorizada.';
+                    }
+                    if (stopped || event.code === 4403 || event.code === 4400) return;
+                    retryTimer = window.setTimeout(connect, retry);
+                    retry = Math.min(retry * 2, 30000);
+                });
+                socket.addEventListener('error', () => {
+                    connectionStatus.textContent = 'No se pudo conectar la actualización automática.';
+                });
+            };
+            window.addEventListener('pagehide', () => {
+                stopped = true;
+                window.clearTimeout(retryTimer);
+                window.clearTimeout(updateTimer);
+                socket?.close();
+            });
+            window.addEventListener('pageshow', (event) => { if (event.persisted) { stopped = false; connect(); } });
+            connect();
+        }
         exportLink?.addEventListener("click", syncExportLink);
         // Buscar o Enter: envío normal del formulario (recarga completa), sin peticiones pendientes.
         liveForm.addEventListener("submit", () => {

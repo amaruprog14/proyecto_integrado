@@ -1,0 +1,12 @@
+<div class="maintainer-table-footer" data-live-region="footer" data-current-page="{{ page_obj.number }}">
+    <p class="maintainer-record-count" aria-live="polite">Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} registros</p>
+    {% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&amp;page={{ page_obj.previous_page_number }}">Anterior</a></li>{% endif %}
+        {% for number in page_obj.paginator.page_range %}
+        <li class="page-item{% if number == page_obj.number %} active{% endif %}"><a class="page-link" href="?{{ querystring }}&amp;page={{ number }}"{% if number == page_obj.number %} aria-current="page"{% endif %}>{{ number }}</a></li>
+        {% endfor %}
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&amp;page={{ page_obj.next_page_number }}">Siguiente</a></li>{% endif %}
+    </ul></nav>
+    {% endif %}
+</div>

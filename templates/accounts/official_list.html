@@ -18,26 +18,27 @@
                 {% endif %}
             </header>
 
-            <section class="maintainer-tools" aria-label="Búsqueda y filtros">
+            <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
                 <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
-                    <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off"><button class="btn btn-primary" type="button" data-maintainer-search>Buscar</button></div>
-                    <a class="btn maintainer-export-button" href="{% url 'official_export' %}" data-export-url="{% url 'official_export' %}">Exportar a Excel</a>
+                    <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" name="q" value="{{ query }}" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off"><button class="btn btn-primary" type="submit">Buscar</button></div>
+                    <a class="btn maintainer-export-button" href="{% url 'official_export' %}?{{ querystring }}" data-export-base="{% url 'official_export' %}">Exportar a Excel</a>
                     {% if statuses %}
                         <label class="visually-hidden" for="maintainer-status">Filtrar por estado</label>
-                        <select class="form-select maintainer-status-filter" id="maintainer-status">
+                        <select class="form-select maintainer-status-filter" id="maintainer-status" name="status">
                             <option value="">Filtrar estado</option>
-                            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                            {% for value, label in statuses %}<option value="{{ value }}"{% if selected_status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                         </select>
                     {% endif %}
                 </div>
                 <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
-                <select class="form-select maintainer-page-size" id="maintainer-page-size" aria-label="Registros por página">
-                    <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" aria-label="Registros por página">
+                    {% for size in page_sizes %}<option value="{{ size }}"{% if size == page_size %} selected{% endif %}>{{ size }}</option>{% endfor %}
                 </select>
-            </section>
+            </form>
+            <p data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap">
+            <div class="table-responsive maintainer-table-wrap" data-live-region="table">
                 <table class="table maintainer-table" id="maintainer-table" data-page-size="10">
                     <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th class="maintainer-actions" scope="col">Acciones</th></tr></thead>
                     <tbody>
@@ -56,18 +57,14 @@
                                     {% endif %}
                                 </div></td>
                             </tr>
-                        {% endfor %}
+                        {% empty %}<tr><td colspan="{{ columns|length|add:'1' }}">{% if query or selected_status %}No hay funcionarios que coincidan con la búsqueda o el filtro aplicado.{% else %}Aún no hay funcionarios registrados.{% endif %}</td></tr>{% endfor %}
                     </tbody>
                 </table>
             </div>
-            <p class="maintainer-empty" id="maintainer-empty" hidden>No hay registros que coincidan con la búsqueda.</p>
-            <div class="maintainer-table-footer">
-                <p class="maintainer-record-count" id="maintainer-record-count" aria-live="polite"></p>
-                <nav aria-label="Paginación de registros"><ul class="pagination maintainer-pagination" id="maintainer-pagination"></ul></nav>
-            </div>
+            {% include 'includes/live_pagination.html' %}
             <p class="maintainer-demo-note">Funcionarios registrados en el sistema <span aria-hidden="true">·</span> Las acciones disponibles dependen de los permisos asignados</p>
         </section>
     </div>
 {% endblock %}
 
-{% block extra_scripts %}<script src="{% static 'js/maintainer-list.js' %}" defer></script>{% endblock %}
+{% block extra_scripts %}<script src="{% static 'js/maintainer-states.js' %}" defer></script>{% endblock %}
