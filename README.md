@@ -2,7 +2,7 @@
  
 Sistema de Gestión de Resultados (SGR) de la Municipalidad de La Serena: aplicación web en Django
 con Django Admin personalizado y base de datos MySQL. Proyecto de la asignatura Programación Back
-End (TI3041) – Evaluación Sumativa II.
+End (TI3041) – Evaluación Sumativa III.
 
 **Equipo:** `Amaru Marin/Sebastian Alzamora/Benjamin Ocaranza/Vicente Ibarra`
 **Sección:** `P2-C1`
@@ -138,78 +138,6 @@ python manage.py runserver
 Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
 <http://127.0.0.1:8000/admin/>.
 
-## Pruebas
-
-### Actualización de todos los mantenedores por WebSocket (local)
-
-Los doce listados reciben avisos por `/ws/maintainers/<modulo>/` con Django Channels:
-Funcionarios, Usuarios, Delegaciones, Roles, Cargos, Áreas, Grupos, Períodos, Ítems,
-Tipo de Atención, Sub Atención y Actividades. `/ws/activities/` se conserva como alias.
-El aviso no contiene datos de la actividad: el navegador vuelve a consultar el listado
-HTTP protegido y reemplaza únicamente la tabla, el total y el paginador. Conserva filtros,
-tamaño y página, y ajusta la página si deja de existir. No hay polling.
-
-Después de instalar `requirements.txt`, iniciar **un único proceso**:
-
-```bash
-python manage.py runserver --noreload
-```
-
-Daphne sustituye el servidor de desarrollo al estar primero en `INSTALLED_APPS`.
-Para ejecutar ASGI directamente (sin servir estáticos de desarrollo):
-
-```bash
-daphne -b 127.0.0.1 -p 8000 config.asgi:application
-```
-
-Se usa `InMemoryChannelLayer` y un registro local de lectores conectados; ambos requieren
-que HTTP y WebSocket se atiendan en el mismo proceso. No necesita Redis ni migraciones
-nuevas. No funciona repartiendo peticiones entre los tres workers WSGI del manual AWS.
-Para varios procesos se deben sustituir tanto la capa en memoria como el registro de
-suscriptores por una solución compartida. Esta etapa no modifica el despliegue AWS.
-
-Funcionarios, Usuarios, Delegaciones y Actividades conservan su aislamiento por ámbito;
-en Funcionarios y Usuarios la consulta HTTP conserva además la delegación activa.
-Los catálogos compartidos (Roles, Cargos, Áreas, Grupos, Períodos, Ítems y tipos de atención)
-no tienen propietario por delegación: reciben cambios quienes tienen su permiso de consulta,
-con la misma política que sus vistas actuales. Los cambios de roles y asignaciones obligan
-a volver a comprobar los permisos de las cuentas afectadas. Si se retira el acceso, se cierra
-la conexión y se retira el contenido del listado de la pantalla.
-
-Solo conecta una cuenta con sesión vigente y permiso `activities.view_activity`, y un
-funcionario habilitado salvo el superusuario técnico. Los destinatarios se calculan en
-el servidor con el mismo alcance `ALL`, `DELEGATION` u `OWN` del listado, incluyendo las
-delegaciones autorizadas. El cliente no elige grupos ni delegaciones. Se valida el origen
-contra `ALLOWED_HOSTS` y se comprueban nuevamente sesión y permisos antes de entregar avisos.
-Los cambios se anuncian después del commit; los formularios inválidos y los rollbacks no
-anuncian éxito. También se cubren las actividades generadas por atenciones.
-
-Recorrido de comprobación:
-
-1. Abrir sesiones independientes con editor A, lector A y lector B. Se pueden usar perfiles
-   separados o `localhost` y `127.0.0.1` para dos sesiones con cookies independientes.
-2. Mantener abierto el listado del lector A con búsqueda/filtros y una página elegida.
-3. Crear o editar desde el editor A: el lector A se actualiza sin F5 y el lector B no recibe
-   eventos de A. Si la actividad deja de coincidir con el filtro, desaparece del listado.
-4. Probar archivado/restauración y formulario inválido; comprobar que solo los guardados
-   confirmados producen cambios. Cambiar de responsable refresca a lectores del ámbito
-   anterior y del nuevo, sin enviar datos del registro en el aviso.
-5. Detener el servidor: aparece el estado desconectado. Al iniciarlo nuevamente se reconecta
-   con espera progresiva y vuelve a consultar el listado para recuperar cambios perdidos.
-
-Pruebas automatizadas específicas:
-
-```bash
-python manage.py test activities.test_realtime common.test_realtime
-```
-
-```bash
-python manage.py test
-```
-
-La suite usa MySQL con una base de pruebas aparte (`test_<DB_NAME>`) que Django crea y elimina,
-sin tocar los datos de desarrollo. El detalle de cómo ejecutarlas, la organización por módulo y la
-matriz requisito → prueba están en [`TESTING.md`](TESTING.md).
 
 ## Cuentas de demostración
 
@@ -298,23 +226,6 @@ no se eliminan).
   ingreso de atención; el mantenedor de Delegaciones muestra todas las del ámbito autorizado. Si
   hay un formulario con cambios sin guardar, cambiar de delegación pide confirmación antes.
 
-### Reglas de negocio destacadas
-
-- **Roles:** el último rol Administrador global con funcionarios activos no se puede desactivar ni
-  perder sus permisos privilegiados o su alcance, y desde Usuarios o Funcionarios no se puede
-  desactivar ni quitar ese rol a su único titular activo. El Administrador global no se combina con
-  otros roles. Asignar roles o permisos privilegiados exige `accounts.change_role`: sin él, las
-  casillas aparecen bloqueadas y una petición manipulada recibe 403 y queda auditada. Un rol
-  inactivo ya asignado se conserva al editar al funcionario.
-- **Ítems:** el código puede escribirse o generarse (`ITM-0001`); al editar no puede quedar vacío.
-  Al desactivar, la confirmación informa cuántas actividades usan el ítem.
-- **Tipo y Sub Atención:** un tipo con subatenciones activas no se desactiva; una subatención no
-  cambia de tipo si ya tiene atenciones registradas.
-- **Ingreso de atención:** el solicitante se identifica por RUT u otro identificador (se reutiliza
-  si ya existe). La Sub Atención depende del tipo elegido y solo ofrece opciones activas. La
-  delegación se toma del contexto autorizado, y el responsable y la fecha y hora los asigna el
-  servidor. Un token de un solo uso evita que un doble envío cree dos atenciones. Tras guardar, se
-  muestra el identificador (`AS-000001`) con un enlace para consultar la atención registrada.
 
 ## Acceso y seguridad
 
@@ -402,49 +313,6 @@ proyecto_integrado/
 └── static/                 # estilos institucionales y JavaScript de las pantallas
 ```
 
-## Modelado y auditoría
-
-Todos los modelos heredan de `common.mixins.BaseModel`, que aporta los campos de
-auditoría `created_at`, `updated_at` y `deleted_at`. Los modelos y atributos del dominio usan
-nomenclatura en inglés; las etiquetas visibles están en español mediante `verbose_name`.
-
-| Modelo     | App             | Tipo      | Descripción |
-| ---------- | --------------- | --------- | ----------- |
-| `Delegation` | `accounts` | Maestra | Delegación con código automático (`DEL-####`), nombre único, dirección, comuna y estado |
-| `Role` | `accounts` | Maestra | Rol SGR con permisos, alcance (ALL, DELEGATION, OWN), estado y funcionarios asignados |
-| `Official` | `accounts` | Operativa | Funcionario/a vinculado 1 a 1 con un `User`, con área, cargo, delegación principal, delegaciones autorizadas y estado (Activo / Inactivo / Suspendido) |
-| `Position`, `Area` | `accounts` | Maestra | Cargos y áreas (el mantenedor web es una maqueta; se administran en el Admin) |
-| `ServiceRecipient` | `accounts` | Operativa | Persona solicitante de una atención, identificada por RUT u otro identificador único |
-| `PasswordResetCode` | `accounts` | Operativa | Código de recuperación (solo su hash), vigencia, intentos y reenvíos |
-| `LoginThrottle` | `accounts` | Operativa | Intentos fallidos de ingreso y bloqueo temporal |
-| `Item` | `configuration` | Maestra | Ítem medible con código manual o automático (`ITM-####`), nombre único y estado |
-| `AttentionType`, `SubattentionType` | `configuration` | Maestra | Catálogos de atención con código automático (`TAT-####`, `SAT-####`); la subatención pertenece a un tipo |
-| `Period` | `configuration` | Maestra | Período de gestión; valida fechas y solapamientos |
-| `AuditLog` | `configuration` | Operativa | Usuario, fecha, IP, acción, tabla, registro y valores anterior y nuevo |
-| `Activity` | `activities` | Operativa | Actividad realizada por un funcionario sobre un ítem |
-| `SocialAttention` | `activities` | Operativa | Atención con solicitante, tipo, subatención, descripción, delegación, responsable y fecha y hora de registro (identificador `AS-######`) |
-
-Relaciones principales (con `on_delete=PROTECT`, salvo `Official.user` que usa `SET_NULL`):
-`Official` 1 — N `Activity`, `Item` 1 — N `Activity`, `AttentionType` 1 — N `SubattentionType`,
-y `SocialAttention` referencia a su solicitante, tipo, subatención, delegación y responsable.
-
-## Funcionalidades del Admin
-
-Todos los modelos están registrados en el Admin con `list_display`, `list_filter`,
-`search_fields` y `ordering`, mostrando los campos de auditoría en los listados.
-
-| Modelo     | Funcionalidades |
-| ---------- | --------------- |
-| `Position` | Acciones masivas «Activar cargos seleccionados» y «Desactivar cargos seleccionados» |
-| `Official` | `list_select_related`, filtros por estado, área, cargo y `deleted_at`, búsqueda por nombre, RUT, correo, cargo y área. Inline de actividades (`ActivityInline`) |
-| `Period`   | Acción masiva «Cerrar períodos seleccionados» y navegación por fecha (`date_hierarchy`) |
-| `Activity` | Acción masiva «Archivar actividades seleccionadas» (borrado lógico), `autocomplete_fields` y `list_select_related` |
-| `LoginThrottle` | Consulta de bloqueos de ingreso; un superusuario desbloquea borrando el registro |
-
-Las actividades no se eliminan físicamente: el Admin ofrece archivarlas (`deleted_at`). En el
-Admin, `Official` y `Activity` se limitan al área del usuario (`common.admin_utils.get_user_area`);
-el superusuario es la única excepción explícita y un usuario sin área asignada recibe
-`PermissionDenied`: la falta de contexto **nunca** amplía el acceso.
 
 ## Flujo de trabajo Git
 
@@ -475,30 +343,3 @@ asignatura no se versionan.
 - **«Demasiados intentos fallidos» al ingresar**: esperar `LOGIN_LOCKOUT_MINUTES` o pedir a un superusuario que borre el bloqueo en el Admin.
 - **`403 Forbidden` al entrar al Admin con `funcionario5`**: es el comportamiento esperado; ese usuario no tiene área asignada.
 
-## Mantenedores y control de períodos
-
-Cargos y Áreas se desactivan sin borrar sus relaciones. Los formularios de funcionarios ofrecen
-registros vigentes y conservan el valor actual al editar. Grupos administra miembros y permisos
-con vigencia y alcance propio. Roles y Grupos activos aportan permisos; cada operación utiliza
-el mayor alcance entre sus fuentes autorizantes. Los permisos directos conservan el ámbito de
-las delegaciones autorizadas. El Admin remite a estos mantenedores para aplicar las mismas reglas.
-
-Después de aplicar las migraciones con `python manage.py migrate`, configure un ítem vigente en
-cada Tipo de Atención y cree períodos abiertos que cubran las fechas de trabajo. Las migraciones
-no asignan ítems a los tipos existentes ni generan actividades para atenciones históricas.
-`python manage.py check_maintainer_readiness` comprueba la configuración para la fecha actual.
-
-Cada nueva atención genera una actividad de tipo Atención social, dentro de la misma transacción.
-Las actividades automáticas son de consulta; las manuales permiten Registro mensual o Terreno.
-Los períodos no se solapan, pueden coexistir abiertos y no admiten reapertura. Cerrarlos bloquea
-altas y cambios de actividades de sus fechas, incluidos archivo y restauración. El cierre y los
-registros concurrentes se serializan para impedir guardar después del cierre.
-
-La migración de actividades genera códigos ACT-NNNN y convierte el tipo histórico Registro en
-Registro mensual. Si detecta otros tipos o varias atenciones vinculadas a una misma actividad,
-se detiene antes de cambiar el esquema, mostrando los registros que deben corregirse.
-
-Si los históricos contienen actividades compartidas, `python manage.py repair_activity_links`
-las informa sin modificar datos. Tras revisar el resultado, `--apply` conserva las atenciones,
-duplica los datos de la actividad y registra cada reasignación en auditoría. Puede ejecutarse
-antes de migrar; no elimina evidencias ni atenciones.

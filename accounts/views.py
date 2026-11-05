@@ -682,8 +682,8 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "accounts.view_delegation"
     template_name = "accounts/delegation_list.html"
     context_object_name = "delegations"
-    paginate_by = 10
-    page_size_options = (5, 10, 25, 50, 100)
+    paginate_by = 15
+    page_size_options = (5, 15, 30)
 
     def get_paginate_by(self, queryset):
         try:
@@ -1009,7 +1009,8 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "auth.view_user"
     template_name = "accounts/user_list.html"
     context_object_name = "users"
-    paginate_by = 10
+    paginate_by = 15
+    page_size_options = (5, 15, 30)
 
     def get_queryset(self):
         queryset = (

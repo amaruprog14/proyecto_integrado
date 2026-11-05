@@ -6,7 +6,7 @@ class ClampedPaginationMixin:
     número inválido, se muestra la página válida más cercana en lugar de responder 404.
     """
 
-    page_size_options = (5, 10, 25, 50, 100)
+    page_size_options = (5, 15, 30)
 
     def get_paginate_by(self, queryset):
         try:
