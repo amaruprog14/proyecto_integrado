@@ -1175,6 +1175,8 @@ class OwnOfficialProfileView(LoginRequiredMixin, FormView):
     success_url = reverse_lazy("my_profile")
 
     def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
         official = getattr(request.user, "official", None)
         if official is None or not official.is_enabled:
             raise PermissionDenied("Tu cuenta no tiene un perfil de funcionario habilitado.")
@@ -1208,6 +1210,25 @@ class OwnOfficialProfileView(LoginRequiredMixin, FormView):
     def form_invalid(self, form):
         messages.error(self.request, "No se pudo actualizar tu perfil. Revisa los datos ingresados.")
         return super().form_invalid(form)
+
+
+class OwnProfilePhotoView(LoginRequiredMixin, View):
+    """Sirve exclusivamente la foto del usuario conectado, sin identificadores ajenos."""
+
+    def get(self, request):
+        from django.http import FileResponse, Http404
+        official = getattr(request.user, "official", None)
+        if official is None or not official.is_enabled:
+            raise PermissionDenied
+        if not official.photo:
+            raise Http404
+        try:
+            response = FileResponse(official.photo.open("rb"), content_type="image/jpeg")
+        except FileNotFoundError:
+            raise Http404
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):

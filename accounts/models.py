@@ -1,4 +1,5 @@
 import secrets
+import uuid
 from datetime import timedelta
 
 from django.conf import settings
@@ -49,6 +50,10 @@ class Area(BaseModel):
 
     def __str__(self):
         return self.area_name
+
+
+def profile_photo_path(instance, filename):
+    return f"profile_photos/{uuid.uuid4().hex}.jpg"
 
 
 class Official(BaseModel):
@@ -111,6 +116,7 @@ class Official(BaseModel):
     )
     email = models.EmailField(unique=True, max_length=191, verbose_name="Correo electrónico")
     phone = models.CharField(max_length=30, blank=True, verbose_name="Teléfono")
+    photo = models.ImageField(upload_to=profile_photo_path, blank=True, verbose_name="Foto de perfil")
 
     class Meta:
         verbose_name = "Funcionario"

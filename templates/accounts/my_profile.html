@@ -1,16 +1,61 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Mi perfil · SGR{% endblock %}
+{% block extra_head %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/croppr@2.3.1/dist/croppr.min.css">
+    <link rel="stylesheet" href="{% static 'css/profile.css' %}?v=20261105-square-crop">
+{% endblock %}
 
 {% block content %}
     <section class="attention-entry-card" aria-labelledby="profile-title">
         <p class="maintainer-breadcrumb">Cuenta personal / Mi perfil</p>
         <h1 id="profile-title">Mi perfil</h1>
         <p class="attention-entry-note">
-            Desde aquí solo puedes modificar tus datos personales de contacto. Los roles,
+            Desde aquí puedes actualizar tu foto y tus datos personales de contacto. Los roles,
             delegaciones, cargo, área y estado laboral son administrados por personal autorizado.
         </p>
 
+        <form method="post" enctype="multipart/form-data" novalidate id="profile-form">
+            {% csrf_token %}
+            {{ form.photo_crop }}
+            <section class="profile-photo" aria-labelledby="profile-photo-title">
+                <div class="profile-avatar">
+                    {% if profile_official.photo %}
+                        <img src="{% url 'my_profile_photo' %}" alt="Tu foto de perfil" id="profile-photo-preview">
+                    {% else %}
+                        <img alt="Vista previa de tu foto" id="profile-photo-preview" hidden>
+                    {% endif %}
+                    <span id="profile-photo-initials" aria-hidden="true"{% if profile_official.photo %} hidden{% endif %}>
+                        <svg viewBox="0 0 16 16" width="40" height="40" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
+                    </span>
+                </div>
+                <div>
+                    <h2 id="profile-photo-title">Foto de perfil</h2>
+                    <p>Agrega una foto para identificar tu cuenta.</p>
+                    <label for="{{ form.photo.id_for_label }}" class="form-label">Seleccionar imagen</label>
+                    {{ form.photo }}
+                    <p class="profile-photo-help">JPG o PNG · Máximo 2 MiB</p>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="profile-recrop" hidden>Ajustar recorte</button>
+                    <p id="profile-photo-status" role="status" aria-live="polite">{% if form.photo.errors %}Vuelve a seleccionar la imagen para corregirla.{% endif %}</p>
+                    {% for error in form.photo.errors %}<p class="text-danger" role="alert">{{ error }}</p>{% endfor %}
+                </div>
+            </section>
+            <section id="profile-crop-editor" class="profile-crop-editor" hidden aria-labelledby="profile-crop-title">
+                <h2 id="profile-crop-title">Ajustar foto</h2>
+                <p>Arrastra el recuadro y sus esquinas para elegir el recorte.</p>
+                <div class="profile-crop-layout">
+                    <div class="profile-crop-image"><img id="profile-crop-image" alt="Imagen para recortar"></div>
+                    <div>
+                        <p>Previsualización</p>
+                        <canvas id="profile-crop-preview" width="200" height="200" aria-label="Vista previa del recorte"></canvas>
+                        <div class="profile-crop-actions">
+                            <button type="button" class="btn btn-primary" id="profile-crop-apply">Usar recorte</button>
+                            <button type="button" class="btn btn-outline-secondary" id="profile-crop-cancel">Cancelar recorte</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
         <dl class="row mb-4">
             <dt class="col-sm-4">Nombre completo</dt>
             <dd class="col-sm-8">{{ profile_official.full_name }}</dd>
@@ -24,25 +69,30 @@
             <dd class="col-sm-8">{{ profile_official.area|default:"Sin área asignada" }}</dd>
         </dl>
 
-        <form method="post" novalidate>
-            {% csrf_token %}
             {% if form.non_field_errors %}
                 <div class="invalid-feedback d-block mb-3" role="alert">
                     {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}
                 </div>
             {% endif %}
             <div class="attention-entry-grid">
-                {% for field in form %}
+                {% for field in form.visible_fields %}
+                    {% if field.name != 'photo' %}
                     <div class="attention-entry-field">
                         <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
                         {{ field }}
                         {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </div>
+                    {% endif %}
                 {% endfor %}
             </div>
             <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'my_profile' %}">Cancelar</a>
                 <button class="btn btn-primary attention-entry-submit" type="submit">Guardar cambios</button>
             </div>
         </form>
     </section>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/croppr@2.3.1/dist/croppr.min.js" defer></script>
+    <script src="{% static 'js/profile-photo.js' %}?v=20261105-white-background" defer></script>
 {% endblock %}
