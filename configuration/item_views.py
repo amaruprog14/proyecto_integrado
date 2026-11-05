@@ -76,7 +76,7 @@ class ItemListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "configuration.view_item"
     template_name = "configuration/item_list.html"
     context_object_name = "items"
-    paginate_by = 10
+    paginate_by = 15
 
     def get_queryset(self):
         return listed_items(self.request.GET).annotate(

@@ -82,7 +82,7 @@ class RoleListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "accounts.view_role"
     template_name = "accounts/role_list.html"
     context_object_name = "roles"
-    paginate_by = 10
+    paginate_by = 15
 
     def get_queryset(self):
         return listed_roles(self.request.GET)
