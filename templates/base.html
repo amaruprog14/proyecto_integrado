@@ -15,7 +15,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-redesign" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261105-profile-avatar" />
         {% block extra_head %}{% endblock %}
     </head>
     <body>
@@ -67,7 +67,11 @@
                             {% endcomment %}
                             <div class="municipal-context-item">
                                 <span class="municipal-context-icon" aria-hidden="true">
+                                    {% if user.official.photo %}
+                                        <img src="{% url 'my_profile_photo' %}" alt="" width="36" height="36">
+                                    {% else %}
                                     <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
+                                    {% endif %}
                                 </span>
                                 <span>
                                     <span class="municipal-context-label">Usuario</span>

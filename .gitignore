@@ -224,6 +224,7 @@ docs/*
 
 
 staticfiles/
+media/
 
 .claude
 .DS_Store

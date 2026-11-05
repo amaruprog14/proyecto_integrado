@@ -1005,9 +1005,13 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
 class OwnOfficialProfileForm(forms.ModelForm):
     """Campos personales permitidos al funcionario sobre su propio perfil."""
 
+    photo = forms.ImageField(required=False, label="Foto de perfil", widget=forms.FileInput(
+        attrs={"accept": "image/jpeg,image/png", "class": "form-control"}))
+    photo_crop = forms.CharField(required=False, widget=forms.HiddenInput)
+
     class Meta:
         model = Official
-        fields = ["email", "phone"]
+        fields = ["email", "phone", "photo"]
         widgets = {
             "email": forms.EmailInput(
                 attrs={"class": "form-control", "maxlength": 191, "autocomplete": "email"}
@@ -1036,8 +1040,54 @@ class OwnOfficialProfileForm(forms.ModelForm):
     def clean_phone(self):
         return clean_phone(self.cleaned_data.get("phone"))
 
+    def clean_photo(self):
+        photo = self.cleaned_data.get("photo")
+        if self.files.get("photo"):
+            if photo.size > 2 * 1024 * 1024:
+                raise ValidationError("La imagen no puede superar los 2 MiB.")
+            if photo.image.format not in ("JPEG", "PNG"):
+                raise ValidationError("Selecciona una imagen JPEG o PNG válida.")
+        return photo
+
+    def clean(self):
+        data = super().clean()
+        if not self.files.get("photo") or "photo" not in data:
+            return data
+        import json
+        import warnings
+        from io import BytesIO
+        from PIL import Image, ImageOps
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        try:
+            rect = json.loads(data.get("photo_crop") or "null")
+            values = [rect[key] for key in ("x", "y", "width", "height")]
+            if any(type(value) is not int for value in values):
+                raise ValueError
+            x, y, width, height = values
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                data["photo"].seek(0)
+                with Image.open(data["photo"]) as original:
+                    image = ImageOps.exif_transpose(original)
+                    if (x < 0 or y < 0 or width < 1 or height < 1 or width != height or
+                            x + width > image.width or y + height > image.height):
+                        raise ValueError
+                    # Almacenar el recorte real, sin los metadatos del archivo original.
+                    image = image.crop((x, y, x + width, y + height)).convert("RGBA")
+                    background = Image.new("RGB", image.size, "white")
+                    background.paste(image, mask=image.getchannel("A"))
+                    image = background
+                    image.thumbnail((512, 512))
+                    output = BytesIO()
+                    image.save(output, format="JPEG", quality=90)
+            data["photo"] = SimpleUploadedFile("perfil.jpg", output.getvalue(), content_type="image/jpeg")
+        except (ValueError, TypeError, KeyError, OSError,
+                Image.DecompressionBombError, Image.DecompressionBombWarning):
+            self.add_error("photo", "Selecciona una imagen válida y confirma un recorte dentro de sus límites.")
+        return data
+
     def save(self, commit=True):
         official = super().save(commit=False)
         if commit:
-            official.save(update_fields=["email", "phone", "updated_at"])
+            official.save(update_fields=["email", "phone", "photo", "updated_at"])
         return official
