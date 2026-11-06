@@ -90,12 +90,12 @@ class MaintainerLayoutTests(TestCase):
 
         for route_name in ("delegation_list", "attention_type_maintainer"):
             with self.subTest(route=route_name):
-                response = self.client.get(reverse(route_name))
+                response = self.client.get(reverse(route_name), {"page_size": 5})
 
                 self.assertContains(response, 'data-loading-target="#maintainer-table-wrap"')
                 self.assertContains(response, 'data-loading-text="Buscando…"')
                 self.assertContains(response, '<span class="page-link" aria-current="page">1</span>', html=True)
-                self.assertContains(response, "Mostrando 1 a 10 de")
+                self.assertContains(response, "Mostrando 1 a 5 de")
 
     def test_catalogs_distinguish_empty_lists_from_searches_without_matches(self):
         cases = (

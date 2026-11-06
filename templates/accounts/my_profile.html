@@ -12,8 +12,7 @@
         <p class="maintainer-breadcrumb">Cuenta personal / Mi perfil</p>
         <h1 id="profile-title">Mi perfil</h1>
         <p class="attention-entry-note">
-            Desde aquí puedes actualizar tu foto y tus datos personales de contacto. Los roles,
-            delegaciones, cargo, área y estado laboral son administrados por personal autorizado.
+            Desde aquí puedes actualizar tu foto y tus datos personales de contacto. {% if not client_portal %}Los roles, delegaciones, cargo, área y estado laboral son administrados por personal autorizado.{% else %}Tu identidad y el estado de tu cuenta son administrados por personal autorizado.{% endif %}
         </p>
 
         <form method="post" enctype="multipart/form-data" novalidate id="profile-form">
@@ -22,7 +21,7 @@
             <section class="profile-photo" aria-labelledby="profile-photo-title">
                 <div class="profile-avatar">
                     {% if profile_official.photo %}
-                        <img src="{% url 'my_profile_photo' %}" alt="Tu foto de perfil" id="profile-photo-preview">
+                        <img src="{% if client_portal %}{% url 'client_profile_photo' %}{% else %}{% url 'my_profile_photo' %}{% endif %}" alt="Tu foto de perfil" id="profile-photo-preview">
                     {% else %}
                         <img alt="Vista previa de tu foto" id="profile-photo-preview" hidden>
                     {% endif %}
@@ -63,10 +62,10 @@
             <dd class="col-sm-8">{{ request.user.username }}</dd>
             <dt class="col-sm-4">Delegación principal</dt>
             <dd class="col-sm-8">{{ profile_official.delegation|default:"Sin delegación asignada" }}</dd>
-            <dt class="col-sm-4">Cargo</dt>
+            {% if client_portal %}<dt class="col-sm-4">Territorio</dt><dd class="col-sm-8">{{ profile_official.territory|default:"Pendiente de asignación" }}</dd><dt class="col-sm-4">Dirección</dt><dd class="col-sm-8">{{ profile_official.address|default:"Pendiente de registro" }}</dd>{% else %}<dt class="col-sm-4">Cargo</dt>
             <dd class="col-sm-8">{{ profile_official.position|default:"Sin cargo asignado" }}</dd>
             <dt class="col-sm-4">Área</dt>
-            <dd class="col-sm-8">{{ profile_official.area|default:"Sin área asignada" }}</dd>
+            <dd class="col-sm-8">{{ profile_official.area|default:"Sin área asignada" }}</dd>{% endif %}
         </dl>
 
             {% if form.non_field_errors %}
@@ -86,7 +85,7 @@
                 {% endfor %}
             </div>
             <div class="attention-entry-actions">
-                <a class="btn attention-entry-cancel" href="{% url 'my_profile' %}">Cancelar</a>
+                <a class="btn attention-entry-cancel" href="{% if client_portal %}{% url 'client_profile' %}{% else %}{% url 'my_profile' %}{% endif %}">Cancelar</a>
                 <button class="btn btn-primary attention-entry-submit" type="submit">Guardar cambios</button>
             </div>
         </form>

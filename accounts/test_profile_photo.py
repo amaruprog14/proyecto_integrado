@@ -4,12 +4,12 @@ from io import BytesIO
 from PIL import Image
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from accounts.models import Official
 
 
-class ProfilePhotoTests(TestCase):
+class ProfilePhotoTests(TransactionTestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

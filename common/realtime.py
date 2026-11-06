@@ -11,16 +11,16 @@ from django.db import transaction
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete, m2m_changed
 from django.dispatch import receiver
 
-from accounts.models import Official, Delegation, Role, Area, Position, GroupProfile
+from accounts.models import Official, Delegation, Role, Area, Position, GroupProfile, Territory, ServiceRecipient
 from activities.models import Activity, SocialAttention
 from configuration.models import Item, Period, AttentionType, SubattentionType, ServiceType
 from common.scopes import current_permission
 
 logger = logging.getLogger(__name__)
-MODELS = dict(activity=Activity, official=Official, delegation=Delegation, user=get_user_model(),
+MODELS = dict(territory=Territory, activity=Activity, official=Official, delegation=Delegation, user=get_user_model(),
     role=Role, area=Area, position=Position, group=Group, period=Period,
     item=Item, attention_type=AttentionType, subattention_type=SubattentionType)
-ROUTES = dict(activity='activity_maintainer', official='official_maintainer',
+ROUTES = dict(territory='territory_maintainer', activity='activity_maintainer', official='official_maintainer',
     delegation='delegation_list', user='user_maintainer', role='role_list', area='area_maintainer',
     position='position_maintainer', group='group_maintainer', period='period_maintainer',
     item='item_maintainer', attention_type='attention_type_maintainer', subattention_type='subattention_type_maintainer')
@@ -75,6 +75,12 @@ def queryset(key, user):
             return scoped_users(user)
         if key == 'delegation':
             return scoped_delegations(user)
+        if key == 'territory':
+            from accounts.models import Role
+            from common.scopes import permission_scope, delegation_ids
+            qs = Territory.objects.filter(deleted_at__isnull=True)
+            scope = permission_scope(user, permission(key))
+            return qs if scope == Role.Scope.ALL else qs.filter(delegation_id__in=delegation_ids(user)) if scope == Role.Scope.DELEGATION else qs.none()
         if key == 'activity':
             return activity_queryset(user, permission(key))
         qs = MODELS[key].objects.all()
@@ -104,6 +110,8 @@ def affected(instance):
     """Filas modificadas y etiquetas relacionadas que aparecen en otros listados."""
     rows = {(key, instance.pk) for key, model in MODELS.items()
             if isinstance(instance, model) and instance.pk}
+    if isinstance(instance, ServiceRecipient) and instance.user_id:
+        rows.add(('user', instance.user_id))
     if isinstance(instance, Official):
         rows.update(('role', pk) for pk in instance.roles.values_list('pk', flat=True))
         if instance.user_id:
@@ -118,7 +126,8 @@ def affected(instance):
         rows.add(('group', instance.group_id))
     related = {
         Official: (('activity', Activity, 'official_id'),),
-        Delegation: (('official', Official, 'delegation_id'), ('activity', Activity, 'official__delegation_id')),
+        Territory: (('user', get_user_model(), 'service_recipient__territory_id'),),
+        Delegation: (('territory', Territory, 'delegation_id'), ('official', Official, 'delegation_id'), ('activity', Activity, 'official__delegation_id')),
         Area: (('official', Official, 'area_id'),),
         Position: (('official', Official, 'position_id'),),
         Item: (('activity', Activity, 'item_id'),),
@@ -131,7 +140,7 @@ def affected(instance):
     return rows
 
 
-WATCHED = tuple(MODELS.values()) + (SocialAttention, GroupProfile, ServiceType)
+WATCHED = tuple(MODELS.values()) + (SocialAttention, GroupProfile, ServiceType, ServiceRecipient)
 
 
 def snapshot(instance):

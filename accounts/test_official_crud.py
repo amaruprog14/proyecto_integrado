@@ -32,6 +32,8 @@ class OfficialCrudTests(TestCase):
         )
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def payload(self, **overrides):
@@ -191,6 +193,10 @@ def export_rows(response):
 
 
 class OfficialExportTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
     """Exportación a Excel del listado de funcionarios: mismas columnas, filtros y ámbito."""
 
     HEADERS = ("Nombre completo", "RUT o RUN chileno", "Correo", "Área", "Cargo", "Estado")
@@ -331,6 +337,8 @@ class OfficialRoleRulesTests(TestCase):
         cls.holder.roles.add(cls.global_role, cls.inactive_role)
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def payload(self, **overrides):

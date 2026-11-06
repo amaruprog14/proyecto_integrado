@@ -2,25 +2,27 @@
 from django.contrib import messages
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError, PermissionDenied
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from django.urls import path, reverse
 from django.views import View
-from django.core.paginator import Paginator
-from accounts.models import Position, Area, GroupProfile, Role
+from common.pagination import ClampedPaginationMixin
+from common.list_state import ordered, query_params
+from accounts.models import Position, Area, GroupProfile, Role, Territory
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
 from common.text import normalize_spaces, describe_changes
 from common.scopes import permission_scope, delegation_ids
-from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, protect_last_group_administrator
+from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
 from configuration.models import Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
 from activities.models import Activity
 
 CATALOGS = {
+    "territory": (Territory, TerritoryForm, "Territorios", "territories", ("code", "territory_name", "delegation__delegation_name", "description")),
     "position": (Position, PositionForm, "Cargos", "positions", ("position_name", "description")),
     "area": (Area, AreaForm, "Áreas", "areas", ("area_name",)),
     "group": (Group, GroupForm, "Grupos", "groups", ("name",)),
@@ -67,7 +69,7 @@ def state(obj):
     return ("ACTIVE", "Vigente") if active else ("INACTIVE", "No vigente")
 
 
-class MaintainerView(ProtectedViewMixin, View):
+class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
     key = None
     operation = "list"
 
@@ -84,6 +86,11 @@ class MaintainerView(ProtectedViewMixin, View):
         model = self.spec[0]
         if self.key == "activity":
             return activity_queryset(self.request.user, self.get_permission_required()[0])
+        if self.key == "territory":
+            from common.scopes import permission_scope, delegation_ids
+            scope = permission_scope(self.request.user, self.get_permission_required()[0])
+            qs = Territory.objects.filter(deleted_at__isnull=True).select_related("delegation")
+            return qs if scope == Role.Scope.ALL else qs.filter(delegation_id__in=delegation_ids(self.request.user)) if scope == Role.Scope.DELEGATION else qs.none()
         qs = model.objects.all()
         if self.key == "group":
             return qs.select_related("sgr_profile")
@@ -99,7 +106,7 @@ class MaintainerView(ProtectedViewMixin, View):
     def context(self):
         permission = self.get_permission_required()[0].split(".")[0]
         model = self.spec[0]._meta.model_name
-        entities = {"position": "cargo", "area": "área", "group": "grupo", "period": "período", "activity": "actividad"}
+        entities = {"territory": "territorio", "position": "cargo", "area": "área", "group": "grupo", "period": "período", "activity": "actividad"}
         entity = entities[self.key]
         feminine = self.key in ("area", "activity")
         form_title = f"Editar {entity}" if self.operation == "update" else f"{'Nueva' if feminine else 'Nuevo'} {entity}"
@@ -224,28 +231,20 @@ class MaintainerView(ProtectedViewMixin, View):
             return render(request, "maintainers/detail.html", context)
         if self.operation != "list" and self.operation != "export":
             return HttpResponse(status=405)
-        qs = self.filtered()
+        self.prepare_list_state()
+        qs = ordered(self.filtered(), self.key, request.GET)
         headers = [str(self.spec[0]._meta.get_field(f.split("__")[0]).verbose_name) for f in self.spec[4]] + ["Estado"]
         if self.key == "group":
             headers = ["Nombre", "Alcance", "Miembros", "Permisos", "Estado"]
         if self.operation == "export":
             return xlsx_response(self.key, headers, (self.row(obj)["cells"] for obj in qs), sheet_title=self.spec[2])
-        try:
-            size = int(request.GET.get("page_size", 10))
-        except ValueError:
-            size = 10
-        size = size if size in (5, 10, 25, 50, 100) else 10
-        paginator = Paginator(qs, size)
-        try:
-            number = int(request.GET.get("page", 1))
-        except ValueError:
-            number = 1
-        page = paginator.page(max(1, min(number, paginator.num_pages)))
+        page = self.clamp_page(qs)
+        size = page.paginator.per_page
         params = request.GET.copy()
         params.pop("page", None)
         context.update(rows=[self.row(obj) for obj in page], headers=headers, page_obj=page,
             total=page.paginator.count, querystring=params.urlencode(), query=request.GET.get("q", ""), selected_status=request.GET.get("status", ""),
-            page_size=size, page_sizes=(5, 10, 25, 50, 100),
+            page_size=size, page_sizes=self.page_size_options,
             record_types=Activity.RecordType.values,
             statuses=(("OPEN", "Abierto"), ("CLOSED", "Cerrado")) if self.key == "period" else (("ACTIVE", "Vigente"), ("INACTIVE", "Archivada" if self.key == "activity" else "No vigente")))
         if self.key == "activity":
@@ -253,10 +252,13 @@ class MaintainerView(ProtectedViewMixin, View):
             from configuration.models import Item
             context["officials"] = Official.objects.filter(pk__in=self.queryset().values("official_id"))
             context["items"] = Item.objects.filter(pk__in=self.queryset().values("item_id"))
-        template = {"position": "accounts/position_list.html", "area": "accounts/area_list.html",
+        template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
             "activity": "activities/activity_list.html"}[self.key]
-        return render(request, template, context)
+        context.update(self.list_pagination_context())
+        response = render(request, template, context)
+        response["X-List-URL"] = request.path + "?" + query_params(request._list_state).urlencode()
+        return response
 
     def check_mutable(self, obj):
         if obj is None:
@@ -268,6 +270,10 @@ class MaintainerView(ProtectedViewMixin, View):
                 raise ValidationError("Esta actividad se administra desde su atención de origen.")
             if not Period.objects.filter(start_date__lte=obj.date, end_date__gte=obj.date, status=Period.Status.OPEN).exists():
                 raise ValidationError("La actividad pertenece a un período cerrado o sin período abierto.")
+        if self.key == "territory":
+            from accounts.views import scoped_delegations
+            if not scoped_delegations(self.request.user).filter(pk=obj.delegation_id, status="ACTIVE", deleted_at__isnull=True).exists():
+                raise PermissionDenied("La delegación del territorio no está autorizada o vigente.")
         if isinstance(obj, Group) and not self.request.user.is_superuser and obj.user_set.filter(pk=self.request.user.pk).exists():
             raise PermissionDenied("No puedes modificar tu propio grupo.")
 
@@ -317,6 +323,11 @@ class MaintainerView(ProtectedViewMixin, View):
                 AuditoriaService.register_change(official=getattr(request.user, "official", None),
                     action=f"{self.spec[2]}: {self.operation}", instance=obj, previous_value=old,
                     new_value=new, origin_ip=request.META.get("REMOTE_ADDR") or None)
+        except IntegrityError:
+            if form:
+                form.add_error(None, "Ya existe un registro con esos datos. Revisa el nombre y la delegación.")
+                return render(request, "maintainers/form.html", dict(self.context(), form=form, current_status=state(obj)[1] if obj else ""))
+            raise
         except ValidationError as error:
             if form:
                 form.add_error(None, error)

@@ -74,12 +74,12 @@ document.addEventListener("DOMContentLoaded", () => {
         let controller = null;
         let timer = null;
 
-        // Filtros del formulario sin valores vacíos ni página: un cambio de filtro vuelve a la 1.
+        // Los vacíos limpian filtros guardados; un cambio de filtro vuelve a la página 1.
         const currentSearch = () => {
             const params = new URLSearchParams();
             new FormData(liveForm).forEach((value, key) => {
                 const text = String(value).trim();
-                if (text && key !== "page") params.set(key, text);
+                if (key !== "page") params.set(key, text);
             });
             return params.toString();
         };
@@ -165,7 +165,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         select.value = selected;
                     });
                 }
-                window.history.replaceState(window.history.state, "", url);
+                const canonical = response.headers.get("X-List-URL");
+                window.history.replaceState(window.history.state, "", canonical || url);
                 syncExportLink();
                 const count = document.querySelector('[data-live-region="footer"] .maintainer-record-count');
                 showStatus(count ? count.textContent.trim() : "", { onlyForScreenReaders: true });
@@ -199,7 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
             syncExportLink();
             refresh();
         });
-        liveForm.querySelectorAll('select[name="official"], select[name="item"], select[name="record_type"], input[type="date"]').forEach((control) => {
+        liveForm.querySelectorAll('select[name="official"], select[name="item"], select[name="record_type"], input[type="date"], select[name="sort"], select[name="direction"]').forEach((control) => {
             control.addEventListener("change", () => { syncExportLink(); refresh(); });
         });
         document.addEventListener('sgr:maintainer-saved', () => refresh({ preservePage: true, force: true }));

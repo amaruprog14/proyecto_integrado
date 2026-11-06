@@ -19,9 +19,11 @@ from django.contrib.auth.decorators import login_required
 from django.urls import path, include
 from django.views.decorators.cache import never_cache
 from django.views.generic import TemplateView
+from activities.client_portal import home
 
 urlpatterns = [
-    path('', login_required(never_cache(TemplateView.as_view(template_name='base.html'))), name='home'),
+    path('', home, name='home'),
+    path('portal/', include('activities.client_portal')),
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('activities/', include('activities.urls')),

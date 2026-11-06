@@ -73,7 +73,24 @@ class ProtectedViewMixin(PermissionRequiredMixin):
             official = getattr(user, "official", None)
             if official is None or not official.is_enabled:
                 return False
-        return super().has_permission()
+        allowed = super().has_permission()
+        # Las exportaciones leen las preferencias sin modificar la página guardada.
+        if allowed and self.request.method == 'GET':
+            from common.list_state import module_for, prepare
+            route = getattr(self.request.resolver_match, 'url_name', '') or ''
+            module = module_for(self.request)
+            if module and route.endswith('_export'):
+                prepare(self.request, module)
+        if allowed and self.request.method == 'GET' and module and route.endswith('_export'):
+            from django.core.cache import cache
+            if not cache.add(f'{module}-export:{user.pk}', True, timeout=30):
+                from django.contrib import messages
+                from django.shortcuts import redirect
+                from common.list_state import ROUTES
+                messages.error(self.request, "Espera 30 segundos entre exportaciones a Excel.")
+                self.get = lambda *args, **kwargs: redirect(next(name for name, key in ROUTES.items()
+                    if key == module and not name.endswith('_export')))
+        return allowed
 
     def handle_no_permission(self):
         if self.request.user.is_authenticated:

@@ -37,7 +37,9 @@ def configure_text_widgets(form):
     """El navegador anticipa las mismas reglas; el servidor conserva la autoridad."""
     patterns = {
         "delegation_name": CATALOG_PATTERN, "item_name": CATALOG_PATTERN,
+        "territory_name": CATALOG_PATTERN,
         "role_name": CATALOG_PATTERN, "name": CATALOG_PATTERN,
+        "position_name": CATALOG_PATTERN, "area_name": CATALOG_PATTERN,
         "full_name": PERSON_PATTERN, "first_name": PERSON_PATTERN,
         "last_name": PERSON_PATTERN, "recipient_full_name": PERSON_PATTERN,
         "address": ADDRESS_PATTERN, "code": CODE_PATTERN,

@@ -198,7 +198,7 @@ class DelegationCrudAdminTests(TestCase):
         self.assertIn("Zona Rural Sur", names)
         self.assertNotIn("Zona Rural Norte", names)
 
-    def test_pagination_is_ten_per_page_and_keeps_filters(self):
+    def test_pagination_keeps_selected_size_and_filters(self):
         for index in range(12):
             Delegation.objects.create(
                 delegation_name=f"Delegación {index:02d}",
@@ -206,18 +206,18 @@ class DelegationCrudAdminTests(TestCase):
                 commune="La Serena",
             )
 
-        first_page = self.client.get(reverse("delegation_list"), {"status": Delegation.Status.ACTIVE})
+        first_page = self.client.get(reverse("delegation_list"), {"status": Delegation.Status.ACTIVE, "page_size": 5})
 
-        self.assertEqual(len(first_page.context["delegations"]), 10)
+        self.assertEqual(len(first_page.context["delegations"]), 5)
         self.assertEqual(first_page.context["paginator"].count, 13)
-        self.assertEqual(first_page.context["querystring"], "status=ACTIVE")
+        self.assertIn("status=ACTIVE", first_page.context["querystring"])
 
         second_page = self.client.get(
-            reverse("delegation_list"), {"status": Delegation.Status.ACTIVE, "page": 2}
+            reverse("delegation_list"), {"status": Delegation.Status.ACTIVE, "page": 3}
         )
 
         self.assertEqual(len(second_page.context["delegations"]), 3)
-        self.assertEqual(second_page.context["querystring"], "status=ACTIVE")
+        self.assertIn("status=ACTIVE", second_page.context["querystring"])
 
     def test_out_of_range_page_is_clamped(self):
         response = self.client.get(reverse("delegation_list"), {"page": 999})
@@ -225,23 +225,24 @@ class DelegationCrudAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].number, 1)
 
-    def test_page_size_is_selectable_and_invalid_values_fall_back_to_ten(self):
+    def test_page_size_is_selectable_and_invalid_values_fall_back_to_fifteen(self):
         for index in range(105):
             Delegation.objects.create(
                 delegation_name=f"Unidad paginada {index:03d}",
                 address="Calle Central 1",
                 commune="La Serena",
             )
-        for size in (10, 25, 50, 100):
+        for size in (5, 15, 30):
             response = self.client.get(reverse("delegation_list"), {"page_size": size})
             self.assertEqual(len(response.context["delegations"]), size)
             self.assertEqual(response.context["selected_page_size"], size)
         invalid = self.client.get(reverse("delegation_list"), {"page_size": 1000})
-        self.assertEqual(len(invalid.context["delegations"]), 10)
-        self.assertEqual(invalid.context["selected_page_size"], 10)
-        kept = self.client.get(reverse("delegation_list"), {"q": "unidad", "page_size": 25, "page": 2})
-        self.assertEqual(kept.context["querystring"], "q=unidad&page_size=25")
-        self.assertContains(kept, "page_size=25&amp;page=3")
+        self.assertEqual(len(invalid.context["delegations"]), 15)
+        self.assertEqual(invalid.context["selected_page_size"], 15)
+        kept = self.client.get(reverse("delegation_list"), {"q": "unidad", "page_size": 15, "page": 2})
+        self.assertIn("q=unidad", kept.context["querystring"])
+        self.assertIn("page_size=15", kept.context["querystring"])
+        self.assertContains(kept, "direction=desc&amp;page=3")
 
     def test_export_has_per_user_thirty_second_cooldown(self):
         url = reverse("delegation_export")
@@ -324,9 +325,9 @@ class DelegationCrudAdminTests(TestCase):
         export = self.client.get(reverse("delegation_export"), {"q": "exportable"})
 
         self.assertEqual(listed.context["total"], 23)
-        self.assertEqual(listed.context["paginator"].num_pages, 3)
+        self.assertEqual(listed.context["paginator"].num_pages, 2)
         names = [row[1] for row in load_workbook(BytesIO(export.content), read_only=True).active.values][1:]
-        self.assertEqual(names, [f"Sector Exportable {index:02d}" for index in range(23)])
+        self.assertEqual(names, [f"Sector Exportable {index:02d}" for index in reversed(range(23))])
 
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()

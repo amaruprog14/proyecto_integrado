@@ -547,6 +547,8 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
         cleaned = super().clean()
         instance = self.instance
         official = self.official_instance
+        if official is not None and self.data.get("account_type") not in (None, "", "OFFICIAL"):
+            self.add_error(None, "El tipo de cuenta no puede cambiarse.")
         has_official = official is not None or bool(cleaned.get("has_official"))
 
         email = cleaned.get("email")

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load list_headers %}
 {% load static %}
 
 {% block title %}{{ maintainer_title }} · SGR{% endblock %}
@@ -33,13 +34,14 @@
                 <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" data-swal-autosubmit aria-label="Registros por página">
                     {% for size in page_size_options %}<option value="{{ size }}"{% if selected_page_size == size %} selected{% endif %}>{{ size }}</option>{% endfor %}
                 </select>
+            {% include 'includes/list_sort_state.html' %}
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
             <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table">
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
-                        <tr><th scope="col">Código</th><th scope="col">Nombre</th><th scope="col">Tipo de Atención asociado</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr>
+                        <tr>{% sort_header "Código" 0 %}{% sort_header "Nombre" 1 %}{% sort_header "Tipo de Atención asociado" 2 %}{% sort_header "Estado" 3 %}{% sort_header "Acciones" 4 %}</tr>
                     </thead>
                     <tbody>
                         {% for record in records %}

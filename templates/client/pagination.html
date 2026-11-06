@@ -1,0 +1,5 @@
+{% if page_obj.has_other_pages %}<nav aria-label="Páginas de solicitudes"><ul class="pagination maintainer-pagination">
+{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&amp;page={{ page_obj.previous_page_number }}">Anterior</a></li>{% endif %}
+<li class="page-item active"><span class="page-link" aria-current="page">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&amp;page={{ page_obj.next_page_number }}">Siguiente</a></li>{% endif %}
+</ul></nav>{% endif %}

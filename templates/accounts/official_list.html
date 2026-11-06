@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load list_headers %}
 {% load static %}
 
 {% block title %}{{ maintainer_title }} · SGR{% endblock %}
@@ -35,12 +36,13 @@
                 <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" aria-label="Registros por página">
                     {% for size in page_sizes %}<option value="{{ size }}"{% if size == page_size %} selected{% endif %}>{{ size }}</option>{% endfor %}
                 </select>
+            {% include 'includes/list_sort_state.html' %}
             </form>
             <p data-live-status role="status"></p>
 
             <div class="table-responsive maintainer-table-wrap" data-live-region="table">
                 <table class="table maintainer-table" id="maintainer-table" data-page-size="10">
-                    <thead><tr>{% for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}<th class="maintainer-actions" scope="col">Acciones</th></tr></thead>
+                    <thead><tr>{% for column in columns %}{% sort_header column forloop.counter0 %}{% endfor %}<th class="maintainer-actions" scope="col">Acciones</th></tr></thead>
                     <tbody>
                         {% for record in records %}
                             <tr data-status="{{ record.status|default:'' }}">

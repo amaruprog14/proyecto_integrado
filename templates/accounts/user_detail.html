@@ -52,7 +52,7 @@
                 </dl>
             </section>
 
-            <section class="attention-entry-card mt-3" aria-label="Perfil de funcionario">
+            {% if account.service_recipient %}<section class="attention-entry-card mt-3" aria-label="Perfil del cliente"><h2 class="h5 mb-3">Perfil del cliente</h2><dl class="row"><dt class="col-sm-4">Nombre completo</dt><dd class="col-sm-8">{{ account.service_recipient.full_name }}</dd><dt class="col-sm-4">RUT</dt><dd class="col-sm-8">{{ account.service_recipient.national_id }}</dd><dt class="col-sm-4">Teléfono</dt><dd class="col-sm-8">{{ account.service_recipient.phone|default:"—" }}</dd><dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ account.service_recipient.delegation|default:"Pendiente" }}</dd><dt class="col-sm-4">Territorio</dt><dd class="col-sm-8">{{ account.service_recipient.territory|default:"Pendiente" }}</dd><dt class="col-sm-4">Dirección</dt><dd class="col-sm-8">{{ account.service_recipient.address|default:"Pendiente" }}</dd></dl></section>{% else %}<section class="attention-entry-card mt-3" aria-label="Perfil de funcionario">
                 <h2 class="h5 mb-3">Perfil de funcionario/a</h2>
                 {% if account.official %}
                     <dl class="row mb-0">
@@ -97,7 +97,7 @@
                 {% else %}
                     <p class="mb-0">Esta cuenta no tiene perfil de funcionario/a asociado.</p>
                 {% endif %}
-            </section>
+            </section>{% endif %}
 
             <div class="attention-entry-actions">
                 <a class="btn attention-entry-cancel" href="{% url 'user_maintainer' %}">Volver al listado</a>

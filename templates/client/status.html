@@ -1,0 +1,1 @@
+<span class="maintainer-status-pill{% if item.status == 'RESOLVED' %} is-active{% elif item.status == 'REVIEW' %} client-status-review{% else %} is-inactive{% endif %}">{{ item.get_status_display }}</span>

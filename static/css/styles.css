@@ -1969,3 +1969,7 @@ h3 {
     min-width: 0;
     margin-top: 0.5rem;
 }
+
+.list-sort-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: .4rem; }
+.list-sort-link:hover { color: var(--color-primary); text-decoration: underline; }
+.list-sort-link:focus-visible { outline: 3px solid var(--color-primary-light); outline-offset: 3px; }

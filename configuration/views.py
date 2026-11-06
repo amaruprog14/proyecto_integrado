@@ -1,3 +1,4 @@
+from common.list_state import ordered, module_for
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q
@@ -17,7 +18,6 @@ from .models import AttentionType, Period, SubattentionType
 
 
 class CatalogListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
-    paginate_by = 10
     context_object_name = "records"
     search_fields = ()
 
@@ -100,7 +100,7 @@ class CatalogExportView(ProtectedViewMixin, View):
         selected_status = (request.GET.get("status") or "").strip()
         if selected_status in ("1", "0"):
             queryset = queryset.filter(is_active=(selected_status == "1"))
-        return queryset
+        return ordered(queryset, module_for(request), request.GET)
 
     def row_values(self, record):
         raise NotImplementedError

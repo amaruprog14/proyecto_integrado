@@ -45,6 +45,7 @@ def make_official(user, *, delegation=None, status=Official.Status.ACTIVE, full_
 
 def user_payload(**overrides):
     payload = {
+        "account_type": "OFFICIAL",
         "username": "usuario.nuevo",
         "first_name": "Usuario",
         "last_name": "Nuevo",
@@ -66,6 +67,8 @@ class UserCrudAdminTests(TestCase):
         make_official(cls.admin, full_name="Administrador Usuarios", national_id="RUT-ADMIN-USER")
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def test_list_renders_persisted_accounts(self):
@@ -143,7 +146,7 @@ class UserCrudAdminTests(TestCase):
         self.assertContains(response, "Ingresa un RUT o RUN chileno válido")
         self.assertFalse(User.objects.filter(username="rut.invalido").exists())
 
-    def test_create_administrative_account_without_official_profile(self):
+    def test_new_administrative_account_without_profile_is_not_supported(self):
         response = self.client.post(
             reverse("user_create"),
             user_payload(username="cuenta.admin", email="cuenta.admin@example.test"),
@@ -151,9 +154,7 @@ class UserCrudAdminTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        user = User.objects.get(username="cuenta.admin")
-        self.assertFalse(Official.objects.filter(user=user).exists())
-        self.assertTrue(user.is_active)
+        self.assertFalse(User.objects.filter(username="cuenta.admin").exists())
 
     def test_create_requires_password(self):
         response = self.client.post(
@@ -383,15 +384,15 @@ class UserCrudAdminTests(TestCase):
             )
             make_official(user, full_name=f"Funcionario Busqueda {index:02d}", national_id=f"RUT-B{index:02d}")
 
-        response = self.client.get(reverse("user_maintainer"), {"q": "Busqueda"})
+        response = self.client.get(reverse("user_maintainer"), {"q": "Busqueda", "page_size": 5})
 
-        self.assertEqual(len(response.context["users"]), 10)
-        self.assertEqual(response.context["querystring"], "q=Busqueda")
+        self.assertEqual(len(response.context["users"]), 5)
+        self.assertIn("q=Busqueda", response.context["querystring"])
 
-        second_page = self.client.get(reverse("user_maintainer"), {"q": "Busqueda", "page": 2})
+        second_page = self.client.get(reverse("user_maintainer"), {"q": "Busqueda", "page_size": 5, "page": 3})
 
         self.assertEqual(len(second_page.context["users"]), 2)
-        self.assertEqual(second_page.context["querystring"], "q=Busqueda")
+        self.assertIn("q=Busqueda", second_page.context["querystring"])
 
     def test_export_has_no_passwords_and_includes_all_filtered_rows(self):
         for index in range(12):
@@ -472,9 +473,9 @@ class UserCrudAdminTests(TestCase):
         export = self.client.get(reverse("user_export"), {"q": "pagina"})
 
         self.assertEqual(listed.context["total"], 23)
-        self.assertEqual(listed.context["paginator"].num_pages, 3)
+        self.assertEqual(listed.context["paginator"].num_pages, 2)
         usernames = [row[0] for row in load_workbook(BytesIO(export.content), read_only=True).active.values][1:]
-        self.assertEqual(usernames, [f"pagina{index:02d}" for index in range(23)])
+        self.assertEqual(usernames, [f"pagina{index:02d}" for index in reversed(range(23))])
 
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
@@ -678,6 +679,8 @@ class UserScopeTests(TestCase):
         make_official(cls.foreign_user, delegation=cls.foreign, national_id="RUT-AJENA")
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.manager)
 
     def test_list_only_shows_users_of_authorized_delegations(self):
@@ -782,6 +785,8 @@ class LastGlobalAdministratorAccountTests(TestCase):
         make_official(cls.holder, full_name="Única Administradora", national_id="RUT-UNICO-ADM").roles.add(cls.role)
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def holder_payload(self, **overrides):
@@ -859,6 +864,8 @@ class InactiveRoleAssignmentTests(TestCase):
         )
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def test_edit_form_shows_the_inactive_role_locked(self):

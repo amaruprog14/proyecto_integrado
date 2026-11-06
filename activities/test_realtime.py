@@ -15,6 +15,43 @@ from config.asgi import application
 
 @override_settings(ALLOWED_HOSTS=['localhost', 'testserver'])
 class ActivityRealtimeTests(TransactionTestCase):
+    def test_socket_refresh_keeps_state_and_clamps_removed_last_page(self):
+        for _ in range(6):
+            Activity.objects.create(official=self.users[0].official, item=self.item,
+                date=self.today, record_type=Activity.RecordType.FIELD)
+        url = reverse('activity_maintainer')
+        self.clients[1].get(url, {'page_size': 5, 'sort': 'code', 'direction': 'asc',
+            'status': 'ACTIVE', 'record_type': Activity.RecordType.FIELD})
+        response = self.clients[1].get(url, {'page': 2})
+        last_page = list(response.context['page_obj'].object_list)
+        self.assertEqual(response.context['page_obj'].number, 2)
+
+        def archive_last_page():
+            with transaction.atomic():
+                for obj in last_page:
+                    obj.deleted_at = timezone.now()
+                    obj.save()
+
+        async def scenario():
+            reader, outsider = self.socket(), self.socket(2)
+            try:
+                await reader.connect()
+                await outsider.connect()
+                await sync_to_async(archive_last_page)()
+                self.assertEqual(await reader.receive_json_from(), {'type': 'activities.changed'})
+                self.assertTrue(await outsider.receive_nothing(timeout=.1))
+                refreshed = await sync_to_async(self.clients[1].get)(url, HTTP_X_LIVE_SEARCH='1')
+                self.assertEqual(refreshed.context['page_obj'].number, 1)
+                self.assertEqual(refreshed.context['page_obj'].paginator.per_page, 5)
+                self.assertEqual(refreshed.context['selected_sort'], 'code')
+                self.assertEqual(refreshed.context['selected_direction'], 'asc')
+                self.assertEqual(refreshed.context['selected_status'], 'ACTIVE')
+                self.assertIn('page=1', refreshed['X-List-URL'])
+            finally:
+                await reader.disconnect()
+                await outsider.disconnect()
+        async_to_sync(scenario)()
+
     def setUp(self):
         self.a = Delegation.objects.create(delegation_name='A')
         self.b = Delegation.objects.create(delegation_name='B')

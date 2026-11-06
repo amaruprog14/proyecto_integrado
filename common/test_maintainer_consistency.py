@@ -35,7 +35,7 @@ class FieldValidationTests(SimpleTestCase):
     def test_page_size_allowlist(self):
         view = ClampedPaginationMixin()
         view.paginate_by = 10
-        for value, expected in (("25", 25), ("3", 10), ("0", 10), ("9999", 10), ("no", 10)):
+        for value, expected in (("5", 5), ("15", 15), ("30", 30), ("25", 15), ("3", 15), ("0", 15), ("9999", 15), ("no", 15)):
             view.request = RequestFactory().get("/", {"page_size": value})
             self.assertEqual(view.get_paginate_by(None), expected)
 
