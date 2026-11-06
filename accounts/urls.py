@@ -104,4 +104,5 @@ urlpatterns = [
 from common.maintainers import maintainer_urls
 urlpatterns += maintainer_urls('position', 'cargos/')
 urlpatterns += maintainer_urls('area', 'areas/')
+urlpatterns += maintainer_urls('territory', 'territorios/')
 urlpatterns += maintainer_urls('group', 'grupos/')

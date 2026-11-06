@@ -62,7 +62,7 @@ class LiveSearchMarkupTests(TestCase):
     def test_search_in_the_url_keeps_filters_in_pages_and_export(self):
         for list_route, export_route, active in MAINTAINERS:
             with self.subTest(route=list_route):
-                response = self.client.get(reverse(list_route), {"q": "BUSCABLE", "status": active})
+                response = self.client.get(reverse(list_route), {"q": "BUSCABLE", "status": active, "page_size": 5})
 
                 self.assertEqual(response.context["total"], 12)
                 self.assertEqual(response.context["page_obj"].number, 1)
@@ -72,8 +72,8 @@ class LiveSearchMarkupTests(TestCase):
                 self.assertIn(f"status={active}", content.split('data-live-region="footer"', 1)[1])
                 self.assertRegex(content, rf'href="{reverse(export_route)}\?[^"]*q=BUSCABLE[^"]*status={active}')
 
-                second = self.client.get(reverse(list_route), {"q": "BUSCABLE", "status": active, "page": 2})
-                self.assertEqual(second.context["page_obj"].number, 2)
+                second = self.client.get(reverse(list_route), {"q": "BUSCABLE", "status": active, "page_size": 5, "page": 3})
+                self.assertEqual(second.context["page_obj"].number, 3)
                 self.assertEqual(len(second.context["page_obj"].object_list), 2)
 
     def test_live_requests_return_the_list_without_consuming_pending_messages(self):

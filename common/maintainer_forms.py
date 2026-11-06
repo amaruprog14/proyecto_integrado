@@ -3,10 +3,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.db.models import Q
-from accounts.models import Area, Position, GroupProfile, Role, Official
+from accounts.models import Area, Position, GroupProfile, Role, Official, Territory, Delegation
 from accounts.role_forms import assignable_permissions, can_grant_privileged_permissions
 from accounts.forms import privileged_permission_query
 from common.text import normalize_spaces, clean_description_text
+from common.field_validation import clean_catalog_name, configure_text_widgets
 from common.scopes import scope_officials
 from configuration.models import Period, Item
 from activities.models import Activity
@@ -18,6 +19,7 @@ class MaintainerForm(forms.ModelForm):
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.actor = actor
+        configure_text_widgets(self)
         if self.instance.pk and "is_active" in self.fields:
             self.fields.pop("is_active")
         for field in self.fields.values():
@@ -32,7 +34,11 @@ class MaintainerForm(forms.ModelForm):
     def clean(self):
         data = super().clean()
         if self.name_field and data.get(self.name_field):
-            name = normalize_spaces(data[self.name_field])
+            try:
+                name = clean_catalog_name(data[self.name_field])
+            except ValidationError as error:
+                self.add_error(self.name_field, error)
+                return data
             data[self.name_field] = name
             for pk, existing in self._meta.model.objects.exclude(pk=self.instance.pk).values_list("pk", self.name_field):
                 if normalize_spaces(existing).casefold() == name.casefold():
@@ -52,6 +58,28 @@ class PositionForm(MaintainerForm):
     class Meta:
         model = Position
         fields = ("position_name", "description", "is_active")
+
+
+class TerritoryForm(MaintainerForm):
+    class Meta:
+        model = Territory
+        fields = ("territory_name", "delegation", "description", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from accounts.views import scoped_delegations
+        self.fields["delegation"].queryset = scoped_delegations(self.actor).filter(status="ACTIVE", deleted_at__isnull=True)
+
+    def clean_territory_name(self):
+        return clean_catalog_name(self.cleaned_data["territory_name"])
+
+    def clean(self):
+        data = super().clean()
+        if data.get("territory_name") and data.get("delegation"):
+            if Territory.objects.filter(delegation=data["delegation"],
+                    name_key=data["territory_name"].casefold()).exclude(pk=self.instance.pk).exists():
+                self.add_error("territory_name", "Ya existe un territorio con este nombre en la delegación.")
+        return data
 
 
 class AreaForm(MaintainerForm):

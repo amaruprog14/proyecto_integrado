@@ -263,6 +263,39 @@ class Function(BaseModel):
         self.save(update_fields=["is_active", "updated_at"])
 
 
+class Territory(AutoCodeMixin, BaseModel):
+    code_prefix = "TER"
+    territory_name = models.CharField(max_length=100, verbose_name="Nombre")
+    name_key = models.CharField(max_length=100, editable=False)
+    delegation = models.ForeignKey(Delegation, on_delete=models.PROTECT, related_name="territories", verbose_name="Delegación")
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    is_active = models.BooleanField(default=True, verbose_name="Vigente")
+
+    class Meta:
+        verbose_name = "Territorio"
+        verbose_name_plural = "Territorios"
+        constraints = [models.UniqueConstraint(fields=["delegation", "name_key"], name="territory_name_per_delegation")]
+
+    def __str__(self):
+        return self.territory_name
+
+    def clean(self):
+        super().clean()
+        from common.field_validation import clean_catalog_name
+        from common.text import clean_description_text
+        self.territory_name = clean_catalog_name(self.territory_name)
+        self.name_key = self.territory_name.casefold()
+        self.description = clean_description_text(self.description)
+        if self.pk:
+            old = type(self).objects.get(pk=self.pk)
+            if old.delegation_id != self.delegation_id and (self.clients.exists() or self.client_requests.exists()):
+                raise ValidationError({"delegation": "No puedes cambiar la delegación de un territorio utilizado."})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)
+
+
 class ServiceRecipient(BaseModel):
     """
     Tabla operativa: persona usuaria que recibe servicios o atenciones.
@@ -272,6 +305,38 @@ class ServiceRecipient(BaseModel):
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Activa"
         INACTIVE = "INACTIVE", "Inactiva"
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        null=True, blank=True, related_name="service_recipient", verbose_name="Cuenta del portal")
+    email = models.EmailField(max_length=191, blank=True, verbose_name="Correo de contacto")
+    phone = models.CharField(max_length=30, blank=True, verbose_name="Teléfono")
+    photo = models.ImageField(upload_to="client_profiles/", blank=True, verbose_name="Foto de perfil")
+    territory = models.ForeignKey(Territory, null=True, blank=True, on_delete=models.PROTECT, related_name="clients", verbose_name="Territorio")
+    address = models.CharField(max_length=100, blank=True, verbose_name="Dirección")
+
+    @property
+    def delegation(self):
+        return self.territory.delegation if self.territory_id else None
+
+    @property
+    def delegation_id(self):
+        return self.territory.delegation_id if self.territory_id else None
+
+    @property
+    def location_ready(self):
+        return bool(self.territory_id and self.address.strip() and self.territory.is_active
+                    and not self.territory.deleted_at and self.delegation.status == "ACTIVE"
+                    and not self.delegation.deleted_at)
+
+    @property
+    def is_enabled(self):
+        return self.status == self.Status.ACTIVE and self.deleted_at is None
+
+    def clean(self):
+        super().clean()
+        if self.user_id and (self.user.is_staff or self.user.is_superuser or
+                             hasattr(self.user, "official")):
+            raise ValidationError({"user": "Vincula una cuenta de cliente sin perfil de funcionario ni acceso administrativo."})
 
     full_name = models.CharField(max_length=200, verbose_name="Nombre")
     national_id = models.CharField(

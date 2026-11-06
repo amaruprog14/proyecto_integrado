@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load list_headers %}
 {% load static %}
 
 {% block title %}{{ maintainer_title }} · SGR{% endblock %}
@@ -39,6 +40,7 @@
                         <option value="{{ size }}"{% if selected_page_size == size %} selected{% endif %}>{{ size }}</option>
                     {% endfor %}
                 </select>
+            {% include 'includes/list_sort_state.html' %}
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
@@ -46,12 +48,12 @@
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>
-                            <th scope="col">Código</th>
-                            <th scope="col">Nombre</th>
-                            <th scope="col">Dirección</th>
-                            <th scope="col">Comuna</th>
-                            <th scope="col">Estado</th>
-                            <th scope="col">Acciones</th>
+                            {% sort_header "Código" 0 %}
+                            {% sort_header "Nombre" 1 %}
+                            {% sort_header "Dirección" 2 %}
+                            {% sort_header "Comuna" 3 %}
+                            {% sort_header "Estado" 4 %}
+                            {% sort_header "Acciones" 5 %}
                         </tr>
                     </thead>
                     <tbody>

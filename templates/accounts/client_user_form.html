@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}<section class="maintainer-content"><h1>{{ maintainer_title }}</h1>
+<form method="post" class="attention-entry-card" data-user-form-mode="{{ form_mode }}" data-loading>
+{% csrf_token %}{{ form.non_field_errors }}
+<div class="attention-entry-grid">{% for field in form.visible_fields %}<div class="attention-entry-field"><label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>{% endfor %}</div>
+<div class="attention-entry-actions"><a class="btn attention-entry-cancel" href="{% url 'user_maintainer' %}">Cancelar</a><button class="btn btn-primary" data-loading-text="Guardando…">Guardar usuario</button></div><p class="attention-entry-note">Los campos marcados con * son obligatorios.</p>
+</form></section>{% endblock %}

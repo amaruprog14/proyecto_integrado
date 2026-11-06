@@ -89,6 +89,8 @@ class RoleCrudAdminTests(TestCase):
         )
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def test_list_renders_persisted_roles(self):
@@ -307,18 +309,18 @@ class RoleCrudAdminTests(TestCase):
 
         self.assertContains(response, "No hay roles que coincidan con la búsqueda o el filtro aplicado.")
 
-    def test_pagination_is_ten_per_page_and_keeps_filters(self):
+    def test_pagination_keeps_selected_size_and_filters(self):
         for index in range(12):
             make_role(f"Rol Paginado {index:02d}", "activities.view_activity")
 
-        first_page = self.client.get(reverse("role_list"), {"q": "paginado"})
+        first_page = self.client.get(reverse("role_list"), {"q": "paginado", "page_size": 5})
 
-        self.assertEqual(len(first_page.context["roles"]), 10)
+        self.assertEqual(len(first_page.context["roles"]), 5)
         self.assertEqual(first_page.context["paginator"].count, 12)
-        self.assertEqual(first_page.context["querystring"], "q=paginado")
-        self.assertContains(first_page, "q=paginado&amp;page=2")
+        self.assertIn("q=paginado", first_page.context["querystring"])
+        self.assertContains(first_page, "direction=desc&amp;page=3")
 
-        second_page = self.client.get(reverse("role_list"), {"q": "paginado", "page": 2})
+        second_page = self.client.get(reverse("role_list"), {"q": "paginado", "page_size": 5, "page": 3})
 
         self.assertEqual(len(second_page.context["roles"]), 2)
 
@@ -413,6 +415,8 @@ class GlobalAdministratorProtectionTests(TestCase):
         cls.admin_official = official_with_role("admin.global", cls.admin_role)
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.superuser)
 
     def edit_payload(self, *codenames, **overrides):
@@ -531,6 +535,8 @@ class RoleUserFormIntegrationTests(TestCase):
         cls.role = make_role("Verificador de Evidencias", "activities.view_activity")
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.superuser)
 
     def test_deactivated_role_disappears_from_user_forms(self):

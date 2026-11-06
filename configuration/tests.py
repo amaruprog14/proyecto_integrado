@@ -485,7 +485,7 @@ class CatalogAuditAndExportCleanupTests(TestCase):
         for index in range(12):
             AttentionType.objects.create(name=f"Tipo {index:02d}")
 
-        response = self.client.get(reverse("attention_type_maintainer"), {"page": 99})
+        response = self.client.get(reverse("attention_type_maintainer"), {"page": 99, "page_size": 5})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["page_obj"].number, 2)
+        self.assertEqual(response.context["page_obj"].number, 3)

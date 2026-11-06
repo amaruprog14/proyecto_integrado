@@ -63,6 +63,8 @@ class ItemCrudAdminTests(TestCase):
         cls.item = Item.objects.create(item_name="Atención ciudadana", description="Atenciones en oficina")
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def test_list_renders_persisted_items(self):
@@ -260,22 +262,22 @@ class ItemCrudAdminTests(TestCase):
         self.assertContains(response, "No hay ítems que coincidan con la búsqueda o el filtro aplicado.")
 
         Item.objects.all().delete()
-        response = self.client.get(reverse("item_maintainer"))
+        response = self.client.get(reverse("item_maintainer"), {"q": ""})
         self.assertContains(response, "Aún no hay ítems registrados.")
 
-    def test_pagination_is_ten_per_page_and_keeps_filters(self):
+    def test_pagination_keeps_selected_size_and_filters(self):
         for index in range(12):
             Item.objects.create(item_name=f"Ítem Paginado {index:02d}")
 
-        first_page = self.client.get(reverse("item_maintainer"), {"q": "paginado"})
+        first_page = self.client.get(reverse("item_maintainer"), {"q": "paginado", "page_size": 5})
 
-        self.assertEqual(len(first_page.context["items"]), 10)
+        self.assertEqual(len(first_page.context["items"]), 5)
         self.assertEqual(first_page.context["paginator"].count, 12)
-        self.assertEqual(first_page.context["querystring"], "q=paginado")
-        self.assertContains(first_page, "q=paginado&amp;page=2")
+        self.assertIn("q=paginado", first_page.context["querystring"])
+        self.assertContains(first_page, "direction=desc&amp;page=3")
         self.assertContains(first_page, "de 12 registros")
 
-        second_page = self.client.get(reverse("item_maintainer"), {"q": "paginado", "page": 2})
+        second_page = self.client.get(reverse("item_maintainer"), {"q": "paginado", "page_size": 5, "page": 3})
 
         self.assertEqual(len(second_page.context["items"]), 2)
 
@@ -298,7 +300,7 @@ class ItemCrudAdminTests(TestCase):
             Item.objects.create(code=code, item_name=name)
         expected = ["ITM-0001", "ITM-0002", "ITM-0003", "ITM-0010", "VIS-01"]
 
-        response = self.client.get(reverse("item_maintainer"))
+        response = self.client.get(reverse("item_maintainer"), {"sort": "code", "direction": "asc"})
         self.assertEqual([item.code for item in response.context["items"]], expected)
 
         export = self.client.get(reverse("item_export"))
@@ -322,8 +324,8 @@ class ItemCrudAdminTests(TestCase):
         self.assertEqual(rows[0], ("Código", "Nombre", "Descripción", "Estado"))
         self.assertEqual(len(rows), 13)
         self.assertNotIn("Ítem Exportado Inactivo", [row[1] for row in rows])
-        exported = Item.objects.get(item_name="Ítem Exportado 00")
-        self.assertEqual((rows[1][0], rows[1][1], rows[1][3]), (exported.code, "Ítem Exportado 00", "Activo"))
+        exported = Item.objects.get(item_name="Ítem Exportado 11")
+        self.assertEqual((rows[1][0], rows[1][1], rows[1][3]), (exported.code, "Ítem Exportado 11", "Activo"))
 
     def test_create_update_and_detail_views_render(self):
         create_response = self.client.get(reverse("item_create"), HTTP_X_MODAL_REQUEST="true")
@@ -422,6 +424,8 @@ class ItemDeactivationWithActivitiesTests(TestCase):
         )
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client.force_login(self.admin)
 
     def test_confirmation_shows_how_many_activities_use_the_item(self):

@@ -1,3 +1,4 @@
+from common.list_state import ordered
 """
 CRUD de Ítems (persistencia real).
 
@@ -64,19 +65,14 @@ def filter_items(queryset, params):
 
 
 def listed_items(params):
-    """
-    Orden por código sin distinguir mayúsculas (los manuales se intercalan alfabéticamente con
-    los automáticos) y, en empate, por nombre y pk. El relleno de ITM-NNNN mantiene el orden
-    numérico de los códigos automáticos hasta ITM-9999.
-    """
-    return filter_items(items_queryset(), params).order_by(Lower("code"), Lower("item_name"), "pk")
+    """Ítems filtrados con el orden permitido del listado y la exportación."""
+    return ordered(filter_items(items_queryset(), params), 'item', params)
 
 
 class ItemListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "configuration.view_item"
     template_name = "configuration/item_list.html"
     context_object_name = "items"
-    paginate_by = 15
 
     def get_queryset(self):
         return listed_items(self.request.GET).annotate(

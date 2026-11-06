@@ -3,6 +3,27 @@ from django.contrib import admin
 from activities.models import Activity
 from common.admin_utils import get_user_area
 from .models import Area, LoginThrottle, Official, Position
+from .models import ServiceRecipient
+
+
+@admin.register(ServiceRecipient)
+class ServiceRecipientAdmin(admin.ModelAdmin):
+    list_display = ("full_name", "national_id", "user", "status")
+    search_fields = ("full_name", "national_id", "user__username")
+    list_filter = ("status",)
+    fields = ("full_name", "national_id", "user", "status", "email", "phone", "territory", "address")
+
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    has_add_permission = has_view_permission
+    has_change_permission = has_view_permission
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class ActivityInline(admin.TabularInline):

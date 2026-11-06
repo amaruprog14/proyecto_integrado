@@ -1,0 +1,11 @@
+<div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+    <label for="list-sort">Ordenar por</label>
+    <select id="list-sort" name="sort" class="form-select w-auto" aria-label="Ordenar por">
+        {% for value, label in sort_choices %}<option value="{{ value }}"{% if value == selected_sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <label for="list-direction">Dirección</label>
+    <select id="list-direction" name="direction" class="form-select w-auto" aria-label="Dirección del orden">
+        <option value="desc"{% if selected_direction == 'desc' %} selected{% endif %}>Descendente</option>
+        <option value="asc"{% if selected_direction == 'asc' %} selected{% endif %}>Ascendente</option>
+    </select>
+</div>

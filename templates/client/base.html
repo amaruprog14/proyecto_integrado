@@ -1,0 +1,5 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Portal del cliente · Municipalidad de La Serena{% endblock %}
+{% block sidebar %}{% include 'client/sidebar.html' %}{% endblock %}
+{% block extra_scripts %}<script src="{% static 'js/client-request-live.js' %}" defer></script>{% endblock %}

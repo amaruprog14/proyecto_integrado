@@ -1,3 +1,4 @@
+from common.list_state import ordered
 import logging
 import math
 import time
@@ -9,7 +10,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
@@ -332,7 +333,7 @@ class RecoveryPasswordView(RecoveryFlowMixin, FormView):
 
 # --- Mantenedores (SCRUM-30: acceso validado en el servidor) ---
 
-class OfficialMaintainerView(MaintainerListView):
+class OfficialMaintainerView(ClampedPaginationMixin, MaintainerListView):
     permission_required = 'accounts.view_official'
     template_name = 'accounts/official_list.html'
     extra_context = {
@@ -345,14 +346,7 @@ class OfficialMaintainerView(MaintainerListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         records = []
-        from django.core.paginator import Paginator
-        try:
-            size = int(self.request.GET.get('page_size', 10))
-        except (TypeError, ValueError):
-            size = 10
-        sizes = (5, 10, 15, 25, 30, 50, 100)
-        size = size if size in sizes else 10
-        page = Paginator(listed_officials(self.request), size).get_page(self.request.GET.get('page', 1))
+        page = self.clamp_page(listed_officials(self.request))
         for official in page:
             records.append(
                 {
@@ -369,7 +363,7 @@ class OfficialMaintainerView(MaintainerListView):
         params = self.request.GET.copy()
         params.pop('page', None)
         context.update(total=page.paginator.count, page_obj=page, querystring=params.urlencode(),
-            page_sizes=sizes, page_size=size, query=self.request.GET.get('q', ''),
+            page_sizes=self.page_size_options, page_size=page.paginator.per_page, query=self.request.GET.get('q', ''),
             selected_status=self.request.GET.get('status', ''))
         context["can_add"] = self.request.user.has_perm("accounts.add_official")
         context["can_change"] = self.request.user.has_perm("accounts.change_official")
@@ -424,7 +418,7 @@ def scoped_users(user):
     if ids is None:
         return users
     return users.filter(
-        Q(official__delegation_id__in=ids) | Q(official__authorized_delegations__in=ids)
+        Q(service_recipient__territory__delegation_id__in=ids) | Q(official__delegation_id__in=ids) | Q(official__authorized_delegations__in=ids)
     ).distinct()
 
 
@@ -477,7 +471,7 @@ def filter_users(queryset, params):
     status = (params.get("status") or "").strip()
     if query:
         queryset = queryset.filter(
-            Q(username__icontains=query)
+            Q(service_recipient__full_name__icontains=query) | Q(service_recipient__national_id__icontains=query) | Q(service_recipient__address__icontains=query) | Q(service_recipient__territory__territory_name__icontains=query) | Q(username__icontains=query)
             | Q(first_name__icontains=query)
             | Q(last_name__icontains=query)
             | Q(email__icontains=query)
@@ -490,11 +484,11 @@ def filter_users(queryset, params):
         ).distinct()
     if status == Official.Status.ACTIVE:
         queryset = queryset.filter(is_active=True).filter(
-            Q(official__isnull=True) | Q(official__status=Official.Status.ACTIVE)
+            Q(official__isnull=True, service_recipient__isnull=True) | Q(service_recipient__status="ACTIVE", service_recipient__deleted_at__isnull=True) | Q(official__status=Official.Status.ACTIVE)
         )
     elif status == Official.Status.INACTIVE:
         queryset = queryset.filter(
-            Q(official__isnull=True, is_active=False)
+            Q(official__isnull=True, is_active=False) | Q(service_recipient__status="INACTIVE") | Q(service_recipient__deleted_at__isnull=False)
             | Q(official__status=Official.Status.INACTIVE)
         )
     elif status == Official.Status.SUSPENDED:
@@ -537,7 +531,7 @@ def listed_officials(request):
             Q(delegation=active_delegation)
             | Q(authorized_delegations=active_delegation)
         ).distinct()
-    return filter_officials(officials, request.GET)
+    return ordered(filter_officials(officials, request.GET), 'official', request.GET)
 
 
 def official_cells(official):
@@ -557,7 +551,8 @@ def display_status(user):
     official = getattr(user, "official", None)
     if official is not None and official.status == Official.Status.SUSPENDED:
         return Official.Status.SUSPENDED
-    if not user.is_active or (official is not None and official.status != Official.Status.ACTIVE):
+    recipient = getattr(user, "service_recipient", None)
+    if not user.is_active or (recipient is not None and not recipient.is_enabled) or (official is not None and official.status != Official.Status.ACTIVE):
         return Official.Status.INACTIVE
     return Official.Status.ACTIVE
 
@@ -571,9 +566,15 @@ def decorate_user(user):
         else (user.get_full_name().strip() or user.username)
     )
     user.display_email = (official.email if official is not None and official.email else user.email) or "—"
-    user.display_delegation = official.delegation if official is not None else None
+    recipient = getattr(user, "service_recipient", None)
+    if recipient:
+        user.display_name = recipient.full_name
+        user.display_email = recipient.email or user.email or "—"
+    user.display_delegation = official.delegation if official is not None else recipient.delegation if recipient else None
     if official is not None and official.roles.exists():
         user.display_roles = ", ".join(role.role_name for role in official.roles.all())
+    elif recipient is not None:
+        user.display_roles = "Cliente"
     elif user.is_superuser:
         user.display_roles = "Administrador del sistema"
     else:
@@ -653,6 +654,11 @@ def user_snapshot(user):
     official = Official.objects.filter(user=user).first()
     if official is not None:
         snapshot.update(official_snapshot(official))
+    recipient = getattr(user, "service_recipient", None)
+    if recipient:
+        snapshot.update({"Tipo": "Cliente", "Nombre": recipient.full_name, "RUT": recipient.national_id,
+            "Delegación": str(recipient.delegation or "—"), "Territorio": str(recipient.territory or "—"),
+            "Dirección": recipient.address, "Teléfono": recipient.phone, "Estado": recipient.get_status_display()})
     return snapshot
 
 
@@ -682,16 +688,6 @@ class DelegationListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "accounts.view_delegation"
     template_name = "accounts/delegation_list.html"
     context_object_name = "delegations"
-    paginate_by = 15
-    page_size_options = (5, 15, 30)
-
-    def get_paginate_by(self, queryset):
-        try:
-            page_size = int(self.request.GET.get("page_size", self.paginate_by))
-        except (TypeError, ValueError):
-            page_size = self.paginate_by
-        return page_size if page_size in self.page_size_options else self.paginate_by
-
     def get_queryset(self):
         queryset = scoped_delegations(self.request.user).order_by("delegation_name", "pk")
         return filter_delegations(queryset, self.request.GET)
@@ -722,13 +718,10 @@ class DelegationExportView(ProtectedViewMixin, View):
     cooldown_seconds = 30
 
     def get(self, request):
-        cache_key = f"delegation-export:{request.user.pk}"
-        if not cache.add(cache_key, True, timeout=self.cooldown_seconds):
-            messages.error(request, "Espera 30 segundos entre exportaciones a Excel.")
-            return redirect("delegation_list")
         queryset = filter_delegations(
             scoped_delegations(request.user).order_by("delegation_name", "pk"), request.GET
         )
+        queryset = ordered(queryset, 'delegation', request.GET)
         rows = (
             (
                 delegation.code,
@@ -1009,7 +1002,6 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
     permission_required = "auth.view_user"
     template_name = "accounts/user_list.html"
     context_object_name = "users"
-    paginate_by = 15
     page_size_options = (5, 15, 30)
 
     def get_queryset(self):
@@ -1022,7 +1014,8 @@ class UserListView(ClampedPaginationMixin, ProtectedViewMixin, ListView):
         active_delegation = get_active_delegation(self.request)
         if active_delegation is not None:
             queryset = queryset.filter(
-                Q(official__isnull=True)
+                Q(official__isnull=True, service_recipient__isnull=True)
+                | Q(service_recipient__territory__delegation=active_delegation)
                 | Q(official__delegation=active_delegation)
                 | Q(official__authorized_delegations=active_delegation)
             ).distinct()
@@ -1091,11 +1084,12 @@ class UserExportView(ProtectedViewMixin, View):
         active_delegation = get_active_delegation(request)
         if active_delegation is not None:
             queryset = queryset.filter(
-                Q(official__isnull=True)
+                Q(official__isnull=True, service_recipient__isnull=True)
+                | Q(service_recipient__territory__delegation=active_delegation)
                 | Q(official__delegation=active_delegation)
                 | Q(official__authorized_delegations=active_delegation)
             ).distinct()
-        queryset = filter_users(queryset, request.GET)
+        queryset = ordered(filter_users(queryset, request.GET), 'user', request.GET)
         rows = []
         for user in queryset:
             decorate_user(user)
@@ -1105,7 +1099,7 @@ class UserExportView(ProtectedViewMixin, View):
                     user.username,
                     user.display_name,
                     user.display_email,
-                    (official.national_id if official is not None else "") or "",
+                    (official.national_id if official is not None else getattr(getattr(user, "service_recipient", None), "national_id", "")) or "",
                     user.display_roles,
                     str(user.display_delegation) if user.display_delegation else "",
                     user.status_label,
@@ -1133,6 +1127,18 @@ class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     form_class = OfficialUserForm
     success_url = reverse_lazy("user_maintainer")
 
+    def get_initial(self):
+        return {**super().get_initial(), "account_type": self.request.GET.get("account_type", "")}
+
+    def get_form_class(self):
+        from accounts.account_forms import ClientAccountForm, NewOfficialAccountForm
+        kind = self.request.POST.get("account_type") if self.request.method == "POST" else self.request.GET.get("account_type")
+        return ClientAccountForm if kind == "CLIENT" else NewOfficialAccountForm
+
+    def get_template_names(self):
+        from accounts.account_forms import ClientAccountForm
+        return ["accounts/client_user_form.html"] if self.get_form_class() is ClientAccountForm else [self.template_name]
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["actor"] = self.request.user
@@ -1154,7 +1160,11 @@ class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def form_valid(self, form):
         deny_privileged_role_assignment(self.request, form)
-        user = form.save()
+        try:
+            user = form.save()
+        except (ValidationError, IntegrityError) as error:
+            form.add_error(None, "; ".join(error.messages) if isinstance(error, ValidationError) else "Ya existe una cuenta o identidad con esos datos. Revisa el formulario.")
+            return self.form_invalid(form)
         _registrar_auditoria(
             self.request, "Creación de usuario", user, new=format_snapshot(user_snapshot(user))
         )
@@ -1244,6 +1254,15 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             )
         return self._edited_user
 
+    def get_form_class(self):
+        if getattr(self.get_edited_user(), "service_recipient", None):
+            from accounts.account_forms import ClientAccountForm
+            return ClientAccountForm
+        return self.form_class
+
+    def get_template_names(self):
+        return ["accounts/client_user_form.html"] if getattr(self.get_edited_user(), "service_recipient", None) else [self.template_name]
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["actor"] = self.request.user
@@ -1270,7 +1289,11 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
     def form_valid(self, form):
         deny_privileged_role_assignment(self.request, form)
         previous_snapshot = user_snapshot(self.get_edited_user())
-        user = form.save()
+        try:
+            user = form.save()
+        except (ValidationError, IntegrityError) as error:
+            form.add_error(None, "; ".join(error.messages) if isinstance(error, ValidationError) else "Ya existe una cuenta o identidad con esos datos. Revisa el formulario.")
+            return self.form_invalid(form)
         previous, new = describe_changes(
             previous_snapshot, password_change_note(user_snapshot(user), form)
         )
@@ -1307,19 +1330,25 @@ class UserDeactivateView(ProtectedViewMixin, View):
             messages.error(request, next(iter(errors.values())))
             return redirect("user_maintainer")
         previous_status = Official.Status(display_status(target)).label
-        target.is_active = False
-        target.save(update_fields=["is_active"])
-        official = getattr(target, "official", None)
-        if official is not None and official.status == Official.Status.ACTIVE:
-            official.status = Official.Status.INACTIVE
-            official.save(update_fields=["status", "updated_at"])
-        _registrar_auditoria(
-            request,
-            "Desactivación de usuario",
-            target,
-            previous=f"Usuario: {target.username}\nEstado: {previous_status}",
-            new=f"Usuario: {target.username}\nEstado: {Official.Status.INACTIVE.label}",
-        )
+        with transaction.atomic():
+            target = get_scoped_object_or_404(request, scoped_users(request.user).select_for_update(), pk=target.pk)
+            recipient = getattr(target, "service_recipient", None)
+            if recipient:
+                recipient.status = "INACTIVE"
+                recipient.save(update_fields=["status", "updated_at"])
+            target.is_active = False
+            target.save(update_fields=["is_active"])
+            official = getattr(target, "official", None)
+            if official is not None and official.status == Official.Status.ACTIVE:
+                official.status = Official.Status.INACTIVE
+                official.save(update_fields=["status", "updated_at"])
+            _registrar_auditoria(
+                request,
+                "Desactivación de usuario",
+                target,
+                previous=f"Usuario: {target.username}\nEstado: {previous_status}",
+                new=f"Usuario: {target.username}\nEstado: {Official.Status.INACTIVE.label}",
+            )
         messages.success(request, f"El usuario {target.username} fue desactivado correctamente.")
         return redirect("user_maintainer")
 
@@ -1336,18 +1365,24 @@ class UserActivateView(ProtectedViewMixin, View):
             messages.info(request, f"El usuario {target.username} ya estaba activo.")
             return redirect("user_maintainer")
         previous_status = Official.Status(display_status(target)).label
-        target.is_active = True
-        target.save(update_fields=["is_active"])
-        official = getattr(target, "official", None)
-        if official is not None and official.status != Official.Status.ACTIVE:
-            official.status = Official.Status.ACTIVE
-            official.save(update_fields=["status", "updated_at"])
-        _registrar_auditoria(
-            request,
-            "Activación de usuario",
-            target,
-            previous=f"Usuario: {target.username}\nEstado: {previous_status}",
-            new=f"Usuario: {target.username}\nEstado: {Official.Status.ACTIVE.label}",
-        )
+        with transaction.atomic():
+            target = get_scoped_object_or_404(request, scoped_users(request.user).select_for_update(), pk=target.pk)
+            recipient = getattr(target, "service_recipient", None)
+            if recipient:
+                recipient.status = "ACTIVE"
+                recipient.save(update_fields=["status", "updated_at"])
+            target.is_active = True
+            target.save(update_fields=["is_active"])
+            official = getattr(target, "official", None)
+            if official is not None and official.status != Official.Status.ACTIVE:
+                official.status = Official.Status.ACTIVE
+                official.save(update_fields=["status", "updated_at"])
+            _registrar_auditoria(
+                request,
+                "Activación de usuario",
+                target,
+                previous=f"Usuario: {target.username}\nEstado: {previous_status}",
+                new=f"Usuario: {target.username}\nEstado: {Official.Status.ACTIVE.label}",
+            )
         messages.success(request, f"El usuario {target.username} fue activado correctamente.")
         return redirect("user_maintainer")

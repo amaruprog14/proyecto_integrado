@@ -31,6 +31,8 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
         else:
             from io import StringIO
             call_command('seed_demo', stdout=StringIO())
+        from accounts.models import Territory, Delegation
+        Territory.objects.create(territory_name="Territorio de prueba", delegation=Delegation.objects.first())
         self.clients = {}
         for user in User.objects.all():
             client = Client()
@@ -53,7 +55,7 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
                 self.fail(f'Falta un registro de prueba de {key}')
             if key == 'official':
                 obj = model.objects.filter(user=None, deleted_at__isnull=True).first() or obj
-            fields = dict(activity='record_type', official='full_name', delegation='delegation_name',
+            fields = dict(territory='territory_name', activity='record_type', official='full_name', delegation='delegation_name',
                 user='username', role='role_name', area='area_name', position='position_name',
                 group='name', period='status', item='item_name', attention_type='name', subattention_type='name')
             field = fields[key]

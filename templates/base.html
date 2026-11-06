@@ -16,9 +16,10 @@
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
         <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261105-profile-avatar" />
+        <link rel="stylesheet" href="{% static 'css/client-portal.css' %}">
         {% block extra_head %}{% endblock %}
     </head>
-    <body>
+    <body class="{% if user.service_recipient or client_portal %}client-portal{% endif %}">
         {% if user.is_authenticated %}
             <div class="app-shell">
                 <aside class="app-sidebar" aria-label="Navegación principal">
@@ -32,7 +33,7 @@
                                 height="44"
                             />
                             <span class="app-brand-name">
-                                <strong>Gestión de Resultados</strong>
+                                <strong>{% if user.service_recipient %}Portal del cliente{% else %}Gestión de Resultados{% endif %}</strong>
                                 SGR · Prototipo académico
                             </span>
                         </a>
@@ -54,7 +55,7 @@
                             Cada pantalla indica su enlace activo sobrescribiendo el bloque «sidebar».
                         {% endcomment %}
                         {% block sidebar %}
-                            {% include "includes/maintainer_sidebar.html" with active=request.resolver_match.url_name %}
+                            {% if user.service_recipient %}{% include "client/sidebar.html" %}{% else %}{% include "includes/maintainer_sidebar.html" with active=request.resolver_match.url_name %}{% endif %}
                         {% endblock %}
                     </div>
                 </aside>
@@ -69,6 +70,7 @@
                                 <span class="municipal-context-icon" aria-hidden="true">
                                     {% if user.official.photo %}
                                         <img src="{% url 'my_profile_photo' %}" alt="" width="36" height="36">
+                                    {% elif user.service_recipient.photo %}<img src="{% url 'client_profile_photo' %}" alt="" width="36" height="36">
                                     {% else %}
                                     <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><circle cx="8" cy="5" r="3"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5z"/></svg>
                                     {% endif %}
@@ -78,13 +80,15 @@
                                     <strong>
                                         {% if user.official %}
                                             {{ user.official.full_name }}
+                                        {% elif user.service_recipient %}
+                                            {{ user.service_recipient.full_name }}
                                         {% else %}
                                             {{ user.get_full_name|default:user.username }}
                                         {% endif %}
                                     </strong>
                                 </span>
                             </div>
-                            <div class="municipal-context-item">
+                            {% if not user.service_recipient %}<div class="municipal-context-item">
                                 <span class="municipal-context-icon" aria-hidden="true">
                                     <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path d="M8 1 2 3.5V8c0 3.5 2.6 6 6 7 3.4-1 6-3.5 6-7V3.5z"/></svg>
                                 </span>
@@ -100,12 +104,12 @@
                                                 Sin rol asignado
                                             {% endfor %}
                                         {% else %}
-                                            Sin perfil asignado
+                                            {% if user.service_recipient %}Cliente{% else %}Sin perfil asignado{% endif %}
                                         {% endif %}
                                     </strong>
                                 </span>
                             </div>
-                            <div class="municipal-context-item">
+                            {% endif %}{% if not user.service_recipient %}<div class="municipal-context-item">
                                 <span class="municipal-context-icon" aria-hidden="true">
                                     <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" focusable="false"><path fill-rule="evenodd" d="M8 1a5 5 0 0 0-5 5c0 3.8 5 9 5 9s5-5.2 5-9a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>
                                 </span>
@@ -135,10 +139,10 @@
                                     {% endif %}
                                 </span>
                             </div>
-                        </section>
+                        {% endif %}</section>
                         <div class="app-topbar-actions">
-                            {% if user.official %}
-                                <a class="app-topbar-link" href="{% url 'my_profile' %}"{% if request.resolver_match.url_name == 'my_profile' %} aria-current="page"{% endif %}>Mi perfil</a>
+                            {% if user.official or user.service_recipient %}
+                                <a class="app-topbar-link" href="{% if user.service_recipient %}{% url 'client_profile' %}{% else %}{% url 'my_profile' %}{% endif %}"{% if request.resolver_match.url_name == 'my_profile' %} aria-current="page"{% endif %}>Mi perfil</a>
                             {% endif %}
                             <form class="nav-session-form" method="post" action="{% url 'logout' %}">
                                 {% csrf_token %}
@@ -325,6 +329,7 @@
             <script src="{% static 'js/delegation-switch.js' %}" defer></script>
         {% endif %}
         <script src="{% static 'js/maintainer-modal.js' %}" defer></script>
+        <script src="{% static 'js/account-type.js' %}" defer></script>
         <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">

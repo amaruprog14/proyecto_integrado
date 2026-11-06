@@ -1,0 +1,8 @@
+<div class="maintainer-sidebar">
+    <p class="maintainer-sidebar-title">Portal del cliente</p>
+    <nav aria-label="Portal del cliente">
+        <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_requests' %} is-active{% endif %}" href="{% url 'client_requests' %}">Mis solicitudes</a>
+        <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_request_create' %} is-active{% endif %}" href="{% url 'client_request_create' %}">Nueva atención</a>
+        <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_profile' %} is-active{% endif %}" href="{% url 'client_profile' %}">Mi perfil</a>
+    </nav>
+</div>

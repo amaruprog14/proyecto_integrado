@@ -78,7 +78,8 @@ class SGRAuthBackend(ModelBackend):
         if not super().user_can_authenticate(user):
             return False
         official = getattr(user, "official", None)
-        return official is None or official.is_enabled
+        recipient = getattr(user, "service_recipient", None)
+        return (official is None or official.is_enabled) and (recipient is None or recipient.is_enabled)
 
     def get_role_permissions(self, user_obj, obj=None):
         """Permisos ("app_label.codename") de los roles SGR vigentes del funcionario."""

@@ -27,6 +27,7 @@
                 data-loading
             >
                 {% csrf_token %}
+                {% if form.account_type %}<div class="attention-entry-field"><label for="id_account_type">Tipo de usuario *</label>{{ form.account_type }}{{ form.account_type.errors }}</div>{% endif %}
 
                 {% if form.non_field_errors %}
                     <div class="invalid-feedback d-block mb-3" role="alert">

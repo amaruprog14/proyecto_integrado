@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load list_headers %}
 {% load static %}
 
 {% block title %}{{ maintainer_title }} · SGR{% endblock %}
@@ -70,6 +71,7 @@
                         </div>
                     </div>
                 {% endif %}
+            {% include 'includes/list_sort_state.html' %}
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
@@ -77,7 +79,7 @@
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>
-                            {% for header in headers %}<th scope="col">{{ header|capfirst }}</th>{% endfor %}
+                            {% for header in headers %}{% sort_header header|capfirst forloop.counter0 %}{% endfor %}
                             <th class="maintainer-actions" scope="col">Acciones</th>
                         </tr>
                     </thead>

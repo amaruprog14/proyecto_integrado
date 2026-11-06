@@ -8,6 +8,44 @@ from common.codes import AutoCodeMixin
 from configuration.models import AttentionType, Item, SubattentionType
 
 
+class ClientRequest(BaseModel):
+    """Solicitud ciudadana previa a la atención operativa de un funcionario."""
+    class Status(models.TextChoices):
+        RECEIVED = "RECEIVED", "Recibida"
+        REVIEW = "REVIEW", "En revisión"
+        RESOLVED = "RESOLVED", "Resuelta"
+
+    recipient = models.ForeignKey(ServiceRecipient, on_delete=models.PROTECT, related_name="requests")
+    territory = models.ForeignKey("accounts.Territory", null=True, blank=True, on_delete=models.PROTECT, related_name="client_requests")
+    address_snapshot = models.CharField(max_length=100, blank=True, verbose_name="Dirección al ingresar")
+    delegation = models.ForeignKey(Delegation, on_delete=models.PROTECT)
+    attention_type = models.ForeignKey(AttentionType, on_delete=models.PROTECT)
+    subattention_type = models.ForeignKey(SubattentionType, on_delete=models.PROTECT)
+    subject = models.CharField(max_length=100, verbose_name="Motivo de la solicitud")
+    description = models.TextField(max_length=500, verbose_name="Descripción")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)
+    response = models.TextField(blank=True, max_length=500, verbose_name="Respuesta al cliente")
+    submission_token = models.UUIDField(unique=True, editable=False)
+
+    @property
+    def identifier(self):
+        return f"SOL-{self.pk:06d}"
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "Solicitud ciudadana"
+
+
+class ClientRequestEvent(models.Model):
+    request = models.ForeignKey(ClientRequest, on_delete=models.PROTECT, related_name="events")
+    status = models.CharField(max_length=16, choices=ClientRequest.Status.choices)
+    response = models.TextField(blank=True, max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+
 class Activity(AutoCodeMixin, BaseModel):
     code_prefix = "ACT"
 
