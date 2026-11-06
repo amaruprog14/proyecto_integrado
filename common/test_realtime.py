@@ -1,4 +1,5 @@
 """Cobertura de todos los listados con la matriz de cuentas y ámbitos del SGR."""
+from common.testing_seed import seed_test_data
 import os
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -29,8 +30,7 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
             Activity.objects.create(official=Official.objects.filter(user__is_superuser=True).first(),
                 item=item, date=timezone.localdate(), record_type=Activity.RecordType.FIELD)
         else:
-            from io import StringIO
-            call_command('seed_demo', stdout=StringIO())
+            seed_test_data()
         from accounts.models import Territory, Delegation
         Territory.objects.create(territory_name="Territorio de prueba", delegation=Delegation.objects.first())
         self.clients = {}

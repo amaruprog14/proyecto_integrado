@@ -123,11 +123,11 @@ python manage.py seed_demo
 
 > Las migraciones ya están versionadas en el repositorio, por lo que no es necesario
 > ejecutar `makemigrations` para levantar el proyecto.
-> `seed_demo` crea nuevos usuarios y funcionarios en cada ejecución, con sufijos como
-> `funcionario1_lote_b` cuando ya existen las cuentas originales. Reutiliza áreas, cargos,
-> delegaciones, roles y los demás datos de demostración; solo crea los que falten.
-> Los períodos se completan hasta cinco, sin solapamientos. Al finalizar muestra las cuentas
-> nuevas, su contexto y la contraseña inicial; conserva los registros y contraseñas anteriores.
+> `seed_demo` carga 2.000 registros de negocio ficticios del caso SGR, además de sus catálogos.
+> Repetirlo no crea nuevos lotes y restablece `demo1234` solo en sus seis cuentas de demostración.
+> Para comprobar la carga sin conservarla, usar
+> `python manage.py seed_demo --dry-run`. No elimina datos previos ni fuerza conflictos.
+> Ver [catálogos, distribución y precauciones de la semilla](SEMILLA_SGR.md).
 
 ### 7. Levantar el servidor
 
@@ -139,55 +139,37 @@ Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
 <http://127.0.0.1:8000/admin/>.
 
 
-## Cuentas de demostración
+## Cuentas y datos de demostración
 
-Creadas por el comando `seed_demo` (solo para demostración). Todas usan la contraseña `demo1234`
-y también pueden ingresar con su correo (por ejemplo, `funcionario1@demo.cl` o `admin@demo.cl`).
+La semilla actual crea `adminA`, `editorA`, `readerA`, `readerB`, `clientA` y `clientB`.
+Las seis cuentas de esta semilla usan temporalmente **`demo1234`** para las pruebas del equipo.
+Al repetir la carga se restablece esa clave solo en ellas; los usuarios ajenos no se modifican.
+`adminA` es administrador del SGR sin ser superusuario; `editorA` puede crear y editar
+Actividades y Funcionarios de Las Compañías; los lectores consultan su propia delegación;
+los clientes acceden a solicitudes propias del portal.
 
-| Usuario          | Rol SGR                                           | Área         | Delegación                                  | Alcance                                                                                                                                         |
-| ---------------- | ------------------------------------------------- | ------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin_demo`     | Superusuario; rol Administrador                   | Todas        | D01 Centro (alcance ALL: todas las activas) | Acceso completo (incluye eliminar y ver registros archivados)                                                                                   |
-| `funcionario1`   | Operador                                          | Área Norte   | D01 Centro                                  | Ve y gestiona actividades de su área; solo consulta funcionarios e ítems                                                                        |
-| `funcionario2`   | Operador y Verificador                            | Área Norte   | D02 Norte                                   | Como funcionario1, más validación de evidencias (dos roles)                                                                                     |
-| `funcionario3`   | Coordinador y Operador                            | Área Sur     | D03 Sur (alcance ALL: todas las activas)    | Como funcionario1, más consulta transversal y gestión de ítems y períodos                                                                       |
-| `funcionario4`   | Supervisor y Operador                             | Área Sur     | D03 Sur; autorizadas Sur y Norte            | Como funcionario1, más consulta de delegaciones y períodos. Dos delegaciones autorizadas para probar el selector                                 |
-| `funcionario5`   | Sin rol                                           | Sin contexto | —                                           | Su funcionario asociado está archivado y sin usuario vinculado: **acceso denegado** (demuestra que la falta de contexto nunca amplía el acceso) |
-| `consulta_norte` | Consulta                                          | Área Norte   | D02 Norte                                   | Solo lectura sobre actividades, funcionarios e ítems de su área                                                                                 |
+| Usuario | Contraseña | Acceso |
+| --- | --- | --- |
+| `adminA` | `demo1234` | Administrador SGR; todas las delegaciones mediante el selector del encabezado |
+| `editorA` | `demo1234` | Crear y editar Actividades y Funcionarios de Las Compañías |
+| `readerA` | `demo1234` | Solo lectura de Las Compañías |
+| `readerB` | `demo1234` | Solo lectura de Antena |
+| `clientA` | `demo1234` | Portal del cliente; solicitudes propias de Latorre, Las Compañías |
+| `clientB` | `demo1234` | Portal del cliente; solicitudes propias de Alfalfares, Antena |
 
-Todos son staff. Los permisos efectivos de los funcionarios vienen **solo de sus roles SGR vigentes**
-(ninguno tiene grupos ni permisos propios), por lo que desactivar un rol retira lo que otorgaba.
-Cinco intentos fallidos de ingreso seguidos bloquean la cuenta durante diez minutos; un
-superusuario puede desbloquearla antes borrando su registro en el Admin («Bloqueos de inicio de
-sesión»).
+Estas credenciales se aplican después de ejecutar `python manage.py seed_demo` correctamente.
 
-Roles SGR (modelo `Role`, definidos en `seed_demo`). Ninguno incluye permisos de eliminar: la
-eliminación queda reservada al superusuario y el resto se archiva o desactiva.
+Los **2.000 registros de negocio** son 100 funcionarios, 1.200 actividades, 300 personas
+usuarias, 300 atenciones sociales y 100 solicitudes ciudadanas. Hay 50 funcionarios por
+delegación y suficientes actividades para varias páginas de 30. Las personas son ficticias;
+los catálogos geográficos se limitan a **Las Compañías y Antena, con ocho territorios**.
+Los siete cargos se basan en el descriptor y los seis roles de acceso en la guía del caso.
+Todos los mantenedores visibles reciben datos, incluido un grupo `Consulta SGR` con los dos
+lectores. Hay 2 tipos de atención y 7 subatenciones dependientes, sin inflar catálogos para alcanzar el volumen requerido.
 
-| Rol           | Alcance    | Permisos                                                                                                  |
-| ------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
-| Administrador | ALL        | `view`, `add` y `change` sobre cuentas, actividades y configuración, más usuarios y grupos; la auditoría solo se consulta |
-| Coordinador   | ALL        | Consulta de la operación, delegaciones y catálogos; `add` y `change` sobre Ítems y Períodos                |
-| Supervisor    | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios, delegaciones, ítems y períodos              |
-| Operador      | DELEGATION | `view`, `add` y `change` sobre Actividad; `view` y `add` sobre Atención social; `view` sobre Funcionario e Ítem |
-| Verificador   | DELEGATION | Consulta de actividades, atenciones, evidencias, funcionarios e ítems; `add` y `change` sobre Validación de evidencia |
-| Consulta      | DELEGATION | Solo `view` sobre Actividad, Funcionario e Ítem                                                           |
-
-### Datos cargados por `seed_demo`
-
-- 5 áreas (Norte, Sur, Centro, Cordillera, Costa), 5 cargos, 5 ítems y 5 períodos (tablas maestras)
-- 4 delegaciones: D01 Centro, D02 Norte y D03 Sur activas; D04 Rural inactiva (direcciones ficticias)
-- 6 roles SGR (ver tabla anterior)
-- 7 funcionarios, todos con delegación y al menos un rol: 2 en Área Norte, 2 en Área Sur, 1 en Área
-  Centro (archivado), 1 de consulta en Área Norte y el funcionario del administrador
-- 10 actividades (2 por cada uno de los 5 funcionarios principales)
-- 1 funcionario con `deleted_at` como evidencia de borrado lógico
-- Áreas Norte y Sur con funcionarios y actividades, para demostrar el scoping por área
-
-El comando puede ejecutarse varias veces, incluso en días distintos, sin duplicar datos. En cada
-ejecución restablece los permisos de los roles, y la delegación, delegaciones autorizadas y roles
-de los funcionarios de demostración. Si una base cargada con una versión anterior tiene a los
-usuarios de demostración en los grupos `Funcionarios` o `Consulta`, los quita de ellos (los grupos
-no se eliminan).
+[Ver detalle, fuentes y ejecución segura](SEMILLA_SGR.md). Si la base ya contiene la semilla
+anterior (`admin_demo`, `funcionario1`, Centro/Norte/Sur/Rural), sus datos permanecen intactos;
+no se migran ni se eliminan automáticamente y el total global puede ser mayor.
 
 ## Pantallas
 
@@ -320,7 +302,7 @@ proyecto_integrado/
 - **Ramas de trabajo** de la primera evaluación:
     - `configuration/base-configuraciones`: clase base y configuración
     - `Modelos-iniciales`: modelos del dominio
-    - `configuration/seeds`: comando `seed_demo`
+    - `common/management/commands/seed_demo.py`: comando `seed_demo`
     - `feature/admin-basico`: Admin básico
     - `feature/admin-pro`: Admin pro
     - `configuration/models`: renombrado de modelos y campos a inglés
