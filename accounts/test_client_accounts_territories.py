@@ -1,9 +1,9 @@
+from common.testing_seed import seed_test_data
 import uuid
-from io import BytesIO, StringIO
+from io import BytesIO
 from django.contrib.auth.models import User, Permission
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from accounts.models import Territory, Delegation, Official, ServiceRecipient
@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 class ClientAccountsAndTerritoriesTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        call_command('seed_demo', stdout=StringIO())
+        seed_test_data()
         cls.admin = User.objects.get(username='admin_demo')
         cls.south = Delegation.objects.get(delegation_name='Sur')
         cls.north = Delegation.objects.get(delegation_name='Norte')

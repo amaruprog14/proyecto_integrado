@@ -1,209 +1,287 @@
-from datetime import timedelta
+"""Semilla idempotente del caso SGR, con personas y operaciones ficticias."""
+from collections import Counter
+from datetime import date, timedelta
+from uuid import NAMESPACE_URL, uuid5
 
 from django.contrib.auth.models import Group, Permission, User
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.utils import timezone
 
-from accounts.models import Area, Delegation, Official, Position, Role, ServiceRecipient, GroupProfile
-from activities.models import Activity, SocialAttention
-from configuration.models import Item, Period, ActivityType, ServiceType, AttentionType, SubattentionType
-
-from common.demo_data import (
-    DELEGATIONS, ROLES,
-    DEMO_OFFICIAL_NAMES, DEMO_PASSWORD, AREA_NAMES, POSITION_NAMES,
-    ITEM_NAMES, CATALOG_CHAINS, DEMO_GROUPS, demo_accounts, demo_rut,
-    batch_letters,
+from accounts.models import (
+    Area, Delegation, Function, GroupProfile, Official, Position, Role,
+    ServiceRecipient, Territory,
+)
+from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
+from configuration.models import AttentionType, Item, Period, PeriodMutex, SubattentionType
+from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, DEMO_PASSWORD, demo_rut
+from common.sgr_seed_data import (
+    ATTENTION_CATALOG, GEOGRAPHY, POSITIONS, POSITION_ITEMS, fictional_name,
 )
 
+MARKER = "[SGR seed v1]"
+CONSULTATION_GROUP = "Consulta SGR"
+
+
 def get_permissions(names):
-    """Permisos a partir de "app_label.codename"; falla si alguno no existe."""
-    query = Q()
+    query = Q(pk__in=[])
     for name in names:
         app_label, codename = name.split(".")
         query |= Q(content_type__app_label=app_label, codename=codename)
     permissions = Permission.objects.filter(query).select_related("content_type")
     missing = set(names) - {f"{p.content_type.app_label}.{p.codename}" for p in permissions}
     if missing:
-        raise CommandError(f"Permisos inexistentes: {', '.join(sorted(missing))}")
+        raise CommandError(f"Permisos inexistentes: {', '.join(sorted(missing))}. Ejecuta migrate antes de la semilla.")
     return permissions
 
 
 def get_administrator_permissions():
-    """Ver, crear y modificar todo el dominio y las cuentas; la auditoría solo se consulta."""
-    return (
-        Permission.objects.filter(
-            Q(content_type__app_label__in=["accounts", "activities", "configuration"])
-            | Q(content_type__app_label="auth", content_type__model__in=["user", "group"])
-        )
-        .exclude(codename__startswith="delete_")
-        .exclude(codename__in=["add_auditlog", "change_auditlog"])
+    return Permission.objects.filter(
+        Q(content_type__app_label__in=["accounts", "activities", "configuration"])
+        | Q(content_type__app_label="auth", content_type__model__in=["user", "group"])
+    ).exclude(codename__startswith="delete_").exclude(
+        codename__in=["add_auditlog", "change_auditlog"]
     )
 
 
 class Command(BaseCommand):
-    help = "Completa los datos de demostración una vez y crea nuevos usuarios y funcionarios en cada ejecución."
+    help = "Carga ≥2.000 registros de negocio ficticios del caso SGR sin duplicar ni reemplazar datos existentes."
 
-    def batch_is_used(self, batch):
-        accounts = demo_accounts(batch)
-        checks = (
-            (User, Q(username__in=[a["username"] for a in accounts]) | Q(email__in=[a["email"] for a in accounts])),
-            (Official, Q(national_id__in=[a["national_id"] for a in accounts]) | Q(email__in=[a["email"] for a in accounts])),
-        )
-        return any(model.objects.filter(query).exists() for model, query in checks)
-
-    @staticmethod
-    def catalog_code(prefix, batch, index):
-        return f"{prefix}-DEMO-{batch_letters(batch)}-{index + 1}"
+    def add_arguments(self, parser):
+        parser.add_argument("--no-input", action="store_true", help="Compatibilidad con automatización; no solicita datos interactivos.")
+        parser.add_argument("--dry-run", action="store_true", help="Valida y muestra conteos; revierte toda la carga.")
 
     def handle(self, *args, **options):
-        batch = 0
-        # Si dos procesos eligen el mismo lote, la restricción única revierte todo
-        # el intento perdedor y se busca otro lote; no quedan registros parciales.
-        for attempt in range(5):
-            while self.batch_is_used(batch):
-                batch += 1
-            try:
-                with transaction.atomic():
-                    self.create_batch(batch)
-            except IntegrityError as error:
-                duplicate = error.args and error.args[0] == 1062
-                if not duplicate and "UNIQUE constraint failed" not in str(error):
-                    raise
-                batch += 1
-                continue
-            break
+        # Clave compartida solicitada para las cuentas de demostración del equipo.
+        # No se cambian validadores globales ni contraseñas de usuarios ajenos.
+        password = DEMO_PASSWORD
+        self.created = Counter()
+        self.used = {}
+        self.new_objects = set()
+        try:
+            with transaction.atomic():
+                # Serializa ejecuciones de la semilla y no cambia períodos previamente creados.
+                mutex, _ = PeriodMutex.objects.get_or_create(pk=1)
+                PeriodMutex.objects.select_for_update().get(pk=mutex.pk)
+                self.load(password)
+                self.report(options["dry_run"])
+                if options["dry_run"]:
+                    transaction.set_rollback(True)
+        except (ValidationError, IntegrityError) as error:
+            raise CommandError(f"Carga revertida por datos incompatibles: {error}") from error
+
+    def ensure(self, model, defaults=None, **lookup):
+        obj = model.objects.filter(**lookup).first()
+        if obj is None:
+            obj = model(**lookup, **(defaults or {}))
+            obj.full_clean()
+            obj.save()
+            self.created[model.__name__] += 1
+            self.new_objects.add((model, obj.pk))
+        elif getattr(obj, "deleted_at", None) or getattr(obj, "is_active", True) is False:
+            raise CommandError(f"{model.__name__} {obj.pk} está archivado o desactivado. No se reactiva automáticamente.")
+        self.used.setdefault(model, set()).add(obj.pk)
+        return obj
+
+    def user(self, username, password):
+        email = f"{username.lower()}@sgr.example.invalid"
+        user = User.objects.filter(username=username).first()
+        if user:
+            allowed_groups = {self.consultation_group.pk} if username in ("readerA", "readerB") else set()
+            if (user.email != email or user.is_superuser or user.is_staff or not user.is_active
+                    or set(user.groups.values_list("pk", flat=True)) - allowed_groups
+                    or user.user_permissions.exists()):
+                raise CommandError(f"La cuenta {username} ya existe con otra configuración. No se modifica ni se reutiliza sin revisión.")
+            if not user.check_password(password):
+                user.set_password(password)
+                user.save(update_fields=["password"])
+                self.created["PasswordsReset"] += 1
         else:
-            raise CommandError("No se pudo reservar un lote libre. Vuelve a ejecutar seed_demo.")
+            if User.objects.filter(email=email).exists():
+                raise CommandError(f"Correo de demostración ocupado para {username}.")
+            user = User(username=username, email=email, first_name=username)
+            user.set_password(password)
+            user.full_clean()
+            user.save()
+            self.created["User"] += 1
+        return user
 
-        self.stdout.write(self.style.SUCCESS(
-            f"Lote {batch_letters(batch)} creado: 7 usuarios y 7 funcionarios nuevos. "
-            "Los demás datos de demostración se reutilizan y solo se completan si faltan."
-        ))
-        self.stdout.write(f"Contraseña inicial de las cuentas nuevas: {DEMO_PASSWORD}")
-        for account in demo_accounts(batch):
-            note = " (sin contexto: funcionario archivado)" if account["username"].startswith("funcionario5") else ""
-            self.stdout.write(f"  {account['username']} | {account['email']} | {account['delegation']}{note}")
+    def role(self, name, scope, permissions):
+        expected = set(permissions.values_list("pk", flat=True))
+        role = self.ensure(Role, role_name=name, defaults={"scope": scope, "description": f"{MARKER} Perfil de acceso del caso SGR."})
+        if role.scope != scope:
+            raise CommandError(f"El rol {name} tiene un alcance distinto. No se alteran sus permisos.")
+        if (Role, role.pk) in self.new_objects:
+            role.permissions.set(expected)
+        elif set(role.permissions.values_list("pk", flat=True)) != expected:
+            raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
+        return role
 
-    def create_batch(self, batch):
-        today = timezone.localdate()
-        areas = {n: Area.objects.get_or_create(area_name=n)[0] for n in AREA_NAMES}
-        positions = {n: Position.objects.get_or_create(
-            position_name=n, defaults={"description": f"Funciones de {n.lower()} en la gestión municipal."}
-        )[0] for n in POSITION_NAMES}
-        delegations = {}
-        for code, n, address, _, status in DELEGATIONS:
-            delegation = Delegation.objects.filter(delegation_name=n).first()
-            if delegation is None:
-                available_code = self.available_code(Delegation, code)
-                delegation = Delegation.objects.create(code=available_code, delegation_name=n,
-                    address=address, commune="La Serena", status=status)
-            delegations[n] = delegation
-        roles = {}
-        for role_name, (scope, description, permissions) in ROLES.items():
-            role, created = Role.objects.get_or_create(role_name=role_name,
-                defaults={"scope": scope, "description": description})
-            if created:
-                role.permissions.set(get_administrator_permissions() if permissions is None else get_permissions(permissions))
-            roles[role_name] = role
+    def load(self, password):
+        delegations, territories = [], []
+        for name, names in GEOGRAPHY.items():
+            delegation = self.ensure(Delegation, delegation_name=name, defaults={
+                "address": "Dirección ficticia de demostración", "commune": "La Serena",
+            })
+            if delegation.status != Delegation.Status.ACTIVE:
+                raise CommandError(f"La delegación {name} no está activa.")
+            delegations.append(delegation)
+            for territory_name in names:
+                territories.append(self.ensure(Territory, delegation=delegation,
+                    name_key=territory_name.casefold(), defaults={"territory_name": territory_name,
+                    "description": f"{MARKER} Catálogo territorial del Excel, sin datos personales."}))
 
+        positions, areas, functions = {}, {}, {}
+        for name, (area_name, description) in POSITIONS.items():
+            positions[name] = self.ensure(Position, position_name=name, defaults={"description": description})
+            areas[name] = self.ensure(Area, area_name=area_name)
+            functions[name] = self.ensure(Function, function_name=f"Funciones de {name.lower()}", defaults={"description": description})
+            # No sobrescribir asociaciones de una función existente.
+            if (Function, functions[name].pk) in self.new_objects:
+                functions[name].positions.add(positions[name])
+            elif not functions[name].positions.filter(pk=positions[name].pk).exists():
+                raise CommandError(f"La función de {name} está vinculada a otro cargo.")
+        items = {}
+        for names in POSITION_ITEMS.values():
+            for name in names:
+                items[name] = self.ensure(Item, item_name=name, defaults={"description": f"{MARKER} Indicador de la matriz trimestral SGR."})
+
+        roles = {
+            "adminA": self.role("Administrador", "ALL", get_administrator_permissions()),
+            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"])),
+            "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS)),
+        }
+        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"]))
+        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"]))
+        self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"]))
+        # Grupo funcional pequeño: replica la lectura que ya otorga el rol de consulta.
+        # El alcance sigue siendo la delegación principal de cada miembro.
+        group = self.ensure(Group, name=CONSULTATION_GROUP)
+        expected_group_permissions = set(get_permissions(CONSULTA_PERMISSIONS).values_list("pk", flat=True))
+        if (Group, group.pk) in self.new_objects:
+            group.permissions.set(expected_group_permissions)
+        elif set(group.permissions.values_list("pk", flat=True)) != expected_group_permissions:
+            raise CommandError("El grupo Consulta SGR tiene otros permisos. No se modifica.")
+        profile = self.ensure(GroupProfile, group=group, defaults={
+            "description": f"{MARKER} Lectores de gestión de su propia delegación.",
+            "scope": Role.Scope.DELEGATION,
+        })
+        if profile.scope != Role.Scope.DELEGATION:
+            raise CommandError("El grupo Consulta SGR tiene otro alcance. No se modifica.")
+        self.consultation_group = group
+        users = {name: self.user(name, password) for name in ("adminA", "editorA", "readerA", "readerB", "clientA", "clientB")}
+        # Solo seis cuentas de acceso; los restantes funcionarios no requieren usuario Django.
         officials = []
-        for i, account in enumerate(demo_accounts(batch)):
-            first, _, last = account["full_name"].partition(" ")
-            user = User.objects.create_user(
-                username=account["username"], email=account["email"], password=DEMO_PASSWORD,
-                first_name=first, last_name=last, is_staff=True, is_superuser=(i == 0),
-            )
-            area = areas[account["area"]]
-            position = positions[account["position"]]
-            delegation = delegations[account["delegation"]]
-            official = Official.objects.create(
-                full_name=account["full_name"], national_id=account["national_id"],
-                email=account["email"], phone=account["phone"], area=area, position=position,
-                delegation=delegation, user=None if i == 5 else user,
-                deleted_at=timezone.now() if i == 5 else None,
-            )
-            official.roles.set([role for key, role in roles.items() if key in account["roles"]])
-            official.authorized_delegations.set([
-                delegation for key, delegation in delegations.items() if key in account.get("authorized", [])
-            ])
-            if 1 <= i <= 5:
-                officials.append(official)
-        for group_name in DEMO_GROUPS:
-            group, _ = Group.objects.get_or_create(name=group_name)
-            GroupProfile.objects.get_or_create(group=group)
-        items = []
-        for i, n in enumerate(ITEM_NAMES):
-            item = Item.objects.filter(item_name=n).first()
-            if item is None:
-                item = Item.objects.create(code=self.available_code(Item, self.catalog_code("ITM", 0, i)),
-                    item_name=n, description=f"Registro municipal de {n.lower()}.")
-            items.append(item)
+        account_indices = {0: "adminA", 2: "editorA", 4: "readerA", 1: "readerB"}
+        position_names = list(POSITIONS)
+        for i in range(100):
+            position_name = position_names[i % len(position_names)]
+            username = account_indices.get(i)
+            user = users.get(username)
+            official = self.ensure(Official, national_id=demo_rut(70000000 + i), defaults={
+                "full_name": fictional_name(i), "email": f"official{i:03d}@sgr.example.invalid",
+                "area": areas[position_name], "position": positions[position_name],
+                "delegation": delegations[i % 2], "user": user,
+            })
+            if official.user_id != (user.pk if user else None) or official.email != f"official{i:03d}@sgr.example.invalid" or official.delegation_id != delegations[i % 2].pk or not official.is_enabled:
+                raise CommandError(f"Colisión o cambio de contexto del funcionario simulado {i}; no se reemplaza.")
+            role = roles.get(username, roles["readerA"] if username == "readerB" else roles["editorA"])
+            if (Official, official.pk) in self.new_objects:
+                official.roles.add(role)
+            elif set(official.roles.values_list("pk", flat=True)) != {role.pk} or official.authorized_delegations.exists():
+                raise CommandError(f"El funcionario simulado {i} tiene roles o delegaciones adicionales. Revisión necesaria.")
+            officials.append(official)
 
-        # Completar hasta cinco períodos; nunca agregar otros cinco por ejecución.
-        end = today.replace(day=1) + timedelta(days=29)
-        earliest = Period.objects.order_by("start_date").values_list("start_date", flat=True).first()
-        if earliest is not None:
-            end = min(end, earliest - timedelta(days=1))
-        for i in range(max(0, 5 - Period.objects.count())):
-            start = end - timedelta(days=29)
-            Period.objects.create(start_date=start, end_date=end,
-                                  status=Period.Status.OPEN if i == 0 else Period.Status.CLOSED)
-            end = start - timedelta(days=1)
+        for username in ("readerA", "readerB"):
+            group.user_set.add(users[username])
 
-        if not Period.objects.filter(start_date__lte=today, end_date__gte=today).exists():
-            Period.objects.create(start_date=today, end_date=today)
-        activities = []
-        base_accounts = demo_accounts()
-        for i, official in enumerate(officials):
-            for j in range(2):
-                # Clave estable independiente del lote de usuarios actual.
-                description = f"Actividad de prueba - {base_accounts[i+1]['full_name']} - {base_accounts[i+1]['area']}"
-                activity = Activity.objects.filter(item=items[(i+j) % 5], action_description=description).order_by("pk").first()
-                if activity is None:
-                    activity = Activity.objects.create(official=official, item=items[(i+j) % 5],
-                        date=today, record_type=Activity.RecordType.MONTHLY, action_description=description)
-                if j == 0:
-                    activities.append(activity)
-        for i, (activity_name, service_name, attention_name, sub_name) in enumerate(CATALOG_CHAINS):
-            activity_type, _ = ActivityType.objects.get_or_create(area=areas[AREA_NAMES[i]], name=activity_name)
-            service, _ = ServiceType.objects.get_or_create(activity_type=activity_type, name=service_name)
-            attention = AttentionType.objects.filter(service_type=service, name=attention_name).first()
-            if attention is None:
-                attention = AttentionType.objects.create(
-                    code=self.available_code(AttentionType, self.catalog_code("TAT", 0, i)), service_type=service,
-                    name=attention_name, description=f"Atención municipal de {attention_name.lower()}.")
-            if attention.activity_item_id is None:
-                attention.activity_item = items[i % len(items)]
-                attention.save(update_fields=["activity_item", "updated_at"])
-            subattention = SubattentionType.objects.filter(attention_type=attention, name=sub_name).first()
-            if subattention is None:
-                subattention = SubattentionType.objects.create(
-                    code=self.available_code(SubattentionType, self.catalog_code("SAT", 0, i)), attention_type=attention,
-                    name=sub_name, description=f"Gestión municipal de {sub_name.lower()}.")
-            recipient, _ = ServiceRecipient.objects.get_or_create(national_id=demo_rut(20000000+i),
-                defaults={"full_name": f"Solicitante Demo {DEMO_OFFICIAL_NAMES[i]}"})
-            token = f"seed-A-attention-{i+1}"
-            # Compatibilidad con los tokens de la versión original.
-            if SocialAttention.objects.filter(submission_token__in=[token, f"seed-demo-attention-{i+1}"]).exists():
-                continue
-            responsible = activities[i % 4].official
-            if not SocialAttention.validate_attention_limit(recipient.pk):
-                continue
-            automatic_activity = Activity.objects.create(official=responsible, item=attention.activity_item,
-                date=today, record_type=Activity.RecordType.ATTENTION,
-                action_description=f"Solicitud de demostración de {attention_name.lower()}.")
-            SocialAttention.objects.create(
-                submission_token=token, recipient=recipient, attention_type=attention, subattention_type=subattention,
-                delegation=responsible.delegation, responsible=responsible, date=today,
-                activity=automatic_activity, description=f"Solicitud de demostración de {attention_name.lower()}.")
+        for start, end in ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31))):
+            period = self.ensure(Period, start_date=start, end_date=end)
+            if period.status != Period.Status.OPEN:
+                raise CommandError("Un período de la semilla está cerrado. No se insertan registros en él.")
+        pairs = []
+        for name, subnames in ATTENTION_CATALOG.items():
+            attention = self.ensure(AttentionType, name=name, service_type=None, defaults={
+                "description": f"{MARKER} LISTA del Excel.", "activity_item": items["Atención social a usuario presencial"],
+            })
+            if attention.activity_item_id != items["Atención social a usuario presencial"].pk:
+                raise CommandError(f"El tipo {name} tiene otro ítem automático. No se cambia.")
+            for subname in subnames:
+                pairs.append((attention, self.ensure(SubattentionType, attention_type=attention, name=subname,
+                    defaults={"description": f"{MARKER} LISTA del Excel."})))
+        recipients = []
+        for i in range(300):
+            user = users["clientA"] if i == 0 else users["clientB"] if i == 4 else None
+            recipient = self.ensure(ServiceRecipient, national_id=demo_rut(71000000 + i), defaults={
+                "full_name": fictional_name(100+i), "email": f"recipient{i:03d}@sgr.example.invalid",
+                "territory": territories[i % 8], "address": f"Calle ficticia de demostración {i+1}", "user": user,
+            })
+            if recipient.user_id != (user.pk if user else None) or recipient.territory_id != territories[i % 8].pk or not recipient.is_enabled or recipient.email != f"recipient{i:03d}@sgr.example.invalid":
+                raise CommandError(f"Colisión o cambio de contexto de la persona simulada {i}; no se reemplaza.")
+            recipients.append(recipient)
+        for i in range(1200):
+            is_attention = i >= 900
+            recipient_index = i - 900
+            official = officials[i % 100]
+            # Territorios 0–3 pertenecen a Compañías, 4–7 a Antena.
+            if is_attention:
+                recipient = recipients[recipient_index]
+                delegation_index = recipient_index % 8 // 4
+                social_officials = [person for person in officials if person.position.position_name == "Gestor social"
+                                    and person.delegation_id == delegations[delegation_index].pk and not person.user_id]
+                official = social_officials[(recipient_index // 8) % len(social_officials)]
+                item = items["Atención social a usuario presencial"]
+            else:
+                position_items = POSITION_ITEMS[official.position.position_name]
+                item = items[position_items[(i // 100) % len(position_items)]]
+            activity_date = date(2026, 7, 1) + timedelta(days=(i * 7) % 123)
+            record_type = Activity.RecordType.ATTENTION if is_attention else Activity.RecordType.FIELD if i % 3 == 0 else Activity.RecordType.MONTHLY
+            activity = self.ensure(Activity, code=f"SGR26-ACT-{i+1:04d}", defaults={
+                "official": official, "item": item, "date": activity_date, "record_type": record_type,
+                "action_description": f"{MARKER} Caso ficticio {i+1}: {item.item_name.lower()} en {official.delegation.delegation_name}. Jornada {1 + i // 123}.",
+            })
+            if activity.official_id != official.pk or activity.item_id != item.pk or activity.record_type != record_type:
+                raise CommandError(f"El código {activity.code} tiene otro contexto. No se reemplaza la actividad existente.")
+            if is_attention:
+                attention, subattention = pairs[recipient_index % len(pairs)]
+                token = f"sgr26-att-{recipient_index+1:04d}"
+                existing = SocialAttention.objects.filter(submission_token=token).first()
+                if not existing and not SocialAttention.validate_attention_limit(recipient.pk):
+                    raise CommandError("Una persona simulada ya alcanzó el límite de tres atenciones.")
+                entry = self.ensure(SocialAttention, submission_token=token, defaults={
+                    "activity": activity, "recipient": recipient, "attention_type": attention,
+                    "subattention_type": subattention, "delegation": official.delegation,
+                    "responsible": official, "date": activity.date, "description": activity.action_description,
+                })
+                if entry.activity_id != activity.pk or entry.recipient_id != recipient.pk:
+                    raise CommandError(f"Token de atención ocupado: {token}.")
+        for i in range(100):
+            recipient = recipients[0 if i % 2 == 0 else 4]
+            attention, subattention = pairs[i % len(pairs)]
+            status = ClientRequest.Status.values[i % 3]
+            request = self.ensure(ClientRequest, submission_token=uuid5(NAMESPACE_URL, f"sgr-seed-v1/request/{i}"), defaults={
+                "recipient": recipient, "territory": recipient.territory, "address_snapshot": recipient.address,
+                "delegation": recipient.delegation, "attention_type": attention, "subattention_type": subattention,
+                "subject": f"Solicitud ficticia {i+1}: {subattention.name}",
+                "description": f"{MARKER} Solicitud de demostración para {subattention.name.lower()}.",
+                "status": status, "response": "Gestión simulada atendida por la delegación." if status == ClientRequest.Status.RESOLVED else "",
+            })
+            if request.recipient_id != recipient.pk or request.delegation_id != recipient.delegation_id:
+                raise CommandError("Token de solicitud ocupado o contexto cambiado.")
+            # Se crea el historial completo únicamente al crear una solicitud, nunca al repetir.
+            if not request.events.exists():
+                for step in ClientRequest.Status.values[:ClientRequest.Status.values.index(request.status)+1]:
+                    self.ensure(ClientRequestEvent, request=request, status=step, defaults={"response": request.response if step == ClientRequest.Status.RESOLVED else ""})
 
-    @staticmethod
-    def available_code(model, base):
-        code = base
-        index = 0
-        while model.objects.filter(code=code).exists():
-            code = f"{base}-{batch_letters(index)}"
-            index += 1
-        return code
+    def report(self, dry_run):
+        business = (Official, Activity, ServiceRecipient, SocialAttention, ClientRequest)
+        total = sum(len(self.used.get(model, ())) for model in business)
+        if total != 2000:
+            raise CommandError(f"Conteo de negocio inesperado: {total}; se revierte la carga.")
+        self.stdout.write("SIMULACIÓN: carga revertida." if dry_run else self.style.SUCCESS("Semilla SGR completada; datos existentes conservados."))
+        for model, ids in self.used.items():
+            self.stdout.write(f"{model.__name__}: {len(ids)} de semilla; {self.created[model.__name__]} nuevos; {model.objects.count()} totales en BD")
+        self.stdout.write(f"Negocio: {total} (sin auth, catálogos, historial ni sesiones). Usuarios nuevos: {self.created['User']}.")
+        self.stdout.write(f"Contraseñas de cuentas de semilla restablecidas: {self.created['PasswordsReset']}.")
+        self.stdout.write("Cuentas: adminA, editorA, readerA, readerB, clientA, clientB. Contraseña de demostración: demo1234 (solo estas seis cuentas).")

@@ -1,8 +1,7 @@
+from common.testing_seed import seed_test_data
 import uuid
-from io import StringIO
 
 from django.contrib.auth.models import User, Permission
-from django.core.management import call_command
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
@@ -15,7 +14,7 @@ from .models import ClientRequest, ClientRequestEvent
 class ClientPortalTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        call_command("seed_demo", stdout=StringIO())
+        seed_test_data()
         cls.users = [User.objects.create_user(f"client{i}", password="Client-12345") for i in range(2)]
         cls.people = [ServiceRecipient.objects.create(user=user, full_name=f"Cliente {i}",
             national_id=rut, email=f"client{i}@example.test")
