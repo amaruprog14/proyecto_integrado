@@ -1,4 +1,6 @@
+from django.http import HttpResponseBadRequest
 from django.shortcuts import render
+from django.template import loader
 from django.urls import Resolver404, resolve
 
 LISTING_SUFFIXES = ("_maintainer", "_list")
@@ -28,3 +30,12 @@ def page_not_found(request, exception):
     registros inexistentes o fuera del ámbito y ofrece volver al listado del mantenedor.
     """
     return render(request, "404.html", {"listing_url": listing_url_for(request.path)}, status=404)
+
+
+def bad_request(request, exception):
+    """
+    Página 400 del SGR (handler400; solo se usa con DEBUG=False). Como la 500, se renderiza sin el
+    contexto de la petición: con un Host no permitido request.get_host() vuelve a fallar, y la
+    página no debe depender de la sesión ni de la base de datos. Nunca muestra la excepción.
+    """
+    return HttpResponseBadRequest(loader.render_to_string("400.html"))
