@@ -1,6 +1,5 @@
-from io import StringIO
+from common.testing_seed import seed_test_data
 from django.contrib.auth.models import User
-from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse, resolve
 from django.utils import timezone
@@ -12,7 +11,7 @@ from common.pagination import ClampedPaginationMixin
 class ListStateTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        call_command('seed_demo', stdout=StringIO())
+        seed_test_data()
         cls.admin = User.objects.get(username='admin_demo')
         for index in range(66):
             Delegation.objects.create(delegation_name=f'Paginable {index:03d}', address='Calle 1', commune='La Serena')

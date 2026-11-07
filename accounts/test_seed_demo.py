@@ -1,289 +1,237 @@
-"""Datos de demostración (seed_demo): delegaciones, roles, contexto de cada funcionario y acceso."""
-from datetime import timedelta
+"""Semilla pública: volúmenes, integridad, repetibilidad y aislamiento de evaluación."""
 from io import StringIO
-from unittest import mock
 
-from django.contrib.auth.models import Group, Permission, User
+from django.contrib.auth.models import Group, User
 from django.core.management import call_command
-from django.test import TestCase
+from django.core.management.base import CommandError
+from django.db.models import Count, F
+from django.test import TestCase, override_settings
 from django.urls import reverse
-from django.utils import timezone
 
-from accounts.models import Area, Delegation, Official, Position, Role
-from activities.models import Activity
-from configuration.models import Item, Period
+from accounts.models import Area, Delegation, Function, GroupProfile, Official, Position, Role, ServiceRecipient, Territory
+from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
+from configuration.models import AttentionType, Item, Period, SubattentionType
+from common.demo_data import DEMO_PASSWORD, demo_rut
+from common.sgr_seed_data import GEOGRAPHY, POSITIONS
 
-SEEDED_USERNAMES = ("admin_demo", "funcionario1", "funcionario2", "funcionario3", "funcionario4", "consulta_norte")
-
-
-def run_seed():
-    call_command("seed_demo", stdout=StringIO())
-
-
-def permission_names(queryset):
-    return {f"{p.content_type.app_label}.{p.codename}" for p in queryset.select_related("content_type")}
+PASSWORD = DEMO_PASSWORD
+MODELS = (User, Group, GroupProfile, Area, Delegation, Function, Official, Position, Role, ServiceRecipient, Territory,
+          Activity, ClientRequest, ClientRequestEvent, SocialAttention, AttentionType, Item, Period, SubattentionType)
 
 
-def snapshot():
-    """Cantidad de filas de cada tabla que toca el seed, incluidas las relaciones M2M."""
-    counts = {
-        model.__name__: model.objects.count()
-        for model in (User, Group, Area, Position, Delegation, Role, Official, Item, Period, Activity)
-    }
-    counts.update(
-        role_permissions=Role.permissions.through.objects.count(),
-        role_officials=Role.officials.through.objects.count(),
-        authorized_delegations=Official.authorized_delegations.through.objects.count(),
-        group_permissions=Group.permissions.through.objects.count(),
-        user_groups=User.groups.through.objects.count(),
-    )
-    return counts
+def seed(**kwargs):
+    output = StringIO()
+    call_command("seed_demo", no_input=True, stdout=output, **kwargs)
+    return output.getvalue()
 
 
-class SeedDemoDataTests(TestCase):
-    def setUp(self):
-        run_seed()
+def counts():
+    return {model.__name__: model.objects.count() for model in MODELS}
 
-    def test_creates_three_active_delegations_and_one_inactive(self):
-        active = Delegation.objects.filter(status=Delegation.Status.ACTIVE)
 
-        self.assertEqual(
-            sorted(active.values_list("code", "delegation_name")),
-            [("D01", "Centro"), ("D02", "Norte"), ("D03", "Sur")],
-        )
-        self.assertEqual(Delegation.objects.filter(status=Delegation.Status.INACTIVE).count(), 1)
-        for delegation in Delegation.objects.all():
-            with self.subTest(delegation=delegation.delegation_name):
-                self.assertTrue(delegation.address)
-                self.assertTrue(delegation.commune)
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"], ALLOWED_HOSTS=["testserver"])
+class SeedDemoTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.output = seed()
 
-    def test_creates_the_six_roles_with_their_scope_and_permissions(self):
-        expected_scopes = {
-            "Administrador": Role.Scope.ALL,
-            "Coordinador": Role.Scope.ALL,
-            "Supervisor": Role.Scope.DELEGATION,
-            "Operador": Role.Scope.DELEGATION,
-            "Verificador": Role.Scope.DELEGATION,
-            "Consulta": Role.Scope.DELEGATION,
-        }
+    def test_exactly_two_thousand_operational_records_without_padding_catalogs(self):
+        for model, expected in ((Official, 100), (Activity, 1200), (ServiceRecipient, 300), (SocialAttention, 300), (ClientRequest, 100)):
+            self.assertEqual(model.objects.count(), expected, model.__name__)
+        self.assertEqual(Delegation.objects.count(), 2)
+        self.assertEqual(Territory.objects.count(), 8)
+        self.assertEqual(Position.objects.count(), 7)
+        self.assertEqual(Function.objects.count(), 7)
+        self.assertEqual(Item.objects.count(), 22)
+        self.assertEqual(AttentionType.objects.count(), 2)
+        self.assertEqual(SubattentionType.objects.count(), 7)
+        self.assertIn("Negocio: 2000", self.output)
+        self.assertIn("Contraseña de demostración: demo1234", self.output)
 
-        self.assertEqual(dict(Role.objects.values_list("role_name", "scope")), expected_scopes)
-        for role in Role.objects.all():
-            with self.subTest(role=role.role_name):
-                self.assertTrue(role.is_active)
-                self.assertTrue(role.permissions.exists())
-                self.assertFalse(role.permissions.filter(codename__startswith="delete_").exists())
-
-    def test_permissions_come_only_from_roles(self):
-        for username in SEEDED_USERNAMES[1:] + ("funcionario5",):  # admin_demo es superusuario
-            with self.subTest(username=username):
-                user = User.objects.get(username=username)
-
-                self.assertFalse(user.groups.exists())
-                self.assertFalse(user.user_permissions.exists())
-                self.assertEqual(
-                    user.get_all_permissions(),
-                    permission_names(Permission.objects.filter(sgr_roles__officials__user=user)),
-                )
-
-    def test_coordinator_and_supervisor_also_hold_the_operator_role(self):
-        for username, main_role in (("funcionario3", "Coordinador"), ("funcionario4", "Supervisor")):
-            with self.subTest(username=username):
-                official = User.objects.get(username=username).official
-
-                self.assertEqual(
-                    set(official.roles.values_list("role_name", flat=True)), {main_role, "Operador"}
-                )
-
-    def test_reseeding_preserves_existing_users_and_groups(self):
-        group = Group.objects.create(name="Funcionarios")
-        group.permissions.add(Permission.objects.get(content_type__app_label="activities", codename="add_activity"))
-        user = User.objects.get(username="funcionario1")
-        user.groups.add(group)
-
-        run_seed()
-
-        self.assertTrue(user.groups.filter(pk=group.pk).exists())
-        self.assertTrue(Group.objects.filter(name="Funcionarios").exists())
-
-    def test_administrator_role_manages_the_system_but_cannot_alter_the_audit_log(self):
-        permissions = permission_names(Role.objects.get(role_name="Administrador").permissions.all())
-
-        self.assertTrue(
-            {"accounts.change_delegation", "accounts.change_role", "auth.change_user",
-             "configuration.change_item", "configuration.view_auditlog"} <= permissions
-        )
-        self.assertFalse({"configuration.add_auditlog", "configuration.change_auditlog"} & permissions)
-
-    def test_every_seeded_official_has_a_delegation_and_a_role(self):
-        officials = Official.objects.all()
-
-        self.assertEqual(officials.count(), 7)
-        for official in officials:
-            with self.subTest(official=official.full_name):
-                self.assertIsNotNone(official.delegation)
-                self.assertTrue(official.roles.exists())
-
-    def test_funcionario1_is_an_operator_in_centro(self):
-        official = User.objects.get(username="funcionario1").official
-
-        self.assertEqual(official.delegation.delegation_name, "Centro")
-        self.assertEqual(list(official.roles.values_list("role_name", flat=True)), ["Operador"])
-        self.assertEqual(list(official.get_authorized_delegations()), [official.delegation])
-
-    def test_one_official_has_two_authorized_delegations(self):
-        official = User.objects.get(username="funcionario4").official
-
-        self.assertEqual(official.authorized_delegations.count(), 2)
-        self.assertEqual(
-            set(official.get_authorized_delegations().values_list("delegation_name", flat=True)),
-            {"Sur", "Norte"},
-        )
-
-    def test_admin_demo_has_an_administrator_official_with_all_scope(self):
-        official = User.objects.get(username="admin_demo").official
-
-        self.assertEqual(list(official.roles.values_list("role_name", "scope")), [("Administrador", Role.Scope.ALL)])
-        self.assertEqual(
-            set(official.get_authorized_delegations()),
-            set(Delegation.objects.filter(status=Delegation.Status.ACTIVE)),
-        )
-
-    def test_funcionario5_keeps_no_context(self):
-        archived = Official.objects.get(email="funcionario5@demo.cl")
-
-        self.assertIsNotNone(archived.deleted_at)
-        self.assertIsNone(archived.user)
-        self.assertFalse(Official.objects.filter(user__username="funcionario5").exists())
-
-    def test_header_shows_delegation_and_role(self):
-        for username in SEEDED_USERNAMES:
-            with self.subTest(username=username):
-                user = User.objects.get(username=username)
-                self.client.force_login(user)
-
-                response = self.client.get(reverse("home"))
-
-                delegation = user.official.delegation
-                self.assertContains(response, f"{delegation.code} · {delegation.delegation_name}")
-                self.assertNotContains(response, "Sin delegación asignada")
-                self.assertNotContains(response, "Sin rol asignado")
-
-    def test_running_twice_creates_new_batch_without_touching_previous(self):
-        before = snapshot()
-        original = list(Official.objects.order_by("pk").values())
-        run_seed()
-        after = snapshot()
-        for model in ("User", "Area", "Position", "Delegation", "Role", "Official", "Item", "Period", "Activity"):
-            self.assertEqual(after[model], before[model] * (2 if model in ("User", "Official") else 1), model)
-        self.assertEqual(list(Official.objects.order_by("pk").values())[:7], original)
-        self.assertTrue(User.objects.filter(username="funcionario1_lote_b").exists())
-
-    def test_running_on_another_day_creates_new_batch(self):
-        now = timezone.now()
-        another_day = now + timedelta(days=2)
-        with mock.patch("django.utils.timezone.now", return_value=another_day):
-            run_seed()
-        self.assertEqual(User.objects.count(), 14)
-        self.assertEqual(Period.objects.count(), 5)
-        periods = list(Period.objects.order_by("start_date"))
-        for previous, current in zip(periods, periods[1:]):
-            self.assertLess(previous.end_date, current.start_date)
-
-    def test_existing_catalog_code_does_not_skip_user_batch(self):
-        foreign = Delegation.objects.create(
-            code="D01-B", delegation_name="Delegación ajena", address="Calle 1", commune="Coquimbo"
-        )
-        run_seed()
-        self.assertTrue(User.objects.filter(username="admin_demo_lote_b").exists())
-        foreign.refresh_from_db()
-        self.assertEqual(foreign.commune, "Coquimbo")
-
-    def test_skips_batch_when_only_an_email_collides(self):
-        foreign = User.objects.create_user("ajeno", email="admin.lote.b@demo.cl", password="OtraClave-123")
-        run_seed()
-        self.assertTrue(User.objects.filter(username="admin_demo_lote_c").exists())
-        foreign.refresh_from_db()
-        self.assertTrue(foreign.check_password("OtraClave-123"))
-
-    def test_three_runs_have_distinct_valid_business_keys(self):
-        from common.chilean_rut import normalize_chilean_rut
-        from common.field_validation import clean_catalog_name
-
-        run_seed()
-        run_seed()
-        self.assertEqual(User.objects.count(), 21)
-        self.assertEqual(Period.objects.count(), 5)
+    def test_source_catalogs_and_all_personal_data_are_synthetic(self):
+        for name, names in GEOGRAPHY.items():
+            self.assertSetEqual(set(Territory.objects.filter(delegation__delegation_name=name).values_list("territory_name", flat=True)), set(names))
+        self.assertSetEqual(set(Position.objects.values_list("position_name", flat=True)), set(POSITIONS))
+        self.assertFalse(Official.objects.exclude(email__endswith="@sgr.example.invalid").exists())
+        self.assertFalse(ServiceRecipient.objects.exclude(email__endswith="@sgr.example.invalid").exists())
         for official in Official.objects.all():
-            normalize_chilean_rut(official.national_id)
-        for role in Role.objects.all():
-            self.assertEqual(clean_catalog_name(role.role_name), role.role_name)
+            official.full_clean()
+        for recipient in ServiceRecipient.objects.all():
+            recipient.full_clean()
+        for entry in SocialAttention.objects.all():
+            entry.full_clean()
+            self.assertEqual(entry.responsible_id, entry.activity.official_id)
+            self.assertEqual(entry.delegation_id, entry.recipient.delegation_id)
+        self.assertFalse(SocialAttention.objects.values("recipient").annotate(n=Count("pk")).filter(n__gt=3).exists())
+        self.assertFalse(ClientRequest.objects.exclude(delegation_id=F("territory__delegation_id")).exists())
+        self.assertFalse(Activity.objects.filter(date__lt="2026-07-01").exists())
+        self.assertFalse(Activity.objects.filter(date__gt="2026-10-31").exists())
 
-    def test_failure_rolls_back_entire_new_batch(self):
-        from django.core.management.base import CommandError
+    def test_repeat_preserves_records_and_resets_only_demo_passwords(self):
+        foreign = User.objects.create_user("otro_usuario", password="Clave-privada-ajena-2026")
+        before = counts()
+        user = User.objects.get(username="editorA")
+        user.set_password("Clave-cambiada-local-2026")
+        user.save(update_fields=["password"])
+        activity = Activity.objects.first()
+        activity.action_description = "Descripción modificada por el usuario"
+        activity.save(update_fields=["action_description"])
+        output = seed()
+        self.assertEqual(before, counts())
+        user.refresh_from_db()
+        activity.refresh_from_db()
+        self.assertTrue(user.check_password("demo1234"))
+        foreign.refresh_from_db()
+        self.assertTrue(foreign.check_password("Clave-privada-ajena-2026"))
+        self.assertEqual(activity.action_description, "Descripción modificada por el usuario")
+        self.assertIn("Usuarios nuevos: 0", output)
 
-        before = snapshot()
-        with mock.patch("common.management.commands.seed_demo.User.objects.create_user", side_effect=CommandError("Fallo simulado")):
-            with self.assertRaises(CommandError):
-                run_seed()
-        self.assertEqual(snapshot(), before)
+    def test_each_delegation_has_fifty_officials_and_multiple_activity_pages(self):
+        for username, delegation in (("readerA", "Las Compañías"), ("readerB", "Antena")):
+            self.client.force_login(User.objects.get(username=username))
+            response = self.client.get(reverse("official_maintainer"), {"page_size": 30})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.context["page_obj"].paginator.count, 50)
+            self.assertEqual(response.context["page_obj"].paginator.num_pages, 2)
+            self.assertTrue(all(row.delegation.delegation_name == delegation for row in response.context["page_obj"].object_list))
+            response = self.client.get(reverse("activity_maintainer"), {"page_size": 30})
+            self.assertGreaterEqual(response.context["page_obj"].paginator.count, 50)
+            self.assertTrue(all(row.official.delegation.delegation_name == delegation for row in response.context["page_obj"].object_list))
+            self.assertEqual(self.client.get(reverse("attention_entry")).status_code, 403)
+
+    def test_six_accounts_and_effective_permissions(self):
+        self.assertSetEqual(set(User.objects.values_list("username", flat=True)), {"adminA", "editorA", "readerA", "readerB", "clientA", "clientB"})
+        admin = User.objects.get(username="adminA")
+        self.assertFalse(admin.is_superuser)
+        self.assertTrue(admin.has_perm("accounts.change_official"))
+        editor = User.objects.get(username="editorA")
+        for permission in ("accounts.add_official", "accounts.change_official", "activities.add_activity", "activities.change_activity"):
+            self.assertTrue(editor.has_perm(permission), permission)
+        for username in ("readerA", "readerB", "clientA", "clientB"):
+            user = User.objects.get(username=username)
+            self.assertFalse(user.has_perm("activities.change_activity"))
+        a = User.objects.get(username="clientA").service_recipient
+        b = User.objects.get(username="clientB").service_recipient
+        self.assertNotEqual(a.delegation_id, b.delegation_id)
+        self.assertEqual(a.requests.count(), 50)
+        self.assertEqual(b.requests.count(), 50)
+        for request in ClientRequest.objects.all():
+            self.assertTrue(request.events.filter(status=request.status).exists())
+
+    def test_clients_cannot_open_each_others_requests(self):
+        a = User.objects.get(username="clientA")
+        b = User.objects.get(username="clientB")
+        own = a.service_recipient.requests.first()
+        foreign = b.service_recipient.requests.first()
+        self.client.force_login(a)
+        response = self.client.get(reverse("client_requests"), {"page_size": 30})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].paginator.count, 50)
+        self.assertTrue(all(row.recipient_id == a.service_recipient.pk for row in response.context["page_obj"]))
+        self.assertEqual(self.client.get(reverse("client_request_detail", args=[own.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("client_request_detail", args=[foreign.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("activity_maintainer")).status_code, 403)
+
+    def test_all_visible_maintainers_have_data_and_admin_sees_both_delegations(self):
+        admin = User.objects.get(username="adminA")
+        self.client.force_login(admin)
+        routes = ("delegation_list", "role_list", "user_maintainer", "official_maintainer",
+                  "position_maintainer", "territory_maintainer", "area_maintainer", "group_maintainer",
+                  "activity_maintainer", "item_maintainer", "attention_type_maintainer",
+                  "subattention_type_maintainer", "period_maintainer", "staff_client_requests")
+        for route in routes:
+            with self.subTest(route=route):
+                response = self.client.get(reverse(route))
+                self.assertEqual(response.status_code, 200)
+                self.assertGreater(response.context["page_obj"].paginator.count, 0)
+        response = self.client.get(reverse("home"))
+        self.assertTrue(response.context["can_select_active_delegation"])
+        self.assertSetEqual({d.delegation_name for d in response.context["authorized_active_delegations"]}, set(GEOGRAPHY))
+        visible_ids = set()
+        for delegation in Delegation.objects.all():
+            response = self.client.post(reverse("active_delegation_select"), {"delegation_id": delegation.pk})
+            self.assertEqual(response.status_code, 302)
+            response = self.client.get(reverse("official_maintainer"), {"page_size": 30})
+            self.assertEqual(response.context["page_obj"].paginator.count, 50)
+            paginator = response.context["page_obj"].paginator
+            for page_number in paginator.page_range:
+                response = self.client.get(reverse("official_maintainer"), {"page_size": 30, "page": page_number})
+                rows = response.context["page_obj"].object_list
+                self.assertTrue(all(row.delegation_id == delegation.pk for row in rows))
+                visible_ids.update(row.pk for row in rows)
+        self.assertEqual(len(visible_ids), 100)
+        group = Group.objects.get(name="Consulta SGR")
+        self.assertSetEqual(set(group.user_set.values_list("username", flat=True)), {"readerA", "readerB"})
+        self.assertEqual(group.sgr_profile.scope, Role.Scope.DELEGATION)
+        self.assertFalse(group.permissions.exclude(codename__startswith="view_").exists())
+
+    def test_attention_form_accepts_only_correct_type_subtype_pairs(self):
+        from activities.forms import SocialAttentionForm
+        admin = User.objects.get(username="adminA")
+        recipient = ServiceRecipient.objects.first()
+        subtype = SubattentionType.objects.first()
+        data = {"recipient_national_id": recipient.national_id, "recipient_full_name": recipient.full_name,
+                "delegation": recipient.delegation_id, "attention_type": subtype.attention_type_id,
+                "subattention_type": subtype.pk, "description": "Prueba de relación de catálogos"}
+        form = SocialAttentionForm(data, official=admin.official)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.fields["attention_type"].queryset.count(), 2)
+        self.assertEqual(form.fields["subattention_type"].queryset.count(), 7)
+        data["attention_type"] = AttentionType.objects.exclude(pk=subtype.attention_type_id).get().pk
+        form = SocialAttentionForm(data, official=admin.official)
+        self.assertFalse(form.is_valid())
+        self.assertIn("subattention_type", form.errors)
+
+    def test_existing_closed_period_causes_atomic_failure(self):
+        Period.objects.filter(start_date="2026-07-01").update(status=Period.Status.CLOSED)
+        before = counts()
+        with self.assertRaisesMessage(CommandError, "cerrado"):
+            seed()
+        self.assertEqual(counts(), before)
+
+    def test_foreign_records_are_preserved(self):
+        foreign = Delegation.objects.create(delegation_name="Otra delegación", address="Dirección externa 123", commune="La Serena")
+        seed()
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.address, "Dirección externa 123")
+        self.assertEqual(Delegation.objects.count(), 3)
 
 
-class SeedDemoAccessTests(TestCase):
-    """ACC-01 con los datos de demostración: cada perfil ve solo lo autorizado."""
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class SeedDemoSafetyTests(TestCase):
+    def test_dry_run_rolls_back_all_tables(self):
+        before = counts()
+        self.assertIn("SIMULACIÓN", seed(dry_run=True))
+        self.assertEqual(counts(), before)
 
-    def setUp(self):
-        run_seed()
+    def test_collision_does_not_link_or_overwrite_foreign_account_and_rolls_back(self):
+        user = User.objects.create_user("adminA", email="externo@example.invalid", password=PASSWORD)
+        before = counts()
+        with self.assertRaisesMessage(CommandError, "ya existe"):
+            seed()
+        self.assertEqual(counts(), before)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "externo@example.invalid")
+        self.assertFalse(Official.objects.filter(user=user).exists())
 
-    def login(self, username):
-        self.client.force_login(User.objects.get(username=username))
+    def test_rut_collision_rolls_back_without_replacing_existing_person(self):
+        Official.objects.create(national_id=demo_rut(70000000), full_name="Persona existente", email="externo@example.invalid")
+        before = counts()
+        with self.assertRaises(CommandError):
+            seed()
+        self.assertEqual(counts(), before)
+        self.assertEqual(Official.objects.get().full_name, "Persona existente")
 
-    def assertStatus(self, route_name, status_code):
-        self.assertEqual(self.client.get(reverse(route_name)).status_code, status_code, route_name)
+    def test_default_password_works_without_environment_or_prompts(self):
+        seed()
+        for user in User.objects.all():
+            self.assertTrue(user.check_password("demo1234"), user.username)
 
-    def test_operator_registers_attentions_but_does_not_administer(self):
-        self.login("funcionario1")
-
-        self.assertStatus("attention_entry", 200)
-        self.assertStatus("activity_maintainer", 200)
-        self.assertStatus("delegation_list", 403)
-        self.assertStatus("period_maintainer", 403)
-
-    def test_read_only_profile_cannot_register_attentions(self):
-        self.login("consulta_norte")
-
-        self.assertStatus("activity_maintainer", 200)
-        self.assertStatus("attention_entry", 403)
-
-    def test_role_permissions_open_their_screens(self):
-        self.login("funcionario3")  # Coordinador
-        self.assertStatus("period_maintainer", 200)
-        self.assertStatus("attention_type_maintainer", 200)
-        self.assertStatus("role_list", 403)
-
-        self.login("funcionario4")  # Supervisor y Operador
-        self.assertStatus("delegation_list", 200)
-        self.assertStatus("attention_entry", 200)
-        self.assertStatus("user_maintainer", 403)
-
-    def test_deactivating_the_operator_role_removes_the_access_it_granted(self):
-        Role.objects.filter(role_name="Operador").update(is_active=False)
-
-        self.login("funcionario1")  # solo Operador
-        self.assertStatus("attention_entry", 403)
-        self.assertStatus("activity_maintainer", 403)
-
-        self.login("funcionario3")  # conserva lo que otorga Coordinador
-        self.assertStatus("attention_entry", 403)
-        self.assertStatus("period_maintainer", 200)
-
-    def test_user_without_context_is_denied(self):
-        self.login("funcionario5")
-
-        self.assertStatus("activity_maintainer", 403)
-
-    def test_admin_demo_reaches_every_screen(self):
-        self.login("admin_demo")
-
-        for route_name in ("delegation_list", "role_list", "user_maintainer", "attention_entry", "period_maintainer"):
-            self.assertStatus(route_name, 200)
+    def test_dry_run_does_not_reset_existing_seed_passwords(self):
+        seed()
+        user = User.objects.get(username="editorA")
+        user.set_password("Temporal-distinta-2026")
+        user.save(update_fields=["password"])
+        seed(dry_run=True)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("Temporal-distinta-2026"))

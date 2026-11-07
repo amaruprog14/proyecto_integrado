@@ -1,4 +1,8 @@
-"""Datos ficticios compartidos por las semillas y su documento de referencia."""
+"""Fixture histórica para pruebas, helpers de RUT y permisos comunes.
+
+El comando público usa los catálogos del caso en common.sgr_seed_data.
+Los catálogos antiguos siguientes no se cargan en una base de demostración.
+"""
 
 # Ningún perfil, salvo el superusuario, elimina registros: se archivan o desactivan.
 # Los permisos de los funcionarios vienen solo de sus roles SGR, de modo que desactivar un rol
