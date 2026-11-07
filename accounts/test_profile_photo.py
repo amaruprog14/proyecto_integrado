@@ -29,7 +29,7 @@ class ProfilePhotoTests(TransactionTestCase):
         return SimpleUploadedFile('image.' + fmt.lower(), output.getvalue(), content_type='image/' + fmt.lower())
 
     def payload(self):
-        return dict(email=self.official.email, phone='', photo=self.photo(),
+        return dict(first_name='Perfil', last_name='Foto', email=self.official.email, phone='', photo=self.photo(),
             photo_crop=json.dumps(dict(x=50, y=0, width=50, height=50)))
 
     def test_crop_persists_actual_pixels_and_only_own_profile(self):
@@ -80,7 +80,8 @@ class ProfilePhotoTests(TransactionTestCase):
         self.client.post(reverse('my_profile'), self.payload())
         self.official.refresh_from_db()
         name = self.official.photo.name
-        self.client.post(reverse('my_profile'), {'email':self.official.email, 'phone':'222222222'})
+        self.client.post(reverse('my_profile'), {'first_name': 'Perfil', 'last_name': 'Foto',
+                                                 'email': self.official.email, 'phone': '222222222'})
         self.official.refresh_from_db()
         self.assertEqual(self.official.photo.name, name)
 

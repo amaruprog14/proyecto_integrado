@@ -69,13 +69,20 @@ class ClientPortalTests(TestCase):
         response = self.client.get(reverse("client_profile"))
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Cargo</dt>")
-        self.client.post(reverse("client_profile"), {"email": "new@example.test", "phone": "+56912345678",
-            "user": self.users[1].pk, "full_name": "Identidad falsa", "status": "INACTIVE"})
+        self.client.post(reverse("client_profile"), {"first_name": "Clara", "last_name": "Rojas",
+            "email": "new@example.test", "phone": "+56912345678", "user": self.users[1].pk,
+            "full_name": "Identidad falsa", "national_id": "11.111.111-1", "status": "INACTIVE"})
         self.people[0].refresh_from_db()
         self.people[1].refresh_from_db()
         self.assertEqual(self.people[0].email, "new@example.test")
         self.assertEqual(self.people[0].user_id, self.users[0].pk)
-        self.assertEqual(self.people[0].full_name, "Cliente 0")
+        # Nombre editable por el propio cliente (nombres + apellidos, igual en su cuenta); el
+        # nombre completo enviado directamente, el RUT, el estado y la cuenta vinculada no.
+        self.assertEqual(self.people[0].full_name, "Clara Rojas")
+        self.users[0].refresh_from_db()
+        self.assertEqual((self.users[0].first_name, self.users[0].last_name, self.users[0].email),
+                         ("Clara", "Rojas", "new@example.test"))
+        self.assertNotEqual(self.people[0].national_id, "11111111-1")
         self.assertEqual(self.people[0].status, "ACTIVE")
         self.assertEqual(self.people[1].email, "client1@example.test")
 
@@ -144,6 +151,7 @@ class ClientPhotoTests(TransactionTestCase):
             Image.new("RGB", (100, 80), "red").save(image, "PNG")
             self.client.force_login(user)
             self.assertEqual(self.client.post(reverse("client_profile"), {
+                "first_name": "Cliente", "last_name": "Foto",
                 "email": "photo@example.test", "phone": "", "photo_crop": json.dumps(
                     dict(x=10, y=10, width=50, height=50)),
                 "photo": SimpleUploadedFile("perfil.png", image.getvalue(), content_type="image/png")

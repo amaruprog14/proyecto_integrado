@@ -138,11 +138,12 @@ AUTH_PASSWORD_VALIDATORS = [
 LOGIN_MAX_FAILED_ATTEMPTS = int(os.getenv('LOGIN_MAX_FAILED_ATTEMPTS', '5'))
 LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '10'))
 
-# Recuperación de contraseña con código (valores referenciales del diseño: 10 min y 45 s).
-PASSWORD_RESET_CODE_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_CODE_TTL_MINUTES', '10'))
+# Recuperación de contraseña por enlace con token (django.contrib.auth.tokens): vigencia del
+# enlace en segundos, espera mínima entre dos correos a la misma cuenta y tiempo mínimo de
+# respuesta de la solicitud (igual exista o no la cuenta).
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
 PASSWORD_RESET_RESEND_WAIT_SECONDS = int(os.getenv('PASSWORD_RESET_RESEND_WAIT_SECONDS', '45'))
-PASSWORD_RESET_MAX_ATTEMPTS = int(os.getenv('PASSWORD_RESET_MAX_ATTEMPTS', '5'))
-PASSWORD_RESET_MAX_RESENDS = int(os.getenv('PASSWORD_RESET_MAX_RESENDS', '3'))
+PASSWORD_RESET_MIN_RESPONSE_SECONDS = float(os.getenv('PASSWORD_RESET_MIN_RESPONSE_SECONDS', '1'))
 
 
 # Internationalization

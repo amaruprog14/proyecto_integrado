@@ -1,12 +1,8 @@
-import secrets
 import uuid
-from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
-from django.utils.crypto import constant_time_compare, salted_hmac
 
 from common.chilean_rut import validate_chilean_rut
 from common.codes import AutoCodeMixin
@@ -377,135 +373,6 @@ class LoginThrottle(BaseModel):
 
     def __str__(self):
         return f"{self.key} ({self.failed_attempts} intentos fallidos)"
-
-
-class PasswordResetCode(BaseModel):
-    """
-    Tabla operativa: código de un solo uso para recuperar la contraseña.
-
-    Se guarda solo el hash del código. Los valores de vigencia, espera entre envíos y
-    límites se leen de settings (valores referenciales del diseño: 10 min y 45 s):
-    PASSWORD_RESET_CODE_TTL_MINUTES, PASSWORD_RESET_RESEND_WAIT_SECONDS,
-    PASSWORD_RESET_MAX_ATTEMPTS y PASSWORD_RESET_MAX_RESENDS.
-    """
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="password_reset_codes",
-        verbose_name="Usuario",
-    )
-    code_hash = models.CharField(max_length=64, editable=False, verbose_name="Hash del código")
-    expires_at = models.DateTimeField(verbose_name="Vence en")
-    last_sent_at = models.DateTimeField(default=timezone.now, verbose_name="Último envío")
-    verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Verificado en")
-    used_at = models.DateTimeField(null=True, blank=True, verbose_name="Usado o invalidado en")
-    failed_attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Intentos fallidos")
-    resend_count = models.PositiveSmallIntegerField(default=0, verbose_name="Reenvíos")
-
-    class Meta:
-        verbose_name = "Código de recuperación"
-        verbose_name_plural = "Códigos de recuperación"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"Código de {self.user} ({self.created_at:%Y-%m-%d %H:%M})"
-
-    # --- parámetros configurables ---
-    @staticmethod
-    def _setting(name, default):
-        return getattr(settings, name, default)
-
-    @classmethod
-    def ttl(cls):
-        return timedelta(minutes=cls._setting("PASSWORD_RESET_CODE_TTL_MINUTES", 10))
-
-    @classmethod
-    def resend_wait(cls):
-        return timedelta(seconds=cls._setting("PASSWORD_RESET_RESEND_WAIT_SECONDS", 45))
-
-    @classmethod
-    def max_attempts(cls):
-        return cls._setting("PASSWORD_RESET_MAX_ATTEMPTS", 5)
-
-    @classmethod
-    def max_resends(cls):
-        return cls._setting("PASSWORD_RESET_MAX_RESENDS", 3)
-
-    @staticmethod
-    def _hash(code):
-        return salted_hmac("sgr.password_reset", str(code)).hexdigest()
-
-    # --- emisión ---
-    @classmethod
-    def issue(cls, user):
-        """
-        Genera un código nuevo e invalida los anteriores. Devuelve (registro, código_en_claro).
-        Lanza ValidationError si se pide antes de la espera mínima o se superó el máximo de reenvíos.
-        El conteo de reenvíos se reinicia cuando vence el código vigente, para no bloquear la cuenta
-        de forma permanente.
-        """
-        now = timezone.now()
-        previous = cls.objects.filter(user=user, used_at__isnull=True).order_by("-created_at").first()
-        resend_count = 0
-        if previous is not None:
-            if now - previous.last_sent_at < cls.resend_wait():
-                raise ValidationError(
-                    "Debe esperar antes de solicitar un nuevo código.", code="resend_too_soon"
-                )
-            if now < previous.expires_at:
-                resend_count = previous.resend_count + 1
-            if resend_count > cls.max_resends():
-                raise ValidationError(
-                    "Se alcanzó el máximo de reenvíos de código.", code="resend_limit"
-                )
-        cls.objects.filter(user=user, used_at__isnull=True).update(used_at=now)
-
-        plain_code = f"{secrets.randbelow(10**6):06d}"
-        record = cls.objects.create(
-            user=user,
-            code_hash=cls._hash(plain_code),
-            expires_at=now + cls.ttl(),
-            last_sent_at=now,
-            resend_count=resend_count,
-        )
-        return record, plain_code
-
-    # --- estado ---
-    @property
-    def is_expired(self):
-        return timezone.now() >= self.expires_at
-
-    @property
-    def is_active(self):
-        """Vigente: no usado, no vencido y con intentos disponibles."""
-        return (
-            self.used_at is None
-            and not self.is_expired
-            and self.failed_attempts < self.max_attempts()
-        )
-
-    # --- verificación y uso ---
-    def verify(self, code):
-        """True si el código es correcto y sigue vigente; cuenta los intentos fallidos."""
-        if not self.is_active:
-            return False
-        if constant_time_compare(self._hash(code), self.code_hash):
-            self.verified_at = timezone.now()
-            self.save(update_fields=["verified_at", "updated_at"])
-            return True
-        self.failed_attempts += 1
-        self.save(update_fields=["failed_attempts", "updated_at"])
-        return False
-
-    def can_set_password(self):
-        """La pantalla de nueva contraseña solo se habilita tras una verificación válida."""
-        return self.verified_at is not None and self.is_active
-
-    def consume(self):
-        """Invalida el código tras cambiar la contraseña (no puede reutilizarse)."""
-        self.used_at = timezone.now()
-        self.save(update_fields=["used_at", "updated_at"])
 
 
 class GroupProfile(BaseModel):

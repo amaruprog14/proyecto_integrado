@@ -14,12 +14,12 @@ from django.utils.cache import add_never_cache_headers
 from django.views.decorators.cache import never_cache
 from django.views.generic import FormView, TemplateView
 
-from accounts.forms import OwnOfficialProfileForm
+from accounts.forms import OwnOfficialProfileForm, profile_snapshot
 from accounts.models import Delegation, Role, ServiceRecipient, Territory
 from common.pagination import ClampedPaginationMixin
 from common.access import ProtectedViewMixin
 from common.scopes import delegation_ids, permission_scope
-from common.text import clean_description_text, normalize_spaces
+from common.text import clean_description_text, describe_changes, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 from configuration.services import AuditoriaService
 from .models import ClientRequest, ClientRequestEvent
@@ -206,9 +206,11 @@ class ClientProfileView(ClientAccessMixin, FormView):
         return {**super().get_context_data(**kwargs), "profile_official": self.recipient, "client_portal": True}
 
     def form_valid(self, form):
-        form.save()
-        AuditoriaService.register_change(None, "Actualización del perfil de cliente", self.recipient,
-                                        new_value=f"Cuenta {self.request.user.pk}")
+        recipient = form.save()
+        previous, new = describe_changes(form.previous_snapshot, profile_snapshot(recipient))
+        AuditoriaService.register_change(None, "Actualización del perfil de cliente", recipient,
+                                        previous_value=previous,
+                                        new_value=f"Cuenta {self.request.user.pk}\n{new}")
         messages.success(self.request, "Tus datos personales fueron actualizados correctamente.")
         return redirect(self.success_url)
 

@@ -1,11 +1,13 @@
 from common.list_state import ordered
 import logging
-import math
 import time
 
+from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import SetPasswordForm
+from django.contrib.auth import get_user_model, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.views import PasswordResetConfirmView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
@@ -14,9 +16,10 @@ from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
+from django.utils.encoding import force_bytes
 from django.utils.decorators import method_decorator
-from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
 from django.views.decorators.cache import never_cache
 from django.views.generic import (
     CreateView,
@@ -51,10 +54,11 @@ from .forms import (
     OfficialForm,
     OwnOfficialProfileForm,
     OfficialUserForm,
-    RecoveryCodeForm,
     RecoveryRequestForm,
+    profile_snapshot,
 )
-from .models import Delegation, Official, PasswordResetCode, Role
+from . import login_security
+from .models import Delegation, Official, Role
 from .role_forms import (
     active_officials,
     last_global_administrator,
@@ -64,15 +68,10 @@ from .role_forms import (
 
 logger = logging.getLogger(__name__)
 
-RECOVERY_SESSION_KEY = 'password_recovery'
-CODE_SENT_MESSAGE = 'Si el correo corresponde a una cuenta activa, te enviamos un código de verificación.'
-INVALID_CODE_MESSAGE = 'El código es incorrecto o ya no es válido.'
-EXPIRED_CODE_MESSAGE = 'El código venció. Solicita un nuevo código.'
-BLOCKED_CODE_MESSAGE = 'Superaste el máximo de intentos. Solicita un nuevo código.'
-RESEND_ERROR_MESSAGES = {
-    'resend_too_soon': 'Debes esperar antes de solicitar un nuevo código.',
-    'resend_limit': 'Alcanzaste el máximo de reenvíos. Podrás pedir otro código cuando venza el actual.',
-}
+RECOVERY_SENT_MESSAGE = (
+    'Si el correo corresponde a una cuenta activa, te enviamos un enlace para crear una nueva '
+    'contraseña. Revisa tu bandeja de entrada.'
+)
 # Columnas visibles del listado de funcionarios; la exportación usa las mismas.
 OFFICIAL_COLUMNS = ['Nombre completo', 'RUT o RUN chileno', 'Correo', 'Área', 'Cargo', 'Estado']
 
@@ -108,226 +107,197 @@ class ActiveDelegationSelectView(ProtectedViewMixin, View):
         return redirect(return_to)
 
 
-# --- Recuperación de contraseña (SCRUM-31) ---
+# --- Recuperación de contraseña por enlace (SCRUM-31) ---
 #
-# El estado del flujo vive en la sesión y nunca guarda el código en claro. Si el correo no
-# corresponde a una cuenta activa no se emite código, pero se simulan vigencia, intentos y
-# reenvíos para que las respuestas no revelen si la cuenta existe.
+# El enlace lleva el id del usuario (uidb64) y un token de default_token_generator: vence a los
+# PASSWORD_RESET_TIMEOUT segundos y deja de valer en cuanto cambia la contraseña (el token
+# depende de su hash), así que sirve una sola vez. La solicitud responde siempre lo mismo y tarda
+# al menos PASSWORD_RESET_MIN_RESPONSE_SECONDS, exista o no la cuenta.
 
 def mask_email(email):
     name, _, domain = email.partition('@')
     return f'{name[:1]}***@{domain}'
 
 
-def send_recovery_code(email, code):
-    minutes = int(PasswordResetCode.ttl().total_seconds() // 60)
+def recovery_link(request, user):
+    """Enlace absoluto con el host de la petición, ya validado contra ALLOWED_HOSTS."""
+    path = reverse('recovery_confirm', kwargs={
+        'uidb64': urlsafe_base64_encode(force_bytes(user.pk)),
+        'token': default_token_generator.make_token(user),
+    })
+    return request.build_absolute_uri(path)
+
+
+def send_recovery_link(request, user, email):
+    minutes = settings.PASSWORD_RESET_TIMEOUT // 60
     try:
         send_mail(
-            'Código de recuperación de contraseña · SGR',
-            f'Tu código de verificación es {code}.\n\n'
-            f'Vence en {minutes} minutos y solo puede usarse una vez. '
+            'Recuperación de contraseña · SGR',
+            'Recibimos una solicitud para crear una nueva contraseña en el SGR.\n\n'
+            f'Abre este enlace para continuar:\n{recovery_link(request, user)}\n\n'
+            f'El enlace vence en {minutes} minutos y deja de funcionar una vez usado. '
             'Si no solicitaste recuperar tu contraseña, ignora este mensaje.',
             None,
             [email],
         )
     except Exception:
         # La respuesta al usuario no cambia: informar el fallo revelaría que la cuenta existe.
-        logger.exception('No se pudo enviar el código de recuperación de contraseña.')
+        logger.exception('No se pudo enviar el enlace de recuperación de contraseña.')
 
 
-def new_recovery_state(email, record):
-    return {
-        'code_id': record.pk if record else None,
-        'email': email,
-        'sent_at': record.last_sent_at.timestamp() if record else time.time(),
-        'attempts': 0,
-        'resends': 0,
-        'verified': False,
-    }
-
-
-class RecoveryFlowMixin:
-    def get_state(self):
-        return self.request.session.get(RECOVERY_SESSION_KEY)
-
-    def save_state(self, state):
-        self.request.session[RECOVERY_SESSION_KEY] = state
-
-    def clear_state(self):
-        self.request.session.pop(RECOVERY_SESSION_KEY, None)
-
-    @staticmethod
-    def get_record(state):
-        if not state or state.get('code_id') is None:
-            return None
-        return PasswordResetCode.objects.select_related('user').filter(pk=state['code_id']).first()
-
-    @staticmethod
-    def is_expired(state, record):
-        if record is not None:
-            return record.is_expired
-        return time.time() >= state['sent_at'] + PasswordResetCode.ttl().total_seconds()
-
-    @staticmethod
-    def resend_wait_remaining(state):
-        remaining = state['sent_at'] + PasswordResetCode.resend_wait().total_seconds() - time.time()
-        return max(0, math.ceil(remaining))
+def wait_for_minimum_response(started):
+    """Iguala el tiempo de respuesta con y sin envío de correo."""
+    remaining = settings.PASSWORD_RESET_MIN_RESPONSE_SECONDS - (time.monotonic() - started)
+    if remaining > 0:
+        time.sleep(remaining)
 
 
 @method_decorator(never_cache, name='dispatch')
-class RecoveryRequestView(RecoveryFlowMixin, FormView):
+class RecoveryRequestView(FormView):
     template_name = 'accounts/recovery_request.html'
     form_class = RecoveryRequestForm
-    success_url = reverse_lazy('recovery_code')
+    success_url = reverse_lazy('login')
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), 'reset_timeout_minutes': settings.PASSWORD_RESET_TIMEOUT // 60}
 
     def form_valid(self, form):
+        started = time.monotonic()
         email = form.cleaned_data['email']
-        record = None
         user = find_user_by_email(email)
-        if user is not None and SGRAuthBackend().user_can_authenticate(user):
-            try:
-                record, code = PasswordResetCode.issue(user)
-            except ValidationError:
-                # Espera mínima o máximo de reenvíos: sigue vigente el último código enviado.
-                record = PasswordResetCode.objects.filter(user=user, used_at__isnull=True).first()
-            else:
-                send_recovery_code(email, code)
-        self.save_state(new_recovery_state(email, record))
-        messages.info(self.request, CODE_SENT_MESSAGE)
+        if user is None or not SGRAuthBackend().user_can_authenticate(user):
+            result = 'Sin envío: el correo no corresponde a una cuenta activa'
+        elif not cache.add(f'password-reset:{user.pk}', True, timeout=settings.PASSWORD_RESET_RESEND_WAIT_SECONDS):
+            result = 'Sin envío: se envió otro enlace hace menos de la espera mínima'
+        else:
+            send_recovery_link(self.request, user, email)
+            result = 'Enlace enviado'
+        AuditoriaService.register_event(
+            official=getattr(user, 'official', None),
+            action='Solicitud de recuperación de contraseña',
+            entity='auth_user',
+            record_id=user.pk if user is not None else None,
+            new_value=f'Correo: {mask_email(email)}\n{result}',
+            origin_ip=self.request.META.get('REMOTE_ADDR') or None,
+        )
+        wait_for_minimum_response(started)
+        messages.info(self.request, RECOVERY_SENT_MESSAGE)
         return super().form_valid(form)
 
 
-@method_decorator(never_cache, name='dispatch')
-class RecoveryCodeView(RecoveryFlowMixin, FormView):
-    template_name = 'accounts/recovery_code.html'
-    form_class = RecoveryCodeForm
-    success_url = reverse_lazy('recovery_password')
+class RecoveryConfirmView(PasswordResetConfirmView):
+    """
+    Valida uidb64 y token. Django guarda el token en la sesión y redirige a una URL sin él, para
+    que no quede en el historial ni se filtre por Referer. Una cuenta que ya no puede ingresar
+    (inactiva, funcionario no vigente o cliente deshabilitado) recibe el mismo enlace inválido.
+    """
 
-    def dispatch(self, request, *args, **kwargs):
-        self.state = self.get_state()
-        if self.state is None:
-            messages.info(request, 'Solicita un código de verificación para continuar.')
-            return redirect('recovery_request')
-        self.record = self.get_record(self.state)
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        if self.request.method == 'POST':
-            # Cada casilla del código se envía con name="code".
-            kwargs['data'] = {'code': ''.join(self.request.POST.getlist('code'))}
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        wait = self.resend_wait_remaining(self.state)
-        context.update(
-            masked_email=mask_email(self.state['email']),
-            resend_wait=wait,
-            resend_wait_display=f'{wait // 60:02d}:{wait % 60:02d}',
-            ttl_minutes=int(PasswordResetCode.ttl().total_seconds() // 60),
-        )
-        return context
-
-    def post(self, request, *args, **kwargs):
-        if request.POST.get('action') == 'resend':
-            return self.resend()
-        return super().post(request, *args, **kwargs)
-
-    def form_valid(self, form):
-        state, record = self.state, self.record
-        max_attempts = PasswordResetCode.max_attempts()
-        if state['attempts'] >= max_attempts or (record and record.failed_attempts >= max_attempts):
-            form.add_error(None, BLOCKED_CODE_MESSAGE)
-        elif self.is_expired(state, record):
-            form.add_error(None, EXPIRED_CODE_MESSAGE)
-        elif record is not None and record.verify(form.cleaned_data['code']):
-            state['verified'] = True
-            self.save_state(state)
-            return super().form_valid(form)
-        else:
-            state['attempts'] += 1
-            self.save_state(state)
-            remaining = max_attempts - state['attempts']
-            if remaining > 0:
-                form.add_error(None, f'{INVALID_CODE_MESSAGE} Intentos restantes: {remaining}.')
-            else:
-                form.add_error(None, BLOCKED_CODE_MESSAGE)
-        return self.form_invalid(form)
-
-    def resend(self):
-        state, record = self.state, self.record
-        wait = self.resend_wait_remaining(state)
-        if wait:
-            messages.error(self.request, f'Debes esperar {wait} segundos para solicitar un nuevo código.')
-            return redirect('recovery_code')
-
-        if record is not None:
-            try:
-                record, code = PasswordResetCode.issue(record.user)
-            except ValidationError as error:
-                messages.error(self.request, RESEND_ERROR_MESSAGES[error.code])
-                return redirect('recovery_code')
-            send_recovery_code(state['email'], code)
-        else:
-            resends = 0 if self.is_expired(state, None) else state['resends'] + 1
-            if resends > PasswordResetCode.max_resends():
-                messages.error(self.request, RESEND_ERROR_MESSAGES['resend_limit'])
-                return redirect('recovery_code')
-            state['resends'] = resends
-
-        state.update(
-            code_id=record.pk if record else None,
-            sent_at=record.last_sent_at.timestamp() if record else time.time(),
-            attempts=0,
-            verified=False,
-        )
-        self.save_state(state)
-        messages.info(self.request, CODE_SENT_MESSAGE)
-        return redirect('recovery_code')
-
-
-@method_decorator(never_cache, name='dispatch')
-class RecoveryPasswordView(RecoveryFlowMixin, FormView):
     template_name = 'accounts/recovery_password.html'
-    form_class = SetPasswordForm
     success_url = reverse_lazy('login')
+    post_reset_login = False
 
-    def dispatch(self, request, *args, **kwargs):
-        state = self.get_state()
-        self.record = self.get_record(state) if state and state.get('verified') else None
-        if self.record is None or not self.record.can_set_password():
-            return self.reject()
-        return super().dispatch(request, *args, **kwargs)
-
-    def reject(self):
-        messages.error(self.request, 'Verifica un código vigente antes de crear una nueva contraseña.')
-        return redirect('recovery_request')
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs['user'] = self.record.user
-        return kwargs
+    def get_user(self, uidb64):
+        user = super().get_user(uidb64)
+        if user is not None and not SGRAuthBackend().user_can_authenticate(user):
+            return None
+        return user
 
     def form_valid(self, form):
-        with transaction.atomic():
-            # Se bloquea el código para que un doble envío no lo use dos veces.
-            record = PasswordResetCode.objects.select_for_update().get(pk=self.record.pk)
-            if not record.can_set_password():
-                return self.reject()
-            user = form.save()
-            record.consume()
-            AuditoriaService.register_change(
-                official=getattr(user, 'official', None),
-                action='Cambio de contraseña por recuperación',
-                instance=user,
-                origin_ip=self.request.META.get('REMOTE_ADDR') or None,
-            )
-        self.clear_state()
+        response = super().form_valid(form)
+        AuditoriaService.register_change(
+            official=getattr(self.user, 'official', None),
+            action='Cambio de contraseña por recuperación',
+            instance=self.user,
+            origin_ip=self.request.META.get('REMOTE_ADDR') or None,
+        )
         messages.success(
             self.request,
             'Tu contraseña fue actualizada. Ya puedes ingresar con tu nueva contraseña.',
         )
+        return response
+
+
+# --- Cambio de contraseña con la sesión iniciada ---
+
+class OwnPasswordChangeView(LoginRequiredMixin, FormView):
+    """
+    Cambio de la propia contraseña (funcionarios y clientes). Exige la contraseña actual; cada
+    intento con una incorrecta suma al mismo contador de bloqueo del inicio de sesión
+    (accounts.login_security), y durante el bloqueo no se comprueba la contraseña. Tras el
+    cambio la sesión sigue abierta (update_session_auth_hash); las demás sesiones se cierran.
+    """
+
+    template_name = 'accounts/password_change.html'
+    form_class = PasswordChangeForm
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        self.throttle_key = login_security.throttle_key('', request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), 'user': self.request.user}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            maintainer_title='Cambiar contraseña',
+            profile_url=self.get_success_url(),
+            client_portal=self.is_client(),
+        )
+        return context
+
+    def is_client(self):
+        user = self.request.user
+        return getattr(user, 'service_recipient', None) is not None and not hasattr(user, 'official')
+
+    def get_success_url(self):
+        if self.is_client():
+            return reverse('client_profile')
+        official = getattr(self.request.user, 'official', None)
+        return reverse('my_profile') if official is not None and official.is_enabled else reverse('home')
+
+    def audit(self, action, detail=''):
+        login_security.audit_login_event(self.request, action, self.request.user, detail)
+
+    def post(self, request, *args, **kwargs):
+        if login_security.is_locked(self.throttle_key):
+            self.audit('Cambio de contraseña fallido', 'Rechazado: bloqueo temporal vigente')
+            # Formulario vacío: durante el bloqueo no se valida ni se prueba la contraseña.
+            return self.render_to_response(self.get_context_data(
+                form=self.form_class(user=request.user), locked_error=login_security.locked_message(),
+            ))
+        return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        if form.has_error('old_password', 'password_incorrect'):
+            attempts, locked_now = login_security.register_failure(self.throttle_key)
+            self.audit(
+                'Cambio de contraseña fallido',
+                f'Contraseña actual incorrecta\nIntentos fallidos: {attempts} de '
+                f'{login_security.max_failed_attempts()}',
+            )
+            if locked_now:
+                self.audit(
+                    'Bloqueo temporal de inicio de sesión',
+                    f'Por intentos de cambio de contraseña\nBloqueado por '
+                    f'{login_security.lockout_minutes()} minutos',
+                )
+                form.add_error(None, login_security.locked_message())
+        return super().form_invalid(form)
+
+    def form_valid(self, form):
+        user = form.save()
+        update_session_auth_hash(self.request, user)
+        login_security.reset_failures(self.throttle_key)
+        AuditoriaService.register_change(
+            official=getattr(user, 'official', None),
+            action='Cambio de contraseña',
+            instance=user,
+            origin_ip=self.request.META.get('REMOTE_ADDR') or None,
+        )
+        messages.success(self.request, 'Tu contraseña fue actualizada.')
         return super().form_valid(form)
 
 
@@ -1208,11 +1178,13 @@ class OwnOfficialProfileView(LoginRequiredMixin, FormView):
 
     def form_valid(self, form):
         official = form.save()
+        previous, new = describe_changes(form.previous_snapshot, profile_snapshot(official))
         _registrar_auditoria(
             self.request,
             "Actualización del perfil propio",
             official,
-            new=official.email,
+            previous=previous,
+            new=new,
         )
         messages.success(self.request, "Tus datos personales fueron actualizados correctamente.")
         return super().form_valid(form)

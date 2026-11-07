@@ -44,6 +44,8 @@ class OwnProfileAuthorizationTests(TestCase):
         response = self.client.post(
             reverse("my_profile"),
             {
+                "first_name": "Perfil",
+                "last_name": "Propio",
                 "email": "nuevo.contacto@example.test",
                 "phone": "222222222",
                 "full_name": "Intento de elevación",
@@ -61,7 +63,8 @@ class OwnProfileAuthorizationTests(TestCase):
         self.assertEqual(self.official.full_name, "Perfil Propio")
         self.assertEqual(self.official.status, Official.Status.ACTIVE)
         self.assertEqual(self.official.delegation_id, self.delegation.pk)
-        self.assertEqual(self.user.email, "perfil@example.test")
+        # El correo del perfil se copia a la cuenta, para que el ingreso por correo coincida.
+        self.assertEqual(self.user.email, "nuevo.contacto@example.test")
 
     def test_own_profile_is_unavailable_without_official(self):
         account = User.objects.create_user("sin.perfil", "sinperfil@example.test", PASSWORD)

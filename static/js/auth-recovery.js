@@ -1,4 +1,4 @@
-// Validación en el navegador del login y la recuperación de contraseña. Los formularios
+// Validación en el navegador del login, la recuperación y el cambio de contraseña. Los formularios
 // válidos se envían al servidor, que vuelve a validar todo.
 document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-password-toggle]").forEach((toggle) => {
@@ -47,81 +47,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    const codeInputs = [...document.querySelectorAll(".code-digit")];
-    const codeForm = document.querySelector("#recovery-code-form");
-    if (codeInputs.length === 6 && codeForm instanceof HTMLFormElement) {
-        const codeError = document.querySelector("#recovery-code-error");
-        const countdown = document.querySelector("#recovery-resend-countdown");
-        const resendButton = document.querySelector("#recovery-resend");
-
-        codeInputs.forEach((input, index) => {
-            input.addEventListener("input", () => {
-                input.value = input.value.replace(/\D/g, "").slice(-1);
-                if (input.value && index < codeInputs.length - 1) codeInputs[index + 1].focus();
-                if (codeInputs.every((digit) => digit.value) && codeError instanceof HTMLElement) {
-                    codeError.hidden = true;
-                }
-            });
-
-            input.addEventListener("keydown", (event) => {
-                if (event.key === "Backspace" && !input.value && index > 0) {
-                    codeInputs[index - 1].focus();
-                } else if (event.key === "ArrowLeft" && index > 0) {
-                    event.preventDefault();
-                    codeInputs[index - 1].focus();
-                } else if (event.key === "ArrowRight" && index < codeInputs.length - 1) {
-                    event.preventDefault();
-                    codeInputs[index + 1].focus();
-                }
-            });
-
-            input.addEventListener("paste", (event) => {
-                const pastedDigits = event.clipboardData?.getData("text").replace(/\D/g, "").slice(0, 6);
-                if (!pastedDigits) return;
-
-                event.preventDefault();
-                [...pastedDigits].forEach((digit, digitIndex) => {
-                    codeInputs[digitIndex].value = digit;
-                });
-                codeInputs[Math.min(pastedDigits.length, codeInputs.length) - 1].focus();
-            });
-        });
-
-        codeForm.addEventListener("submit", (event) => {
-            const code = codeInputs.map((input) => input.value).join("");
-            if (!/^\d{6}$/.test(code)) {
-                event.preventDefault();
-                if (codeError instanceof HTMLElement) {
-                    codeError.textContent = "Ingresa los seis dígitos para continuar.";
-                    codeError.hidden = false;
-                }
-                codeInputs.find((input) => !input.value)?.focus();
-                return;
-            }
-            disableSubmit(codeForm);
-        });
-
-        if (countdown instanceof HTMLElement && resendButton instanceof HTMLButtonElement) {
-            let secondsRemaining = Number(countdown.dataset.resendWait) || 0;
-            const updateCountdown = () => {
-                if (secondsRemaining <= 0) {
-                    countdown.hidden = true;
-                    resendButton.disabled = false;
-                    resendButton.hidden = false;
-                    return;
-                }
-
-                const minutes = String(Math.floor(secondsRemaining / 60)).padStart(2, "0");
-                const seconds = String(secondsRemaining % 60).padStart(2, "0");
-                countdown.textContent = `Reenviar código en ${minutes}:${seconds}`;
-                secondsRemaining -= 1;
-                window.setTimeout(updateCountdown, 1000);
-            };
-            updateCountdown();
-        }
-    }
-
-    const passwordForm = document.querySelector("#recovery-password-form");
+    // Nueva contraseña: recuperación por enlace y cambio con la sesión iniciada.
+    const passwordForm = document.querySelector("#recovery-password-form, #password-change-form");
     if (passwordForm instanceof HTMLFormElement) {
         const passwordInput = document.querySelector("#new-password");
         const confirmationInput = document.querySelector("#confirm-password");
