@@ -121,6 +121,12 @@ def prepare(request, module):
     key = f'list_state:v1:{request.user.pk}:{module}:{delegation.pk if delegation else "all"}'
     saved = request.session.get(key)
     previous = normalize(saved if isinstance(saved, dict) else {}, module)
+    if (module == 'activity' and previous['status'] == 'INACTIVE' and 'status' not in request.GET
+            and not request.user.has_perm('activities.archive_activity')):
+        # Si se retiró el permiso de historial, regresar a vigentes en lugar de
+        # mantener una preferencia que ya no puede consultarse.
+        previous['status'] = ''
+        previous['page'] = 1
     combined = {**previous, **{k: request.GET[k] for k in previous if k in request.GET}}
     state = normalize(combined, module)
     if saved and any(state[k] != previous[k] for k in state if k != 'page'):

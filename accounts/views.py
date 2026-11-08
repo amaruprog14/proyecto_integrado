@@ -19,6 +19,7 @@ from django.shortcuts import redirect
 from django.urls import reverse, reverse_lazy
 from django.utils.encoding import force_bytes
 from django.utils.decorators import method_decorator
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
 from django.views.decorators.cache import never_cache
 from django.views.generic import (
@@ -316,6 +317,8 @@ class OfficialMaintainerView(ClampedPaginationMixin, MaintainerListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         records = []
+        can_archive = self.request.user.has_perm("accounts.archive_official")
+        protected_user_pk = sole_global_administrator_user_pk() if can_archive else None
         page = self.clamp_page(listed_officials(self.request))
         for official in page:
             records.append(
@@ -327,6 +330,10 @@ class OfficialMaintainerView(ClampedPaginationMixin, MaintainerListView):
                     ),
                     "status": official.status,
                     "status_is_active": official.status == Official.Status.ACTIVE,
+                    "can_archive": can_archive and not is_same_identity(
+                        self.request.user, target_official=official
+                    ) and not (protected_user_pk and official.user_id == protected_user_pk),
+                    "full_name": official.full_name,
                 }
             )
         context["records"] = records
@@ -338,6 +345,60 @@ class OfficialMaintainerView(ClampedPaginationMixin, MaintainerListView):
         context["can_add"] = self.request.user.has_perm("accounts.add_official")
         context["can_change"] = self.request.user.has_perm("accounts.change_official")
         return context
+
+
+class OfficialDetailView(ProtectedViewMixin, ScopedObjectMixin, DetailView):
+    permission_required = "accounts.view_official"
+    template_name = "accounts/official_detail.html"
+    context_object_name = "official"
+
+    def get_queryset(self):
+        return scoped_officials(self.request.user).select_related("area", "position", "delegation", "user")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        official = self.object
+        values = official_snapshot(official)
+        allowed = scoped_delegations(self.request.user)
+        values["Delegaciones autorizadas"] = ", ".join(
+            delegation_label(item) for item in official.authorized_delegations.filter(pk__in=allowed.values("pk"))
+        ) or "—"
+        values["Cuenta de acceso"] = official.user.username if official.user_id else "Sin cuenta vinculada"
+        is_self = is_same_identity(self.request.user, target_official=official)
+        context.update(
+            maintainer_title="Detalle de funcionario", values=values,
+            can_change=self.request.user.has_perm("accounts.change_official") and not is_self,
+            can_archive=self.request.user.has_perm("accounts.archive_official") and not is_self
+                        and sole_global_administrator_role(official) is None,
+        )
+        return context
+
+
+class OfficialArchiveView(ProtectedViewMixin, View):
+    permission_required = "accounts.archive_official"
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        get_scoped_object_or_404(request, scoped_officials(request.user), pk=pk)
+        with transaction.atomic():
+            # Serializa archivados simultáneos antes de comprobar al último administrador.
+            list(Official.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+            official = get_scoped_object_or_404(request, scoped_officials(request.user), pk=pk)
+            if is_same_identity(request.user, target_official=official):
+                raise PermissionDenied("No puedes archivar tu propio perfil de funcionario.")
+            from accounts.forms import sole_global_administrator_errors
+            errors = sole_global_administrator_errors(official, Official.Status.INACTIVE, None)
+            if errors:
+                messages.error(request, next(iter(errors.values())))
+                return redirect("official_maintainer")
+            previous = official_snapshot(official)
+            official.deleted_at = timezone.now()
+            official.save(update_fields=["deleted_at", "updated_at"])
+            old, new = describe_changes({**previous, "Archivado": "No"},
+                                        {**official_snapshot(official), "Archivado": "Sí"})
+            _registrar_auditoria(request, "Archivado de funcionario", official, previous=old, new=new)
+        messages.success(request, f"El funcionario {official.full_name} fue archivado correctamente.")
+        return redirect("official_maintainer")
 
 
 # --- CRUD de Delegaciones y Usuarios (persistencia real, ámbito por delegación) ---
@@ -876,13 +937,16 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def form_valid(self, form):
             deny_privileged_role_assignment(self.request, form)
-            official = form.save()
-            _registrar_auditoria(
-                self.request,
-                "Creación de funcionario",
-                official,
-                new=format_snapshot(official_snapshot(official)),
-            )
+            try:
+                with transaction.atomic():
+                    official = form.save()
+                    _registrar_auditoria(
+                        self.request, "Creación de funcionario", official,
+                        new=format_snapshot(official_snapshot(official)),
+                    )
+            except IntegrityError:
+                form.add_error(None, "Ya existe una cuenta o un funcionario con esos datos. Revisa el formulario.")
+                return self.form_invalid(form)
             messages.success(
                 self.request,
                 f"El funcionario {official.full_name} fue creado correctamente.",
@@ -923,6 +987,8 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def get_form_kwargs(self):
             kwargs = super().get_form_kwargs()
+            # ModelForm modifica la instancia durante is_valid; conservar el estado anterior.
+            self.previous_official_snapshot = official_snapshot(self.get_official())
             kwargs.update(
                 actor=self.request.user,
                 instance=self.get_official(),
@@ -930,6 +996,13 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
                 active_delegation=get_active_delegation(self.request),
             )
             return kwargs
+
+    def post(self, request, *args, **kwargs):
+        with transaction.atomic():
+            self._official = get_scoped_object_or_404(
+                request, scoped_officials(request.user).select_for_update(), pk=kwargs["pk"]
+            )
+            return super().post(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
             context = super().get_context_data(**kwargs)
@@ -943,8 +1016,13 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def form_valid(self, form):
             deny_privileged_role_assignment(self.request, form)
-            previous_snapshot = official_snapshot(self.get_official())
-            official = form.save()
+            previous_snapshot = self.previous_official_snapshot
+            try:
+                with transaction.atomic():
+                    official = form.save()
+            except IntegrityError:
+                form.add_error(None, "Ya existe una cuenta o un funcionario con esos datos. Revisa el formulario.")
+                return self.form_invalid(form)
             previous, new = describe_changes(previous_snapshot, official_snapshot(official))
             _registrar_auditoria(
                 self.request,

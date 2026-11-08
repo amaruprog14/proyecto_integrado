@@ -10,7 +10,7 @@
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> <a class="auth-text-link" href="{{ list_url }}">{{ maintainer_title }}</a> <span aria-hidden="true">/</span> Detalle</p>
                     <h1 id="maintainer-title">{{ record_title }}</h1>
                 </div>
-                {% if can_change and row.mutable %}<a class="btn btn-primary maintainer-new-button" href="{{ row.edit }}" data-modal-form>Editar {{ entity_label }}</a>{% endif %}
+                {% if can_change and row.editable %}<a class="btn btn-primary maintainer-new-button" href="{{ row.edit }}" data-modal-form>Editar {{ entity_label }}</a>{% endif %}
             </header>
             <section class="attention-entry-card" aria-label="Datos de {{ entity_label }}">
                 <dl class="row mb-0">
@@ -23,8 +23,8 @@
             </section>
             <div class="attention-entry-actions">
                 <a class="btn attention-entry-cancel" href="{{ list_url }}">Volver al listado</a>
-                {% if can_change and row.mutable %}
-                    <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}">
+                {% if can_archive and row.can_archive and row.mutable %}
+                    <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}" data-swal-require-confirmation="true">
                         {% csrf_token %}<button class="btn attention-entry-submit" type="submit">{{ row.action_label }}</button>
                     </form>
                 {% endif %}

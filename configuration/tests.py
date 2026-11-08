@@ -2,6 +2,7 @@ from datetime import date
 from io import BytesIO
 
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
@@ -11,6 +12,7 @@ from accounts.models import Delegation, Official, ServiceRecipient
 from activities.models import SocialAttention
 from configuration.admin import PeriodAdmin
 from configuration.models import AttentionType, AuditLog, Period, SubattentionType
+from common.exports import XLSX_CONTENT_TYPE
 
 
 class ConfigurationFrontendRouteTests(TestCase):
@@ -389,6 +391,12 @@ class CatalogAuditAndExportCleanupTests(TestCase):
         cls.admin = User.objects.create_superuser("catalog.audit", "catalog.audit@example.test", "Clave-Admin-1")
 
     def setUp(self):
+        # La caché no se revierte con las transacciones de TestCase. Otros casos
+        # pueden haber exportado con el mismo ID de usuario antes de su rollback.
+        for module in ("attention_type", "subattention_type"):
+            key = f"{module}-export:{self.admin.pk}"
+            cache.delete(key)
+            self.addCleanup(cache.delete, key)
         self.client.force_login(self.admin)
 
     def test_attention_type_update_audits_previous_and_new_value_per_field(self):
@@ -479,6 +487,8 @@ class CatalogAuditAndExportCleanupTests(TestCase):
             with self.subTest(route=route_name):
                 response = self.client.get(reverse(route_name))
 
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], XLSX_CONTENT_TYPE)
                 self.assertEqual(load_workbook(BytesIO(response.content)).active.title, sheet_title)
 
     def test_out_of_range_page_is_clamped(self):

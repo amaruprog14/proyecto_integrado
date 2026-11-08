@@ -49,8 +49,13 @@ todas las migraciones y la elimina al terminar, así que **no se tocan los datos
 - Si una ejecución anterior se interrumpió y quedó la base `test_<DB_NAME>`, usar
   `python manage.py test --noinput` para que Django la reemplace sin preguntar.
 
-Cada prueba corre dentro de una transacción que se revierte al terminar, por lo que el orden de
-ejecución no afecta los resultados.
+Las pruebas aíslan los datos de la base, pero la caché no se revierte con las transacciones.
+Las pruebas de exportación de catálogos limpian sus claves de espera por usuario antes y
+después de cada caso, sin desactivar el límite de 30 segundos de la aplicación.
+
+La prueba de cierre e ingreso simultáneos de períodos requiere `SELECT FOR UPDATE`: se omite
+en SQLite y debe comprobarse en MySQL. La validación de que un período cerrado rechaza
+registros se ejecuta en ambos motores.
 
 ## Organización
 
@@ -64,10 +69,13 @@ ejecución no afecta los resultados.
 | `accounts/test_role_crud.py` | CRUD de Roles, último Administrador global, permisos privilegiados |
 | `accounts/test_user_crud.py` | CRUD de Usuarios, exportación, ámbito, reglas de roles |
 | `accounts/test_official_crud.py` | Funcionarios: CRUD, exportación a Excel y reglas de roles |
+| `accounts/test_official_completion.py` | ModelForm, detalle, archivado POST/CSRF, permisos por ámbito, historial, cuenta archivada, último administrador, retorno al listado y WebSocket después de commit/rollback |
+| `activities/test_activity_completion.py` | CRUD con modal, editor sin archivado, historial por permiso/ámbito, restauración, Excel de vigentes en varias páginas, sesiones, períodos cerrados, atenciones de origen y eventos tras commit/rollback |
 | `accounts/test_authorization.py` | Perfil propio y autorización administrativa (SEG-02) |
 | `accounts/test_delegation_context.py` | Delegación activa: selector, sesión y efecto en listas y formularios |
 | `accounts/test_audit_trail.py` | Auditoría con valor anterior/nuevo y accesos fuera de ámbito |
 | `accounts/test_seed_demo.py` | Datos de demostración (`seed_demo`) y accesos por rol |
+| `accounts/test_evaluation_admin.py` | Administrador de evaluación limitado a Las Compañías, ambos CRUD, URL y relaciones ajenas, Excel, consultas de WebSocket, creación idempotente y administrador global conservado |
 | `configuration/test_item_crud.py` | CRUD de Ítems, código, actividades afectadas al desactivar |
 | `configuration/tests.py` | Tipo de Atención y Sub Atención, auditoría por campo, períodos |
 | `activities/test_social_attention.py` | Reglas e ingreso de atención |

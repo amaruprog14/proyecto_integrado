@@ -13,6 +13,8 @@ End (TI3041) – Evaluación Sumativa III.
 | ------ | ------ |
 | Ingreso al sistema, cierre de sesión y rutas protegidas | Operativo, con bloqueo temporal por intentos fallidos y auditoría |
 | Recuperar contraseña por enlace, cambiar la contraseña y editar nombre y correo propios | Operativo |
+| Foto de perfil con recorte Croppr y portal del cliente con solicitudes propias | Operativos, con validación y acceso por propietario |
+| Actualización de tablas mediante Django Channels y WebSocket | Operativa en un único proceso ASGI con canal en memoria |
 | Delegaciones | Operativo con persistencia real |
 | Roles | Operativo con persistencia real |
 | Usuarios y Funcionarios | Operativo con persistencia real |
@@ -67,8 +69,9 @@ source .venv/Scripts/activate
 python -m pip install -r requirements.txt
 ```
 
-Dependencias principales: Django 5.2, mysqlclient, python-dotenv, django-bootstrap5 y openpyxl
-(exportación a Excel). Ver `requirements.txt`.
+Dependencias principales: Django 5.2, mysqlclient, python-dotenv, django-bootstrap5, openpyxl
+(Excel), Pillow (imágenes), Channels y Daphne (HTTP y WebSocket mediante ASGI).
+Las versiones están fijadas en `requirements.txt`.
 
 ### 4. Configurar variables de entorno
 
@@ -123,19 +126,94 @@ python manage.py seed_demo
 > Las migraciones ya están versionadas en el repositorio, por lo que no es necesario
 > ejecutar `makemigrations` para levantar el proyecto.
 > `seed_demo` carga 2.000 registros de negocio ficticios del caso SGR, además de sus catálogos.
-> Repetirlo no crea nuevos lotes y restablece `demo1234` solo en sus seis cuentas de demostración.
+> Repetirlo no crea nuevos lotes y restablece `demo1234` solo en sus siete cuentas de demostración.
 > Para comprobar la carga sin conservarla, usar
 > `python manage.py seed_demo --dry-run`. No elimina datos previos ni fuerza conflictos.
-> Ver [catálogos, distribución y precauciones de la semilla](SEMILLA_SGR.md).
+> La distribución y las precauciones están en «Cuentas y datos de demostración», más abajo.
 
-### 7. Levantar el servidor
+### 7. Levantar HTTP y WebSocket en desarrollo
 
 ```bash
-python manage.py runserver
+python manage.py runserver --noreload
 ```
 
 Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
-<http://127.0.0.1:8000/admin/>.
+<http://127.0.0.1:8000/admin/> y requiere una cuenta técnica con `is_staff` y permisos;
+las siete cuentas de semilla no tienen acceso a Django Admin.
+
+Con el entorno virtual activo, MySQL disponible y `DEBUG=True` en el `.env`, este comando sirve
+la interfaz, los estáticos y las imágenes locales. `daphne` está al inicio de `INSTALLED_APPS`,
+por lo que proporciona el comando `runserver` ASGI. La aplicación es
+`config.asgi.application`, definida en `ASGI_APPLICATION`. HTTP y WebSocket se ejecutan juntos;
+no se necesita iniciar un servidor de chat aparte. Con `--noreload`, reiniciar el comando
+manualmente después de cambiar código.
+
+Para iniciar explícitamente Daphne como alternativa al comando anterior:
+
+```bash
+daphne -b 127.0.0.1 -p 8000 config.asgi:application
+```
+
+Ejecutar **solo una de las dos alternativas**. Daphne directo no sirve automáticamente los
+estáticos de las aplicaciones como `runserver`; requiere que los estáticos se sirvan aparte.
+Para la demostración local con interfaz completa, usar `runserver --noreload`.
+
+#### Canal en memoria y recorrido del evento
+
+La configuración actual utiliza `channels.layers.InMemoryChannelLayer` en `CHANNEL_LAYERS`
+(`config/settings.py`). No necesita Redis ni otro servicio de mensajería: solo MySQL y un
+único proceso ASGI que reciba tanto los guardados HTTP como las conexiones WebSocket.
+
+El canal y el registro de suscriptores de `common/realtime.py` viven en la memoria del proceso.
+No comparten eventos entre varios workers, servidores o instancias. Esta demostración debe
+mantenerse en **un único proceso**, sin repartir HTTP y WebSocket entre procesos diferentes.
+Al reiniciarlo se pierden las conexiones y avisos pendientes; los registros guardados permanecen
+en MySQL. Para varios procesos habrá que adaptar tanto la capa de canales como el registro de
+suscriptores; ese cambio aún no forma parte de la configuración actual.
+
+| Ruta WebSocket | Uso |
+| --- | --- |
+| `/ws/activities/` | Listado de Actividades |
+| `/ws/maintainers/<module>/` | Otros mantenedores; por ejemplo `official` para Funcionarios |
+
+La conexión utiliza `ws://` con HTTP y `wss://` con HTTPS. El navegador elige el protocolo y
+el host de la página. `AllowedHostsOriginValidator` restringe el origen según `ALLOWED_HOSTS`
+y `AuthMiddlewareStack` recupera la sesión. El servidor verifica el permiso de consulta y
+asigna el grupo `maintainers.<module>.user.<id>`; el navegador no elige una delegación ni
+puede suscribirse libremente a grupos ajenos.
+
+Flujo: guardar y validar en el servidor → confirmar la transacción → ejecutar
+`transaction.on_commit` → notificar solo a suscriptores autorizados → recibir
+`activities.changed` o `maintainer.changed` → consultar la vista HTTP protegida y reemplazar
+tabla, total y paginador. `static/js/maintainer-states.js` conserva los filtros, el orden y la
+página. No hay consultas periódicas para sustituir WebSocket ni recarga completa del listado
+del lector. La búsqueda de 400 ms se activa al escribir y es un flujo distinto.
+
+Un formulario inválido o una transacción revertida no anuncia un cambio guardado. Si un registro
+se archiva o deja de cumplir el filtro, desaparece de la tabla correspondiente. El usuario que
+guarda puede regresar al listado mediante la navegación HTTP habitual; quien lo mantiene abierto
+recibe la actualización. La interfaz informa si la conexión se pierde y reintenta conectarse;
+durante esa desconexión no se debe considerar el listado actualizado.
+
+#### Comprobación local en sesiones independientes
+
+1. Abrir `editorA`, `readerA` y `readerB` en perfiles de navegador independientes. Dos pestañas
+   del mismo perfil comparten sesión y no sirven para representar cuentas distintas.
+2. Mantener abierto Funcionarios o Actividades con ambos lectores. En las herramientas de red
+   del navegador, filtrar por WebSocket y comprobar la conexión aceptada (HTTP 101).
+3. Con `editorA`, editar y guardar un registro de Las Compañías. Para Actividades, elegir una
+   manual de un período abierto, sin atención social vinculada.
+4. Comprobar que `readerA` ve el cambio sin F5, conserva filtros/orden/página y recibe el aviso.
+   `readerB`, de Antena, no debe recibir el aviso ni el contenido de ese registro.
+5. Repetir con datos inválidos: el formulario conserva los valores válidos y no se guarda ni
+   notifica una modificación. Detener el servidor permite comprobar el estado de desconexión;
+   volver a iniciarlo permite comprobar la reconexión.
+
+Pruebas automatizadas relacionadas (usan una base de pruebas independiente):
+
+```bash
+python manage.py test activities.test_realtime common.test_realtime accounts.test_evaluation_admin
+```
 
 ### Archivos subidos (`/media/`)
 
@@ -167,15 +245,71 @@ DEBUG=False python manage.py runserver --insecure
 
 ## Cuentas y datos de demostración
 
-La semilla actual crea `adminA`, `editorA`, `readerA`, `readerB`, `clientA` y `clientB`.
-Las seis cuentas de esta semilla usan temporalmente **`demo1234`** para las pruebas del equipo.
+La semilla actual crea las seis cuentas de evaluación `adminEvalA`, `editorA`, `readerA`,
+`readerB`, `clientA` y `clientB`, además del administrador global `adminA`.
+Las siete cuentas de esta semilla comparten temporalmente la clave de demostración para las pruebas del equipo.
 Al repetir la carga se restablece esa clave solo en ellas; los usuarios ajenos no se modifican.
 `adminA` es administrador del SGR sin ser superusuario; `editorA` puede crear y editar
 Actividades y Funcionarios de Las Compañías; los lectores consultan su propia delegación;
 los clientes acceden a solicitudes propias del portal.
 
+`adminEvalA` usa el rol independiente «Administrador evaluación A», con alcance `DELEGATION`
+solo en Las Compañías. Puede listar, crear, consultar, editar, archivar y exportar Funcionarios
+y Actividades; en Actividades también consulta archivadas y restaura cuando el período lo permite.
+No tiene acceso a Roles, Grupos, al mantenedor de Usuarios ni a Django Admin y no puede asignar
+roles privilegiados. La gestión de permisos y cuentas privilegiadas queda reservada a `adminA`.
+Ambas cuentas son usuarios normales de Django: ninguna es superusuario ni `staff`.
+
+En una base que ya tiene la semilla, preparar **solo esta nueva cuenta**, sin repetir la carga:
+
+```bash
+python manage.py prepare_evaluation_admin --dry-run
+python manage.py prepare_evaluation_admin
+```
+
+El comando vincula el funcionario ficticio 006 de Las Compañías, que antes no tenía cuenta.
+No agrega funcionarios ni operaciones, conserva los 2.000 registros de negocio y no cambia
+el rol global. Repetirlo no duplica datos ni restablece contraseñas; rechaza colisiones o una
+configuración modificada en lugar de sobrescribirla. `seed_demo`, en cambio, sí restablece la
+clave de las siete cuentas de semilla. Entregar la clave de evaluación al docente por un medio privado.
+
+Recorrido de `adminEvalA`: ingresar → crear/editar un funcionario y una actividad manual →
+consultar detalles y exportar → archivar con confirmación → consultar/restaurar la actividad →
+intentar una URL o relación de Antena y recibir rechazo sin modificaciones. Las actividades
+vinculadas a atenciones o de períodos cerrados continúan siendo de solo consulta.
+
+Funcionarios permite listar, consultar detalle, crear y editar mediante modal y archivar con
+confirmación. El archivado usa `deleted_at`: conserva actividades e historial, retira el
+funcionario de listados, exportaciones y selectores habituales e impide que su cuenta ingrese.
+El estado laboral (Activo/Inactivo/Suspendido) se conserva por separado. Se protege el perfil
+propio y al último administrador global. La semilla otorga `accounts.archive_official` al rol
+Administrador; editor y lectores no reciben ese permiso ni pueden asignar un rol que lo otorgue
+sin autorización para administrar roles.
+
+Al actualizar una base existente, ejecutar `python manage.py migrate` para registrar el permiso
+de la migración `0013_official_archive_permission`. En Roles, habilitar «Funcionarios: Archivar»
+únicamente en los roles administradores que corresponda. `seed_demo` también completa ese
+permiso en el Administrador de la semilla anterior si el resto de sus permisos coincide
+exactamente; no amplía roles personalizados ni cambia su alcance.
+
+Actividades permite crear y editar registros manuales mediante modal, consultar su detalle,
+buscar, filtrar, ordenar y exportar el conjunto vigente completo. Editor y lectores no pueden
+archivar ni restaurar. El permiso `activities.archive_activity` habilita al administrador para
+archivar, consultar el filtro «Archivada» y restaurar dentro de su ámbito. Las archivadas no
+aparecen en el listado habitual ni se exportan; intentar exportar desde el historial muestra
+un aviso para volver a Vigente. Las actividades de períodos cerrados y las vinculadas a una
+atención social permanecen de solo consulta, conservando su origen e historial.
+
+La migración `activities.0008_activity_archive_permission` registra este permiso; después de
+`python manage.py migrate`, habilitar «Actividades: Archivar» en el rol administrador pertinente.
+La semilla completa los permisos nuevos de archivado del Administrador anterior solo si el
+resto de su configuración coincide. No ejecutarla para modificar datos de trabajo sin revisar
+sus condiciones. WebSocket avisa después del commit y respeta los ámbitos, filtros y páginas;
+al archivar, la fila desaparece del lector autorizado y un rollback no envía el aviso.
+
 | Usuario | Contraseña | Acceso |
 | --- | --- | --- |
+| `adminEvalA` | `demo1234` | Administrador de evaluación; ambos CRUD solo de Las Compañías, sin gestión de roles/permisos |
 | `adminA` | `demo1234` | Administrador SGR; todas las delegaciones mediante el selector del encabezado |
 | `editorA` | `demo1234` | Crear y editar Actividades y Funcionarios de Las Compañías |
 | `readerA` | `demo1234` | Solo lectura de Las Compañías |
@@ -185,16 +319,61 @@ los clientes acceden a solicitudes propias del portal.
 
 Estas credenciales se aplican después de ejecutar `python manage.py seed_demo` correctamente.
 
-Los **2.000 registros de negocio** son 100 funcionarios, 1.200 actividades, 300 personas
-usuarias, 300 atenciones sociales y 100 solicitudes ciudadanas. Hay 50 funcionarios por
-delegación y suficientes actividades para varias páginas de 30. Las personas son ficticias;
+### Responsabilidades y recorridos de las cuentas
+
+Ámbito A equivale a **Las Compañías** y ámbito B a **Antena**. Los dos CRUD evaluados son
+**Funcionarios y Actividades**. «Consultar» incluye sus listados y detalles; las exportaciones
+de ambos CRUD respetan filtros y permisos y excluyen registros archivados.
+
+| Alias / rol | Ámbito o propietario | Responsabilidad | Acciones permitidas | Acciones restringidas | Recorrido de prueba y resultado esperado |
+| --- | --- | --- | --- | --- | --- |
+| `adminEvalA` / Administrador evaluación A | Solo Las Compañías; alcance `DELEGATION` | Administrar los registros del ámbito A durante la evaluación | Crear, listar, consultar, editar, archivar y exportar ambos CRUD; consultar archivadas y restaurar Actividades cuando proceda; editar su perfil y foto | Acceder a Antena; cambiar de ámbito; gestionar Roles, Grupos o el mantenedor de Usuarios; asignar roles privilegiados; entrar a Django Admin | Login → crear/editar en ambos CRUD → cancelar una confirmación (sin cambios) → confirmar archivado → comprobar exclusión del listado/Excel → consultar/restaurar actividad → intentar URL o relación de Antena: rechazo sin escritura |
+| `editorA` / Funcionario | Las Compañías; alcance `DELEGATION` | Registrar y corregir la gestión de A | Consultar, crear, editar y exportar ambos CRUD; registrar atenciones autorizadas; editar su perfil y foto | Archivar/restaurar; consultar historial de actividades archivadas; acceder a B; asignar roles privilegiados | Login → crear/editar una actividad manual y un funcionario → comprobar persistencia y cambio sin F5 en `readerA` → intentar POST de archivado: 403 y registro intacto |
+| `readerA` / Usuario consulta | Las Compañías; alcance `DELEGATION` | Consultar y exportar información autorizada de A | Listados, detalles, búsquedas, filtros, orden y Excel de ambos CRUD; recibir avisos autorizados; editar su perfil y foto | Crear, editar o archivar registros del negocio; restaurar; consultar B o historial de archivadas | Login → filtrar/paginar/exportar → abrir detalle y volver conservando estado → observar edición de `editorA` sin F5 → intentar crear/archivar: 403; objeto de B: 404 |
+| `readerB` / Usuario consulta | Antena; alcance `DELEGATION` | Consultar y exportar información autorizada de B | Las mismas consultas y exportaciones del lector A, dentro de B; editar su perfil y foto | Escribir en los CRUD; acceder a A o recibir sus eventos | Login en sesión independiente → comprobar registros de Antena → mantener listado abierto mientras A guarda: no recibe el evento de A → URL directa de A: 404 |
+| `clientA` / Cliente | Propietario de sus solicitudes; Latorre, Las Compañías | Ingresar y consultar sus solicitudes ciudadanas | Listado y detalle propios en el portal; crear solicitudes; editar nombre/contacto y foto propios con Croppr; cambiar su contraseña | Listados administrativos, solicitudes/perfiles ajenos, cambiar propietario, rol, permisos o estado de tramitación | Login → portal con sus 50 solicitudes iniciales → detalle propio → recortar foto, guardar y recargar: persiste → intentar detalle de `clientB`: 404; mantenedor administrativo: 403 |
+| `clientB` / Cliente | Propietario de sus solicitudes; Alfalfares, Antena | Ingresar y consultar un conjunto propio distinto del Cliente 1 | Las mismas funciones del Cliente 1, filtradas por su usuario autenticado | Acceder a solicitudes/perfil de `clientA` o funciones administrativas; alterar propietario o permisos | Login en otra sesión → comprobar sus 50 solicitudes iniciales distintas → detalle propio → cancelar recorte: conserva la foto anterior → intentar detalle de `clientA`: 404 |
+| `adminA` / Administrador (adicional) | Todas las delegaciones; alcance `ALL` | Administrar globalmente el caso y mantener las cuentas y permisos de prueba | Mantenedores autorizados, gestión de usuarios/roles y selección de delegación; operaciones sujetas a las reglas del negocio | Django Admin (no es `staff`); eliminación física desde los CRUD; editar actividades de períodos cerrados o vinculadas a atenciones | Login → seleccionar Las Compañías y después Antena → comprobar acceso a ambos ámbitos y gestión de roles. Esta cuenta adicional no sustituye a `adminEvalA` en la prueba de aislamiento |
+
+Las restricciones se aplican en el servidor, incluso al manipular URLs o formularios. Un usuario
+autenticado sin permiso recibe 403; un registro inexistente o ajeno puede responder 404. Las
+reglas de períodos cerrados, actividades de origen automático y protección del propio funcionario
+siguen vigentes aunque el rol tenga permisos de edición o archivado. El portal filtra por
+propietario, no solo por delegación; las pruebas también incluyen dos clientes de la misma delegación.
+
+### Distribución y ejecución segura de la semilla
+
+| Modelo de negocio | Registros de la semilla |
+| --- | ---: |
+| `Official` (Funcionarios) | 100 |
+| `Activity` (Actividades) | 1.200 |
+| `ServiceRecipient` (Personas usuarias) | 300 |
+| `SocialAttention` (Atenciones sociales) | 300 |
+| `ClientRequest` (Solicitudes ciudadanas) | 100 |
+| **Total de negocio** | **2.000** |
+
+Hay 50 funcionarios por delegación y suficientes actividades para varias páginas de 30.
+Los totales no incluyen cuentas de acceso, permisos, sesiones, eventos de seguimiento ni auditoría.
+Las personas son ficticias;
 los catálogos geográficos se limitan a **Las Compañías y Antena, con ocho territorios**.
-Los siete cargos se basan en el descriptor y los seis roles de acceso en la guía del caso.
+Los siete cargos se basan en el descriptor y los seis roles de acceso en la guía del caso;
+se agrega el rol independiente «Administrador evaluación A» para demostrar el aislamiento.
 Todos los mantenedores visibles reciben datos, incluido un grupo `Consulta SGR` con los dos
 lectores. Hay 2 tipos de atención y 7 subatenciones dependientes, sin inflar catálogos para alcanzar el volumen requerido.
 
-[Ver detalle, fuentes y ejecución segura](SEMILLA_SGR.md). Si la base ya contiene la semilla
-anterior (`admin_demo`, `funcionario1`, Centro/Norte/Sur/Rural), sus datos permanecen intactos;
+Los catálogos están transcritos en `common/sgr_seed_data.py`: geografía, indicadores y atenciones
+de la matriz SGR trimestral; cargos del descriptor de funciones y roles de la guía del proyecto.
+No se requiere abrir los documentos originales ni instalar un lector de Excel para ejecutar la carga.
+Se incluyen 2 delegaciones, 8 territorios, 7 cargos, 7 áreas, 7 funciones, 22 ítems, 2 tipos de
+atención, 7 subatenciones, 2 períodos, 7 roles y el grupo `Consulta SGR`. Estos catálogos no se
+inflan para alcanzar los 2.000 registros de negocio.
+
+La carga usa una transacción: ante colisiones o cambios incompatibles en cuentas, roles,
+asociaciones o períodos, informa el problema y revierte la ejecución. `--dry-run` valida la
+carga y revierte también los datos y restablecimientos de claves. Revisar primero esa simulación
+si la base contiene datos de trabajo; no ejecutar la semilla para resolver un conflicto sin revisarlo.
+
+Si la base ya contiene la semilla anterior (`admin_demo`, `funcionario1`, Centro/Norte/Sur/Rural), sus datos permanecen intactos;
 no se migran ni se eliminan automáticamente y el total global puede ser mayor.
 
 ## Pantallas
@@ -205,27 +384,38 @@ no se migran ni se eliminan automáticamente y el total global puede ser mayor.
 | C1 | Recuperar contraseña | `/accounts/recuperar/` |
 | C2 | Crear nueva contraseña (enlace del correo) | `/accounts/recuperar/<uidb64>/<token>/` |
 | C2 | Cambiar contraseña con la sesión iniciada | `/accounts/mi-perfil/cambiar-clave/` |
+| — | Perfil propio y foto con Croppr (funcionarios) | `/accounts/mi-perfil/` |
+| — | Portal: listado, creación y detalle propios | `/portal/`, `/portal/nueva/`, `/portal/<id>/` |
+| — | Perfil y foto propios del cliente | `/portal/perfil/` |
 | C3 | Delegaciones y Roles | `/accounts/delegaciones/`, `/accounts/roles/` |
 | C4 | Usuarios, Funcionarios e Ítems y metas | `/accounts/usuarios/`, `/accounts/funcionarios/`, `/configuration/items/` |
+| — | Detalle de funcionario | `/accounts/funcionarios/<id>/` |
 | C5 | Tipo de Atención y Sub Atención | `/configuration/tipos-atencion/`, `/configuration/subatenciones/` |
 | C6 | Ingreso y consulta de atención | `/activities/atenciones/nueva/`, `/activities/atenciones/<id>/` |
-| — | Maquetas: Cargos, Áreas, Grupos, Períodos y Actividades | `/accounts/cargos/`, `/accounts/areas/`, `/accounts/grupos/`, `/configuration/periodos/`, `/activities/` |
+| — | Cargos, Áreas, Grupos, Períodos y Actividades | `/accounts/cargos/`, `/accounts/areas/`, `/accounts/grupos/`, `/configuration/periodos/`, `/activities/` |
 
 ### Patrón común de los mantenedores
 
 - Tabla con el estado en texto, búsqueda parcial sin distinguir mayúsculas en varios campos,
-  filtro por estado, paginación de 10 registros que conserva los filtros y total de resultados.
+  filtros de negocio y tamaños de página **5, 15 y 30** (15 por defecto). El orden inicial es por
+  creación descendente, con id descendente como desempate; las columnas habilitadas permiten
+  orden ascendente/descendente mediante una lista explícita de campos permitidos.
+- Página, tamaño, búsqueda, filtros y orden se conservan en sesión por módulo y contexto.
+  Al volver desde un detalle, edición o desde otro módulo se recuperan. Cambiar búsqueda o
+  filtros vuelve a la página 1; una página que deja de existir se ajusta a una válida.
 - Búsqueda en tiempo real: al dejar de escribir (unos 400 ms) o al cambiar el estado, se
   actualizan solo la tabla, el total y el paginador, en la página 1, y la URL conserva los
   filtros. Sin JavaScript, el botón Buscar hace la misma búsqueda recargando la página.
 - Mensajes distintos para listado vacío y búsqueda sin coincidencias, estado de carga mientras
-  responde el servidor y páginas de error 403, 404 y 500 con la identidad del sistema (la de 500
+  responde el servidor y páginas de error 400, 403, 404 y 500 con la identidad del sistema (la de 500
   es autónoma para mostrarse aunque falle la base de datos).
 - **Exportar a Excel** (`.xlsx`) con todos los resultados autorizados del filtro aplicado, en todas
   sus páginas, sin contraseñas, tokens ni campos internos.
 - Formularios con los campos obligatorios marcados con `*`, Guardar y Cancelar. Los resultados y
   las confirmaciones de activar o desactivar se muestran con SweetAlert2.
-- Los registros no se eliminan: se desactivan y reactivan, y conservan su historial. Cada
+- Los registros no se eliminan físicamente: según el módulo se desactivan/reactivan,
+  se archivan o se cierran. Funcionarios usa archivado; Actividades permite restaurar con permiso
+  administrativo; los períodos cerrados no se reabren. Cada
   creación, edición y cambio de estado queda en `AuditLog` con el valor anterior y el nuevo.
 - La cabecera muestra siempre el usuario, su rol y la delegación activa (código y nombre), cada
   uno con texto e ícono. Si el perfil tiene varias delegaciones, el selector solo ofrece las
@@ -280,12 +470,13 @@ La exportación usa el permiso de consulta.
 | Delegaciones | `accounts.view_delegation` | `accounts.add_delegation` | `accounts.change_delegation` |
 | Roles | `accounts.view_role` | `accounts.add_role` | `accounts.change_role` |
 | Usuarios | `auth.view_user` | `auth.add_user` | `auth.change_user` |
-| Funcionarios | `accounts.view_official` | `accounts.add_official` | `accounts.change_official` |
+| Funcionarios | `accounts.view_official` | `accounts.add_official` | `accounts.change_official` para editar; `accounts.archive_official` para archivar |
+| Actividades | `activities.view_activity` (Excel de vigentes) | `activities.add_activity` | `activities.change_activity` para editar; `activities.archive_activity` para archivar, consultar historial y restaurar |
 | Ítems y metas | `configuration.view_item` | `configuration.add_item` | `configuration.change_item` |
 | Tipo de Atención | `configuration.view_attentiontype` | `configuration.add_attentiontype` | `configuration.change_attentiontype` |
 | Sub Atención | `configuration.view_subattentiontype` | `configuration.add_subattentiontype` | `configuration.change_subattentiontype` |
 | Ingreso de atención | `activities.view_socialattention` (consulta) | `activities.add_socialattention` | — |
-| Maquetas | `view_position`, `view_area`, `auth.view_group`, `view_period`, `view_activity` | — | — |
+| Otros mantenedores | `view_position`, `view_area`, `auth.view_group`, `view_period` | Según permisos del modelo | Según permisos del modelo |
 
 Los permisos provienen del usuario, de sus grupos y de los **roles SGR vigentes** (activos y no
 archivados) de su funcionario (`accounts.backends.SGRAuthBackend`). Salvo el superusuario, se
@@ -304,9 +495,9 @@ fuera de él enviado desde el navegador no valida.
 
 | App             | Responsabilidad                                                                                         | Estado                            |
 | --------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `accounts`      | Usuarios, funcionarios, delegaciones, roles, login y recuperación de contraseña; maquetas de cargos, áreas y grupos | Implementada                      |
-| `configuration` | Ítems, catálogos de atención y auditoría; maqueta de períodos                                            | Implementada                      |
-| `activities`    | Ingreso y consulta de atenciones; maqueta del listado de actividades                                     | Implementada                      |
+| `accounts`      | Usuarios, funcionarios, delegaciones, territorios, roles, cargos, áreas, grupos, perfil/foto y autenticación | Implementada                      |
+| `configuration` | Ítems, catálogos de atención, períodos y auditoría                                                       | Implementada                      |
+| `activities`    | CRUD de actividades, ingreso/consulta de atenciones, portal y solicitudes del cliente, consumidores WebSocket | Implementada                      |
 | `common`        | `BaseModel`, control de acceso, exportación a Excel, paginación, `get_user_area` y comando `seed_demo` | Implementada                      |
 | `agenda`        | Planificación de actividades                                                                           | Reservada para la siguiente etapa |
 | `analytics`     | Reportes e indicadores                                                                                   | Reservada para la siguiente etapa |
@@ -359,5 +550,10 @@ asignatura no se versionan.
 - **Falla la instalación de `mysqlclient`**: en Windows, verificar que el entorno virtual esté activo y que la versión de Python sea compatible. En Linux pueden faltar las librerías de desarrollo (`libmysqlclient-dev`, `pkg-config`, `python3-dev`).
 - **`KeyError: 'SECRET_KEY'` o `ImproperlyConfigured`**: falta el archivo `.env` o está incompleto (paso 4).
 - **«Demasiados intentos fallidos» al ingresar**: esperar `LOGIN_LOCKOUT_MINUTES` o pedir a un superusuario que borre el bloqueo en el Admin.
-- **`403 Forbidden` al entrar al Admin con `funcionario5`**: es el comportamiento esperado; ese usuario no tiene área asignada.
+- **Sin acceso a Django Admin con una cuenta de semilla**: es el comportamiento esperado;
+  ninguna de las siete cuentas es `staff`. Usar los mantenedores del sitio; el Admin requiere
+  una cuenta técnica independiente.
+- **La tabla no se actualiza sin F5**: comprobar JavaScript, sesión, estado de conexión y que
+  HTTP y WebSocket usen el mismo proceso ASGI; verificar la conexión en la pestaña de red y
+  que el host esté permitido. El canal en memoria no comunica procesos distintos.
 

@@ -1334,8 +1334,13 @@ h3 {
 .delegation-action-group {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    width: max-content;
     gap: 0.55rem;
+}
+
+.delegation-action-group > * {
+    flex-shrink: 0;
 }
 
 .delegation-action-group form {
@@ -1424,6 +1429,7 @@ h3 {
     cursor: pointer;
 }
 .maintainer-actions .action-icon svg { width: 1.25rem; height: 1.25rem; }
+.maintainer-actions .delegation-action-group .action-icon { margin: 0; }
 .maintainer-actions .action-icon--edit,
 .delegation-actions .delegation-action.action-icon--edit { background: #f9e8e8; color: #8d0000; }
 .maintainer-actions .action-icon--deactivate,

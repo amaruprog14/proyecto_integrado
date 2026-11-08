@@ -14,7 +14,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement) || !form.matches("form[data-swal-confirm]")) return;
         if (form.dataset.swalConfirmed === "true") return;
-        if (!window.Swal) return;
+        if (!window.Swal) {
+            if (form.dataset.swalRequireConfirmation === "true" &&
+                !window.confirm(form.dataset.swalConfirm || "¿Confirmas esta operación?")) {
+                event.preventDefault();
+            }
+            return;
+        }
 
         event.preventDefault();
         window.Swal.fire({

@@ -115,8 +115,29 @@ class Command(BaseCommand):
         if (Role, role.pk) in self.new_objects:
             role.permissions.set(expected)
         elif set(role.permissions.values_list("pk", flat=True)) != expected:
-            raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
+            archive_permissions = set(get_permissions([
+                "accounts.archive_official", "activities.archive_activity",
+            ]).values_list("pk", flat=True))
+            current = set(role.permissions.values_list("pk", flat=True))
+            if (name == "Administrador" and scope == Role.Scope.ALL
+                    and current < expected and expected - current <= archive_permissions):
+                # Solo completar los nuevos permisos de archivado en el
+                # Administrador anterior; conservar los demás roles y alcances.
+                role.permissions.add(*(expected - current))
+            else:
+                raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
         return role
+
+    @staticmethod
+    def complete_seed_user_name(profile):
+        user = profile.user
+        # Solo reemplaza los valores originales de la semilla antigua. Los
+        # nombres editados desde el perfil o el mantenedor se conservan.
+        if user and user.first_name == user.username and not user.last_name:
+            first_name, separator, last_name = profile.full_name.strip().partition(" ")
+            if separator and last_name:
+                user.first_name, user.last_name = first_name, last_name
+                user.save(update_fields=["first_name", "last_name"])
 
     def load(self, password):
         delegations, territories = [], []
@@ -171,7 +192,7 @@ class Command(BaseCommand):
             raise CommandError("El grupo Consulta SGR tiene otro alcance. No se modifica.")
         self.consultation_group = group
         users = {name: self.user(name, password) for name in ("adminA", "editorA", "readerA", "readerB", "clientA", "clientB")}
-        # Solo seis cuentas de acceso; los restantes funcionarios no requieren usuario Django.
+        # Seis cuentas originales y una adicional de evaluación en el funcionario 006.
         officials = []
         account_indices = {0: "adminA", 2: "editorA", 4: "readerA", 1: "readerB"}
         position_names = list(POSITIONS)
@@ -184,6 +205,16 @@ class Command(BaseCommand):
                 "area": areas[position_name], "position": positions[position_name],
                 "delegation": delegations[i % 2], "user": user,
             })
+            if i == 6:
+                from accounts.evaluation_admin import USERNAME, provision_evaluation_admin
+                previous_user = User.objects.filter(username=USERNAME).first()
+                reset = previous_user is not None and not previous_user.check_password(password)
+                _, user_created, role_created = provision_evaluation_admin(reset_password=True)
+                self.created["User"] += int(user_created)
+                self.created["Role"] += int(role_created)
+                self.created["PasswordsReset"] += int(reset)
+                officials.append(official)
+                continue
             if official.user_id != (user.pk if user else None) or official.email != f"official{i:03d}@sgr.example.invalid" or official.delegation_id != delegations[i % 2].pk or not official.is_enabled:
                 raise CommandError(f"Colisión o cambio de contexto del funcionario simulado {i}; no se reemplaza.")
             role = roles.get(username, roles["readerA"] if username == "readerB" else roles["editorA"])
@@ -191,6 +222,7 @@ class Command(BaseCommand):
                 official.roles.add(role)
             elif set(official.roles.values_list("pk", flat=True)) != {role.pk} or official.authorized_delegations.exists():
                 raise CommandError(f"El funcionario simulado {i} tiene roles o delegaciones adicionales. Revisión necesaria.")
+            self.complete_seed_user_name(official)
             officials.append(official)
 
         for username in ("readerA", "readerB"):
@@ -219,6 +251,7 @@ class Command(BaseCommand):
             })
             if recipient.user_id != (user.pk if user else None) or recipient.territory_id != territories[i % 8].pk or not recipient.is_enabled or recipient.email != f"recipient{i:03d}@sgr.example.invalid":
                 raise CommandError(f"Colisión o cambio de contexto de la persona simulada {i}; no se reemplaza.")
+            self.complete_seed_user_name(recipient)
             recipients.append(recipient)
         for i in range(1200):
             is_attention = i >= 900
@@ -284,4 +317,4 @@ class Command(BaseCommand):
             self.stdout.write(f"{model.__name__}: {len(ids)} de semilla; {self.created[model.__name__]} nuevos; {model.objects.count()} totales en BD")
         self.stdout.write(f"Negocio: {total} (sin auth, catálogos, historial ni sesiones). Usuarios nuevos: {self.created['User']}.")
         self.stdout.write(f"Contraseñas de cuentas de semilla restablecidas: {self.created['PasswordsReset']}.")
-        self.stdout.write("Cuentas: adminA, editorA, readerA, readerB, clientA, clientB. Contraseña de demostración: demo1234 (solo estas seis cuentas).")
+        self.stdout.write("Cuentas: adminEvalA, editorA, readerA, readerB, clientA, clientB; adicional global: adminA. Contraseña de demostración: demo1234 (solo estas siete cuentas).")

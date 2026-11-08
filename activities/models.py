@@ -71,6 +71,7 @@ class Activity(AutoCodeMixin, BaseModel):
         verbose_name = "Actividad"
         verbose_name_plural = "Actividades"
         ordering = ["-date"]
+        permissions = [("archive_activity", "Puede archivar y restaurar actividades")]
 
     def __str__(self):
         return f"Actividad {self.pk} - {self.official}"

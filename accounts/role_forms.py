@@ -30,8 +30,8 @@ from accounts.models import Official, Role
 from common.text import DESCRIPTION_MAX_LENGTH, clean_description_text, normalize_spaces
 
 SGR_APP_LABELS = ("accounts", "activities", "agenda", "analytics", "configuration")
-ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "delete": "Eliminar"}
-ACTION_ORDER = ("view", "add", "change")
+ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "archive": "Archivar", "delete": "Eliminar"}
+ACTION_ORDER = ("view", "add", "change", "archive")
 ROLE_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
 
 

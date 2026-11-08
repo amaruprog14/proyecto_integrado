@@ -1,8 +1,10 @@
 <div class="delegation-action-group">
     <a class="auth-text-link action-icon action-icon--view" href="{{ row.detail }}" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>
-    {% if can_change and row.mutable %}
+    {% if can_change and row.editable %}
         <a class="auth-text-link action-icon action-icon--edit" href="{{ row.edit }}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
-        <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}">
+    {% endif %}
+    {% if can_archive and row.can_archive and row.mutable %}
+        <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}" data-swal-require-confirmation="true">
             {% csrf_token %}
             <button type="submit" class="action-icon action-icon--{% if row.is_active %}deactivate{% else %}activate{% endif %}" aria-label="{{ row.action_label }}" data-tooltip="{{ row.action_label }}" title="{{ row.action_label }}">{% include "includes/action_icon.html" with action=row.action_label %}</button>
         </form>

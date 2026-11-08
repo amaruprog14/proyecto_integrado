@@ -113,6 +113,8 @@ class MediaFilesTests(TestCase):
         response = self.client.post(
             reverse("my_profile"),
             {
+                "first_name": "Foto",
+                "last_name": "Media",
                 "email": self.official.email,
                 "phone": "",
                 "photo": SimpleUploadedFile("foto.png", output.getvalue(), content_type="image/png"),

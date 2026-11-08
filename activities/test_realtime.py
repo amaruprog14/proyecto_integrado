@@ -206,7 +206,10 @@ class ActivityRealtimeTests(TransactionTestCase):
             await reader.disconnect()
         async_to_sync(scenario)()
 
-    def test_create_archive_restore_events_and_filtered_http(self):
+    def test_admin_create_archive_restore_events_and_filtered_http(self):
+        archivist = Role.objects.create(role_name='Administrador de actividades', scope=Role.Scope.DELEGATION)
+        archivist.permissions.add(Permission.objects.get(codename='archive_activity'))
+        self.users[0].official.roles.add(archivist)
         async def scenario():
             reader = self.socket()
             await reader.connect()
@@ -220,7 +223,7 @@ class ActivityRealtimeTests(TransactionTestCase):
             await reader.disconnect()
         async_to_sync(scenario)()
         response = self.clients[1].get(reverse('activity_maintainer'), {'status': 'INACTIVE'})
-        self.assertEqual(response.context['total'], 0)
+        self.assertEqual(response.status_code, 403)
 
     def test_no_subscription_from_browser(self):
         async def scenario():

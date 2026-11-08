@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{{ maintainer_title }} · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="officials" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="maintainer-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal / <a class="auth-text-link" href="{% url 'official_maintainer' %}">Funcionarios</a> / Detalle</p>
+                <h1 id="maintainer-title">{{ official.full_name }}</h1>
+            </div>
+            {% if can_change %}<a class="btn btn-primary maintainer-new-button" href="{% url 'official_update' official.pk %}" data-modal-form>Editar funcionario</a>{% endif %}
+        </header>
+        <section class="attention-entry-card" aria-label="Datos del funcionario">
+            <dl class="row mb-0">
+                {% for label, value in values.items %}
+                    <dt class="col-sm-4">{{ label }}</dt><dd class="col-sm-8">{{ value }}</dd>
+                {% endfor %}
+                <dt class="col-sm-4">Creado</dt><dd class="col-sm-8">{{ official.created_at|date:"d-m-Y H:i" }}</dd>
+                <dt class="col-sm-4">Última actualización</dt><dd class="col-sm-8">{{ official.updated_at|date:"d-m-Y H:i" }}</dd>
+            </dl>
+            <p>Archivar conserva las actividades y el historial del funcionario. Su estado laboral se administra por separado.</p>
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'official_maintainer' %}">Volver al listado</a>
+                {% if can_archive %}
+                <form method="post" action="{% url 'official_archive' official.pk %}" data-swal-title="Archivar funcionario" data-swal-confirm="Se archivará a {{ official.full_name }}. Se conservarán sus actividades e historial; su cuenta vinculada no podrá ingresar." data-swal-confirm-text="Sí, archivar" data-swal-require-confirmation="true">
+                    {% csrf_token %}<button class="btn btn-outline-danger" type="submit">Archivar funcionario</button>
+                </form>
+                {% endif %}
+            </div>
+        </section>
+    </section>
+</div>
+{% endblock %}
