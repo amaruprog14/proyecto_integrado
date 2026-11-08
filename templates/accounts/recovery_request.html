@@ -8,8 +8,11 @@
         <section class="auth-flow-card" aria-labelledby="recovery-title">
             <p class="page-intro-kicker">Gestión de Atención Ciudadana</p>
             <h1 id="recovery-title">Recuperar contraseña</h1>
-            <p class="auth-step-label">Paso 1 de 3 <span aria-hidden="true">·</span> Solicitar código</p>
-            <p class="auth-description">Ingresa el correo asociado a tu cuenta.</p>
+            <p class="auth-step-label">Paso 1 de 2 <span aria-hidden="true">·</span> Solicitar enlace</p>
+            <p class="auth-description">
+                Ingresa el correo asociado a tu cuenta. Te enviaremos un enlace para crear una nueva
+                contraseña; vence en {{ reset_timeout_minutes }} minutos y sirve una sola vez.
+            </p>
 
             <form
                 class="auth-form"
@@ -34,7 +37,7 @@
                 <p class="auth-field-error" id="recovery-email-error" role="alert" {% if not form.email.errors %}hidden{% endif %}>
                     {% if form.email.errors %}{{ form.email.errors.0 }}{% else %}Ingresa un correo electrónico válido para continuar.{% endif %}
                 </p>
-                <button class="btn btn-primary auth-submit" type="submit">Enviar código</button>
+                <button class="btn btn-primary auth-submit" type="submit">Enviar enlace</button>
             </form>
 
             <a class="auth-text-link auth-return-link" href="{% url 'login' %}">Volver al inicio de sesión</a>

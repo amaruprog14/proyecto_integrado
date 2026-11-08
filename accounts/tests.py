@@ -22,12 +22,13 @@ class AuthenticationFrontendRouteTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertTemplateUsed(response, template_name)
 
-    def test_code_and_password_steps_require_a_recovery_in_progress(self):
-        for route_name in ("recovery_code", "recovery_password"):
-            with self.subTest(route=route_name):
-                response = self.client.get(reverse(route_name))
+    def test_new_password_step_requires_a_valid_link(self):
+        response = self.client.get(reverse("recovery_confirm", args=["MQ", "token-inventado"]))
 
-                self.assertRedirects(response, reverse("recovery_request"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "accounts/recovery_password.html")
+        self.assertFalse(response.context["validlink"])
+        self.assertNotContains(response, 'name="new_password1"')
 
 
 class AccountMaintainerFrontendRouteTests(TestCase):

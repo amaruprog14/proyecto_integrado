@@ -1,28 +1,28 @@
 """
-Pruebas de acceso (SCRUM-30) y recuperación de contraseña (SCRUM-31).
+Pruebas de acceso (SCRUM-30) y recuperación de contraseña por enlace con token (SCRUM-31).
 Casos del plan de la segunda evaluación: ACC-01 a ACC-06.
 """
 import re
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta
+from unittest import mock
 
+from django.conf import settings
 from django.contrib.auth.models import Group, Permission, User
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core import mail
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.utils.encoding import force_bytes
 from django.utils import timezone
+from django.utils.http import urlsafe_base64_encode
 
 from accounts.forms import GENERIC_LOGIN_ERROR
-from accounts.models import Official, PasswordResetCode, Role
+from accounts.models import Official, Role
 from accounts.validators import PasswordCompositionValidator
-from accounts.views import (
-    BLOCKED_CODE_MESSAGE,
-    CODE_SENT_MESSAGE,
-    EXPIRED_CODE_MESSAGE,
-    INVALID_CODE_MESSAGE,
-    RECOVERY_SESSION_KEY,
-    RESEND_ERROR_MESSAGES,
-)
+from accounts.views import RECOVERY_SENT_MESSAGE
 from configuration.models import AuditLog
 
 PASSWORD = "Clave-Segura-1"
@@ -277,58 +277,75 @@ class RolePermissionBackendTests(TestCase):
         self.assertTrue(user.has_perm("accounts.view_delegation"))
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_RESET_MIN_RESPONSE_SECONDS=0,
+)
 class PasswordRecoveryFlowTests(TestCase):
-    """ACC-04 a ACC-06: solicitud genérica, validación del código y nueva contraseña."""
+    """ACC-04 a ACC-06: solicitud genérica, enlace con token y nueva contraseña."""
 
     def setUp(self):
+        cache.clear()  # espera mínima entre correos (clave por cuenta)
         self.user = create_official_user("ana", email="ana@example.test")
 
-    def request_code(self, email="ana@example.test"):
-        return self.client.post(reverse("recovery_request"), {"email": email}, follow=True)
+    def request_link(self, email="ana@example.test", **extra):
+        return self.client.post(reverse("recovery_request"), {"email": email}, follow=True, **extra)
 
-    def submit_code(self, code):
-        return self.client.post(reverse("recovery_code"), {"code": list(code)})
+    def sent_link(self):
+        return re.search(r"https?://\S+", mail.outbox[-1].body).group(0)
 
-    def resend(self):
-        return self.client.post(reverse("recovery_code"), {"action": "resend"}, follow=True)
-
-    def sent_code(self):
-        return re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
-
-    def wrong_code(self):
-        return "000000" if self.sent_code() != "000000" else "111111"
-
-    def verify_code(self):
-        self.request_code()
-        self.assertRedirects(self.submit_code(self.sent_code()), reverse("recovery_password"))
+    def open_link(self, link):
+        """Abre el enlace y devuelve la respuesta del formulario (Django quita el token de la URL)."""
+        return self.client.get(link, follow=True)
 
     def set_password(self, password1, password2=None):
         return self.client.post(
-            reverse("recovery_password"),
+            self.set_password_url,
             {"new_password1": password1, "new_password2": password2 or password1},
             follow=True,
         )
 
+    def start_valid_reset(self):
+        self.request_link()
+        response = self.open_link(self.sent_link())
+        self.assertTrue(response.context["validlink"])
+        self.set_password_url = response.request["PATH_INFO"]
+        self.assertNotIn(self.sent_link().rstrip("/").rsplit("/", 1)[-1], self.set_password_url)
+        return response
+
     # --- ACC-04 ---
     def test_response_is_the_same_for_existing_and_unknown_emails(self):
-        existing = self.request_code("ana@example.test")
+        existing = self.request_link("ana@example.test")
         self.client = self.client_class()
-        unknown = self.request_code("nadie@example.test")
+        unknown = self.request_link("nadie@example.test")
 
         for response in (existing, unknown):
-            self.assertRedirects(response, reverse("recovery_code"))
-            self.assertContains(response, CODE_SENT_MESSAGE)
+            self.assertRedirects(response, reverse("login"))
+            self.assertContains(response, RECOVERY_SENT_MESSAGE)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["ana@example.test"])
-        self.assertNotIn(self.sent_code(), PasswordResetCode.objects.get(user=self.user).code_hash)
+        logs = AuditLog.objects.filter(action="Solicitud de recuperación de contraseña").order_by("pk")
+        self.assertEqual(
+            [(log.affected_record_id, log.new_value.splitlines()[-1]) for log in logs],
+            [(self.user.pk, "Enlace enviado"),
+             (None, "Sin envío: el correo no corresponde a una cuenta activa")],
+        )
+        self.assertNotIn("nadie@example.test", logs[1].new_value)
 
-    def test_inactive_account_receives_no_code(self):
+    @override_settings(PASSWORD_RESET_MIN_RESPONSE_SECONDS=0.3)
+    def test_request_takes_the_same_minimum_time_with_and_without_account(self):
+        for email in ("ana@example.test", "nadie@example.test"):
+            with self.subTest(email=email):
+                started = time.monotonic()
+                self.request_link(email)
+                self.assertGreaterEqual(time.monotonic() - started, 0.3)
+
+    def test_inactive_account_receives_no_link(self):
         Official.objects.filter(user=self.user).update(status=Official.Status.INACTIVE)
 
-        response = self.request_code()
+        response = self.request_link()
 
-        self.assertContains(response, CODE_SENT_MESSAGE)
+        self.assertContains(response, RECOVERY_SENT_MESSAGE)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_invalid_email_is_rejected_by_the_server(self):
@@ -336,84 +353,77 @@ class PasswordRecoveryFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ingresa un correo electrónico válido para continuar.")
-        self.assertNotIn(RECOVERY_SESSION_KEY, self.client.session)
+        self.assertEqual(len(mail.outbox), 0)
 
-    # --- ACC-05 ---
-    def test_password_step_is_closed_until_the_code_is_verified(self):
-        self.request_code()
+    def test_link_is_absolute_and_uses_the_request_host(self):
+        self.request_link(HTTP_HOST="127.0.0.1")
 
-        self.assertRedirects(self.client.get(reverse("recovery_password")), reverse("recovery_request"))
-        self.assertRedirects(
-            self.client.post(
-                reverse("recovery_password"),
-                {"new_password1": NEW_PASSWORD, "new_password2": NEW_PASSWORD},
-            ),
-            reverse("recovery_request"),
-        )
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password(PASSWORD))
+        link = self.sent_link()
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        self.assertTrue(link.startswith(f"http://127.0.0.1/accounts/recuperar/{uidb64}/"), link)
+        self.assertIn(f"{settings.PASSWORD_RESET_TIMEOUT // 60} minutos", mail.outbox[-1].body)
 
-    def test_wrong_code_counts_attempts_and_blocks_after_the_limit(self):
-        self.request_code()
-        code, wrong = self.sent_code(), self.wrong_code()
+    def test_host_outside_allowed_hosts_gets_400_and_no_link(self):
+        with self.assertLogs("django.security.DisallowedHost", "ERROR"):
+            response = self.client.post(
+                reverse("recovery_request"), {"email": "ana@example.test"}, HTTP_HOST="sitio-ajeno.example"
+            )
 
-        for remaining in range(PasswordResetCode.max_attempts() - 1, 0, -1):
-            self.assertContains(self.submit_code(wrong), f"Intentos restantes: {remaining}.")
-        self.assertContains(self.submit_code(wrong), BLOCKED_CODE_MESSAGE)
-        self.assertContains(self.submit_code(code), BLOCKED_CODE_MESSAGE)
-        self.assertRedirects(self.client.get(reverse("recovery_password")), reverse("recovery_request"))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
 
-    def test_unknown_email_answers_like_a_wrong_code(self):
-        self.request_code("nadie@example.test")
-
-        response = self.submit_code("123456")
-
-        remaining = PasswordResetCode.max_attempts() - 1
-        self.assertContains(response, f"{INVALID_CODE_MESSAGE} Intentos restantes: {remaining}.")
-
-    def test_incomplete_code_is_rejected(self):
-        self.request_code()
-
-        response = self.client.post(reverse("recovery_code"), {"code": ["1", "2", "3"]})
-
-        self.assertContains(response, "Ingresa los seis dígitos para continuar.")
-
-    def test_expired_code_is_rejected(self):
-        self.request_code()
-        PasswordResetCode.objects.filter(user=self.user).update(
-            expires_at=timezone.now() - timedelta(seconds=1)
-        )
-
-        self.assertContains(self.submit_code(self.sent_code()), EXPIRED_CODE_MESSAGE)
-
-    def test_resend_respects_the_wait_and_replaces_the_code(self):
-        self.request_code()
-        first_code = self.sent_code()
-
-        self.assertContains(self.resend(), "Debes esperar")
+    def test_a_second_request_waits_before_sending_another_link(self):
+        self.request_link()
+        self.assertContains(self.request_link(), RECOVERY_SENT_MESSAGE)
         self.assertEqual(len(mail.outbox), 1)
 
         with self.settings(PASSWORD_RESET_RESEND_WAIT_SECONDS=0):
-            self.assertContains(self.resend(), CODE_SENT_MESSAGE)
+            cache.clear()
+            self.request_link()
         self.assertEqual(len(mail.outbox), 2)
-        second_code = self.sent_code()
-        if first_code != second_code:
-            self.assertContains(self.submit_code(first_code), INVALID_CODE_MESSAGE)
-        self.assertRedirects(self.submit_code(second_code), reverse("recovery_password"))
 
-    @override_settings(PASSWORD_RESET_RESEND_WAIT_SECONDS=0, PASSWORD_RESET_MAX_RESENDS=1)
-    def test_resend_limit_is_the_same_for_existing_and_unknown_emails(self):
-        for email in ("ana@example.test", "nadie@example.test"):
-            with self.subTest(email=email):
-                self.client = self.client_class()
-                self.request_code(email)
+    # --- ACC-05 ---
+    def test_valid_token_opens_the_new_password_form(self):
+        response = self.start_valid_reset()
 
-                self.assertContains(self.resend(), CODE_SENT_MESSAGE)
-                self.assertContains(self.resend(), RESEND_ERROR_MESSAGES["resend_limit"])
+        self.assertTemplateUsed(response, "accounts/recovery_password.html")
+        self.assertContains(response, "Crear nueva contraseña")
+
+    def test_invalid_token_shows_a_clear_message_and_a_new_request_link(self):
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        cases = {
+            "token alterado": reverse("recovery_confirm", args=[uidb64, "abc-123"]),
+            "usuario inexistente": reverse("recovery_confirm", args=["OTk5OTk", "abc-123"]),
+            "uid no decodificable": reverse("recovery_confirm", args=["%%%", "abc-123"]),
+        }
+        for label, url in cases.items():
+            with self.subTest(label):
+                response = self.client.get(url, follow=True)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertFalse(response.context["validlink"])
+                self.assertContains(response, "El enlace no es válido")
+                self.assertContains(response, f'href="{reverse("recovery_request")}"')
+
+    def test_expired_token_is_rejected(self):
+        self.request_link()
+        expired = datetime.now() + timedelta(seconds=settings.PASSWORD_RESET_TIMEOUT + 1)
+
+        with mock.patch.object(PasswordResetTokenGenerator, "_now", return_value=expired):
+            response = self.open_link(self.sent_link())
+
+        self.assertFalse(response.context["validlink"])
+        self.assertContains(response, "El enlace no es válido")
+
+    def test_token_of_an_account_that_can_no_longer_log_in_is_rejected(self):
+        self.request_link()
+        Official.objects.filter(user=self.user).update(status=Official.Status.SUSPENDED)
+
+        self.assertFalse(self.open_link(self.sent_link()).context["validlink"])
 
     # --- ACC-06 ---
     def test_weak_or_mismatched_passwords_are_rejected(self):
-        self.verify_code()
+        self.start_valid_reset()
         cases = {
             "corta": ("Ab1-x", None),
             "sin mayúscula": ("clave-segura-9", None),
@@ -431,36 +441,32 @@ class PasswordRecoveryFlowTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(PASSWORD))
 
-    def test_valid_password_replaces_the_old_one_and_invalidates_the_code(self):
-        self.verify_code()
-        used_code = self.sent_code()
+    def test_valid_password_replaces_the_old_one_and_is_audited(self):
+        self.start_valid_reset()
 
         response = self.set_password(NEW_PASSWORD)
 
         self.assertRedirects(response, reverse("login"))
         self.assertContains(response, "Tu contraseña fue actualizada.")
         self.assertContains(response, "sweetalert2")
-        self.assertNotIn(RECOVERY_SESSION_KEY, self.client.session)
-        record = PasswordResetCode.objects.get(user=self.user)
-        self.assertIsNotNone(record.used_at)
-        self.assertFalse(record.verify(used_code))
         log = AuditLog.objects.get(action="Cambio de contraseña por recuperación")
         self.assertEqual(log.affected_record_id, self.user.pk)
         self.assertNotIn(NEW_PASSWORD, f"{log.previous_value}{log.new_value}")
-
         self.assertFalse(self.client.login(username="ana", password=PASSWORD))
         self.assertTrue(self.client.login(username="ana", password=NEW_PASSWORD))
 
-    def test_code_cannot_be_reused_in_a_new_request(self):
-        self.verify_code()
-        used_code = self.sent_code()
+    def test_used_token_cannot_be_reused(self):
+        self.start_valid_reset()
+        used_link = self.sent_link()
         self.set_password(NEW_PASSWORD)
 
-        self.request_code()
+        self.client = self.client_class()
+        response = self.open_link(used_link)
 
-        self.assertEqual(len(mail.outbox), 2)
-        if used_code != self.sent_code():
-            self.assertContains(self.submit_code(used_code), INVALID_CODE_MESSAGE)
+        self.assertFalse(response.context["validlink"])
+        self.assertContains(response, "El enlace no es válido")
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(NEW_PASSWORD))
 
 
 class PasswordCompositionValidatorTests(SimpleTestCase):

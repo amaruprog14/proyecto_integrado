@@ -4,5 +4,6 @@
         <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_requests' %} is-active{% endif %}" href="{% url 'client_requests' %}">Mis solicitudes</a>
         <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_request_create' %} is-active{% endif %}" href="{% url 'client_request_create' %}">Nueva atención</a>
         <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'client_profile' %} is-active{% endif %}" href="{% url 'client_profile' %}">Mi perfil</a>
+        <a class="maintainer-sidebar-link{% if request.resolver_match.url_name == 'password_change' %} is-active{% endif %}" href="{% url 'password_change' %}">Cambiar contraseña</a>
     </nav>
 </div>

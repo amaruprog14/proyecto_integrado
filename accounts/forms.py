@@ -115,16 +115,6 @@ class RecoveryRequestForm(forms.Form):
     )
 
 
-class RecoveryCodeForm(forms.Form):
-    code = forms.RegexField(
-        regex=r"^\d{6}$",
-        error_messages={
-            "required": "Ingresa los seis dígitos para continuar.",
-            "invalid": "Ingresa los seis dígitos para continuar.",
-        },
-    )
-
-
 # --- Mantenedores: Delegaciones y Usuarios ---
 #
 # Las validaciones se ejecutan en el servidor; los formularios de usuario limitan las
@@ -1004,12 +994,54 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
             return official
 
 
-class OwnOfficialProfileForm(forms.ModelForm):
-    """Campos personales permitidos al funcionario sobre su propio perfil."""
+FULL_NAME_MAX_LENGTH = 200
 
+
+def profile_snapshot(profile):
+    """Valores auditables del perfil propio (funcionario o cliente)."""
+    return {"Nombre": profile.full_name, "Correo": profile.email or "—", "Teléfono": profile.phone or "—"}
+
+
+class OwnOfficialProfileForm(forms.ModelForm):
+    """
+    Campos personales permitidos al funcionario sobre su propio perfil (ClientProfileForm lo
+    reutiliza para el cliente). Nombres y apellidos se guardan en el User y forman el nombre
+    completo del perfil ("nombres apellidos"); el correo también se copia al User, para que
+    nombre y correo sean los mismos en la cuenta y en el perfil.
+    """
+
+    first_name = forms.CharField(
+        label="Nombres",
+        max_length=150,
+        widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 150, "autocomplete": "given-name"}),
+        error_messages={"required": "Ingresa tus nombres."},
+    )
+    last_name = forms.CharField(
+        label="Apellidos",
+        max_length=150,
+        widget=forms.TextInput(attrs={"class": "form-control", "maxlength": 150, "autocomplete": "family-name"}),
+        error_messages={"required": "Ingresa tus apellidos."},
+    )
     photo = forms.ImageField(required=False, label="Foto de perfil", widget=forms.FileInput(
         attrs={"accept": "image/jpeg,image/png", "class": "form-control"}))
     photo_crop = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        user = self.instance.user
+        self.initial.setdefault("first_name", user.first_name)
+        self.initial.setdefault("last_name", user.last_name)
+        self.previous_snapshot = profile_snapshot(self.instance)
+        self.order_fields(["first_name", "last_name", "email", "phone", "photo", "photo_crop"])
+
+    def clean_first_name(self):
+        return clean_person_name(self.cleaned_data.get("first_name"))
+
+    def clean_last_name(self):
+        return clean_person_name(self.cleaned_data.get("last_name"))
+
+    def full_name(self):
+        return f"{self.cleaned_data['first_name']} {self.cleaned_data['last_name']}"
 
     class Meta:
         model = Official
@@ -1053,6 +1085,11 @@ class OwnOfficialProfileForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        if data.get("first_name") and data.get("last_name") and len(self.full_name()) > FULL_NAME_MAX_LENGTH:
+            self.add_error(
+                "last_name",
+                f"Nombres y apellidos no pueden superar en total los {FULL_NAME_MAX_LENGTH} caracteres.",
+            )
         if not self.files.get("photo") or "photo" not in data:
             return data
         import json
@@ -1089,7 +1126,14 @@ class OwnOfficialProfileForm(forms.ModelForm):
         return data
 
     def save(self, commit=True):
-        official = super().save(commit=False)
+        profile = super().save(commit=False)
+        profile.full_name = self.full_name()
         if commit:
-            official.save(update_fields=["email", "phone", "photo", "updated_at"])
-        return official
+            with transaction.atomic():
+                profile.save(update_fields=["full_name", "email", "phone", "photo", "updated_at"])
+                user = profile.user
+                user.first_name = self.cleaned_data["first_name"]
+                user.last_name = self.cleaned_data["last_name"]
+                user.email = profile.email
+                user.save(update_fields=["first_name", "last_name", "email"])
+        return profile

@@ -126,7 +126,8 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         item = ClientRequest.objects.get()
         self.assertEqual((item.delegation_id, item.territory_id, item.address_snapshot),
             (self.south.pk, self.territory.pk, 'Calle de Prueba 123'))
-        self.client.post(reverse('client_profile'), {'email':user.email, 'phone':'', 'territory':self.other.pk, 'address':'Falsa dirección'})
+        self.client.post(reverse('client_profile'), {'first_name': 'Cliente', 'last_name': 'Nuevo', 'email': user.email,
+                                                     'phone': '', 'territory': self.other.pk, 'address': 'Falsa dirección'})
         recipient = ServiceRecipient.objects.get(user=user)
         self.assertEqual(recipient.territory, self.territory)
         self.assertEqual(recipient.address, 'Calle de Prueba 123')

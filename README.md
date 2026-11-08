@@ -12,7 +12,7 @@ End (TI3041) – Evaluación Sumativa III.
 | Módulo | Estado |
 | ------ | ------ |
 | Ingreso al sistema, cierre de sesión y rutas protegidas | Operativo, con bloqueo temporal por intentos fallidos y auditoría |
-| Recuperar contraseña, validar código y crear nueva contraseña | Operativo |
+| Recuperar contraseña por enlace, cambiar la contraseña y editar nombre y correo propios | Operativo |
 | Delegaciones | Operativo con persistencia real |
 | Roles | Operativo con persistencia real |
 | Usuarios y Funcionarios | Operativo con persistencia real |
@@ -90,11 +90,10 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DEBUG` | Modo desarrollo | `False` |
 | `ALLOWED_HOSTS` | Hosts permitidos, separados por coma | `localhost,127.0.0.1` |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Conexión a MySQL | motor MySQL |
-| `EMAIL_BACKEND`, `DEFAULT_FROM_EMAIL`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` | Envío del código de recuperación | correo impreso en la consola |
-| `PASSWORD_RESET_CODE_TTL_MINUTES` | Vigencia del código de recuperación | `10` |
-| `PASSWORD_RESET_RESEND_WAIT_SECONDS` | Espera mínima entre reenvíos | `45` |
-| `PASSWORD_RESET_MAX_ATTEMPTS` | Intentos fallidos por código | `5` |
-| `PASSWORD_RESET_MAX_RESENDS` | Reenvíos por código vigente | `3` |
+| `EMAIL_BACKEND`, `DEFAULT_FROM_EMAIL`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` | Envío del enlace de recuperación | correo impreso en la consola |
+| `PASSWORD_RESET_TIMEOUT` | Vigencia del enlace de recuperación, en segundos | `3600` |
+| `PASSWORD_RESET_RESEND_WAIT_SECONDS` | Espera mínima entre dos enlaces a la misma cuenta | `45` |
+| `PASSWORD_RESET_MIN_RESPONSE_SECONDS` | Tiempo mínimo de respuesta de la solicitud | `1` |
 | `LOGIN_MAX_FAILED_ATTEMPTS` | Intentos fallidos de ingreso antes del bloqueo | `5` |
 | `LOGIN_LOCKOUT_MINUTES` | Duración del bloqueo de ingreso | `10` |
 
@@ -177,8 +176,8 @@ no se migran ni se eliminan automáticamente y el total global puede ser mayor.
 | ----- | -------- | ---- |
 | C1 | Ingreso al sistema | `/accounts/login/` |
 | C1 | Recuperar contraseña | `/accounts/recuperar/` |
-| C2 | Validar código | `/accounts/recuperar/codigo/` |
-| C2 | Crear nueva contraseña | `/accounts/recuperar/nueva-clave/` |
+| C2 | Crear nueva contraseña (enlace del correo) | `/accounts/recuperar/<uidb64>/<token>/` |
+| C2 | Cambiar contraseña con la sesión iniciada | `/accounts/mi-perfil/cambiar-clave/` |
 | C3 | Delegaciones y Roles | `/accounts/delegaciones/`, `/accounts/roles/` |
 | C4 | Usuarios, Funcionarios e Ítems y metas | `/accounts/usuarios/`, `/accounts/funcionarios/`, `/configuration/items/` |
 | C5 | Tipo de Atención y Sub Atención | `/configuration/tipos-atencion/`, `/configuration/subatenciones/` |
@@ -221,16 +220,26 @@ de ser reconocido en la siguiente petición. El cierre de sesión es por `POST` 
 protegidas se envían sin caché. Los ingresos, los fallos, los bloqueos y los cierres de sesión
 quedan en `AuditLog` con la IP de origen, nunca con la contraseña.
 
-**Recuperación de contraseña.** Flujo en tres pasos con el modelo `PasswordResetCode`:
+**Recuperación de contraseña.** Por enlace con token (`django.contrib.auth.tokens`):
 
-1. Se ingresa el correo. La respuesta es la misma exista o no la cuenta; solo una cuenta
-   activa recibe el código de seis dígitos (en la base solo se guarda su hash).
-2. Se valida el código: controla vigencia, intentos fallidos, código ya usado, espera entre
-   reenvíos y máximo de reenvíos.
-3. Solo tras una verificación válida se define la nueva contraseña. Se validan sus requisitos
-   en el navegador y en el servidor (mínimo 8 caracteres, mayúscula, minúscula y número, además
-   de los validadores de Django). Al guardar se invalida el código, se registra en auditoría y
-   se vuelve al login con una confirmación SweetAlert2.
+1. Se ingresa el correo. La respuesta y el tiempo mínimo de respuesta
+   (`PASSWORD_RESET_MIN_RESPONSE_SECONDS`) son los mismos exista o no la cuenta; solo una cuenta
+   que puede ingresar recibe el enlace, y como máximo uno cada `PASSWORD_RESET_RESEND_WAIT_SECONDS`.
+   Cada solicitud queda en `AuditLog` con el correo enmascarado.
+2. El enlace es absoluto, con el host de la petición (validado contra `ALLOWED_HOSTS`), vence a
+   los `PASSWORD_RESET_TIMEOUT` segundos y deja de valer en cuanto cambia la contraseña, así que
+   sirve una sola vez. No se guarda nada en la base. Un enlace inválido, vencido o ya usado
+   muestra un mensaje claro y ofrece pedir otro.
+3. Se define la nueva contraseña. Se validan sus requisitos en el navegador y en el servidor
+   (mínimo 8 caracteres, mayúscula, minúscula y número, además de los validadores de Django). Al
+   guardar se registra en auditoría y se vuelve al login con una confirmación SweetAlert2.
+
+**Cambio de contraseña y datos propios.** Con la sesión iniciada, funcionarios y clientes cambian
+su contraseña en `/accounts/mi-perfil/cambiar-clave/` (contraseña actual, nueva y confirmación).
+Una contraseña actual incorrecta suma al mismo contador de bloqueo del inicio de sesión. Tras el
+cambio la sesión sigue abierta y las de otros dispositivos se cierran; queda en `AuditLog`. En
+«Mi perfil» cada uno edita sus nombres, apellidos, correo y teléfono: el nombre completo del
+perfil es «nombres apellidos» y nombre y correo se copian al usuario de acceso.
 
 Por defecto el correo se imprime en la consola de `runserver`; para enviarlo a un buzón real se
 configuran `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` y las variables `EMAIL_*`.

@@ -58,7 +58,8 @@ ejecución no afecta los resultados.
 | ------ | --------- |
 | `accounts/test_auth_flows.py` | Login, rutas protegidas, permisos por rol, recuperación de contraseña |
 | `accounts/test_login_security.py` | Bloqueo temporal por intentos fallidos y auditoría de inicio/cierre de sesión |
-| `accounts/test_password_reset.py` | Modelo del código de recuperación y delegaciones autorizadas |
+| `accounts/test_official_delegations.py` | Delegaciones autorizadas del funcionario |
+| `accounts/test_own_account.py` | Cambio de contraseña con sesión iniciada y edición de nombre y correo propios |
 | `accounts/test_delegation_crud.py` | CRUD, búsqueda, paginación, exportación y ámbito de Delegaciones |
 | `accounts/test_role_crud.py` | CRUD de Roles, último Administrador global, permisos privilegiados |
 | `accounts/test_user_crud.py` | CRUD de Usuarios, exportación, ámbito, reglas de roles |
@@ -90,9 +91,11 @@ automatizada y debe ejecutarse y registrarse en la ficha de ejecución; no se de
 | ACC-02 Clave incorrecta, cuenta inactiva, campos vacíos, mensaje genérico, sin sesión | `accounts.test_auth_flows.LoginTests` |
 | ACC-02 / RNF Bloqueo temporal por intentos fallidos (configurable, sin revelar la cuenta) | `accounts.test_login_security.LoginLockoutTests` |
 | ACC-03 Cierre de sesión, Atrás y rutas protegidas | `accounts.test_auth_flows.ProtectedRouteTests.test_logout_ends_access_and_pages_are_not_cached`, `...test_anonymous_users_are_sent_to_login` |
-| ACC-04 Respuesta genérica de recuperación | `accounts.test_auth_flows.PasswordRecoveryFlowTests.test_response_is_the_same_for_existing_and_unknown_emails`, `...test_inactive_account_receives_no_code` |
-| ACC-05 Código vigente, erróneo, vencido, reutilizado, reenvío e intentos | `accounts.test_auth_flows.PasswordRecoveryFlowTests`, `accounts.test_password_reset.PasswordResetCodeTests` |
-| ACC-06 Clave débil, confirmación distinta, nueva aceptada, anterior y código invalidados | `accounts.test_auth_flows.PasswordRecoveryFlowTests.test_weak_or_mismatched_passwords_are_rejected`, `...test_valid_password_replaces_the_old_one_and_invalidates_the_code`, `PasswordCompositionValidatorTests` |
+| ACC-04 Respuesta y tiempo genéricos de recuperación | `accounts.test_auth_flows.PasswordRecoveryFlowTests.test_response_is_the_same_for_existing_and_unknown_emails`, `...test_request_takes_the_same_minimum_time_with_and_without_account`, `...test_inactive_account_receives_no_link` |
+| ACC-05 Enlace válido, inválido, vencido, reutilizado, host y espera entre envíos | `accounts.test_auth_flows.PasswordRecoveryFlowTests` |
+| ACC-06 Clave débil, confirmación distinta, nueva aceptada y enlace invalidado | `accounts.test_auth_flows.PasswordRecoveryFlowTests.test_weak_or_mismatched_passwords_are_rejected`, `...test_valid_password_replaces_the_old_one_and_is_audited`, `...test_used_token_cannot_be_reused`, `PasswordCompositionValidatorTests` |
+| ACC-07 Cambio de contraseña con sesión: clave actual errónea, bloqueo, validadores, sesión que se mantiene, cliente | `accounts.test_own_account.PasswordChangeTests` |
+| ACC-08 Nombre y correo propios: validación, sincronización con el usuario, cliente sin acceso a datos ajenos | `accounts.test_own_account.OwnNameEditTests` |
 | SEG-04 Auditoría de ingresos, fallos, bloqueos y cierres sin contraseñas | `accounts.test_login_security.LoginAuditTests` |
 
 ### Mantenedores (A1, A2, B5, B6)
@@ -142,7 +145,7 @@ automatizada y debe ejecutarse y registrarse en la ficha de ejecución; no se de
 | SEG-01 Identificador de otra delegación: denegado y trazable | `accounts.test_audit_trail.OutOfScopeAccessAuditTests`, `*ScopeTests`, `activities.test_attention_submission.AttentionDetailTests.test_attention_of_another_delegation_is_hidden_and_the_attempt_audited` |
 | SEG-02 Autorización por operación, sin escalamiento (403 con auditoría) | `common.test_requirements.OperationAuthorizationTests`, `accounts.test_user_crud.UserCrudAdminTests.test_actor_without_role_management_permission_cannot_assign_privileged_role`, `accounts.test_role_crud.RolePermissionTests`, `accounts.test_official_crud.OfficialRoleRulesTests.test_privileged_role_without_role_permission_is_denied_with_403_and_audited` |
 | SEG-03 Entradas adversas tratadas como datos | `common.test_requirements.AdverseSearchInputTests`, `accounts.test_role_crud.RoleCrudAdminTests.test_export_stores_formula_like_values_as_text` |
-| SEG-04 Contraseñas con hash, nunca en exportaciones ni auditoría | `accounts.test_user_crud.UserCrudAdminTests.test_export_has_no_passwords_and_includes_all_filtered_rows`, `accounts.test_audit_trail.FieldLevelAuditTests.test_user_update_records_profile_roles_and_password_change_without_its_value`, `accounts.test_password_reset.PasswordResetCodeTests.test_issue_stores_only_the_hash` |
+| SEG-04 Contraseñas con hash, nunca en exportaciones ni auditoría | `accounts.test_user_crud.UserCrudAdminTests.test_export_has_no_passwords_and_includes_all_filtered_rows`, `accounts.test_audit_trail.FieldLevelAuditTests.test_user_update_records_profile_roles_and_password_change_without_its_value`, `accounts.test_own_account.PasswordChangeTests.test_wrong_current_password_is_rejected_and_audited` |
 
 ### Fuera del alcance de estas pruebas automatizadas
 
