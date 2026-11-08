@@ -118,6 +118,7 @@ class Official(BaseModel):
         verbose_name = "Funcionario"
         verbose_name_plural = "Funcionarios"
         ordering = ["full_name"]
+        permissions = [("archive_official", "Puede archivar funcionarios")]
 
     def __str__(self):
         return self.full_name

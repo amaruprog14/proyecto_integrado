@@ -82,7 +82,12 @@ def queryset(key, user):
             scope = permission_scope(user, permission(key))
             return qs if scope == Role.Scope.ALL else qs.filter(delegation_id__in=delegation_ids(user)) if scope == Role.Scope.DELEGATION else qs.none()
         if key == 'activity':
-            return activity_queryset(user, permission(key))
+            # Los lectores solo reciben avisos de vigentes; los administradores
+            # también pueden refrescar el historial dentro de su alcance de archivado.
+            from django.db.models import Q
+            history = activity_queryset(user, 'activities.archive_activity', include_archived=True)
+            return activity_queryset(user, permission(key), include_archived=True).filter(
+                Q(deleted_at__isnull=True) | Q(pk__in=history.values('pk')))
         qs = MODELS[key].objects.all()
         if key != 'group':
             qs = qs.filter(deleted_at__isnull=True)

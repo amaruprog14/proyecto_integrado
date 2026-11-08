@@ -1,6 +1,7 @@
 """Catálogos transcritos del caso SGR (sin datos personales del Excel).
 
-Procedencia y normalizaciones: SEMILLA_SGR.md. No se lee Excel al cargar.
+Procedencia: matriz SGR trimestral, descriptor de funciones y guía del proyecto.
+Distribución y ejecución segura: README.md. No se lee Excel al cargar.
 Los cargos son funciones laborales; los roles Django controlan el acceso.
 """
 

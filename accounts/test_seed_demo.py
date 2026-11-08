@@ -99,12 +99,16 @@ class SeedDemoTests(TestCase):
             self.assertTrue(all(row.official.delegation.delegation_name == delegation for row in response.context["page_obj"].object_list))
             self.assertEqual(self.client.get(reverse("attention_entry")).status_code, 403)
 
-    def test_six_accounts_and_effective_permissions(self):
-        self.assertSetEqual(set(User.objects.values_list("username", flat=True)), {"adminA", "editorA", "readerA", "readerB", "clientA", "clientB"})
+    def test_evaluation_accounts_and_additional_global_administrator(self):
+        self.assertSetEqual(set(User.objects.values_list("username", flat=True)), {"adminEvalA", "adminA", "editorA", "readerA", "readerB", "clientA", "clientB"})
         admin = User.objects.get(username="adminA")
         self.assertFalse(admin.is_superuser)
         self.assertTrue(admin.has_perm("accounts.change_official"))
+        self.assertTrue(admin.has_perm("accounts.archive_official"))
+        self.assertTrue(admin.has_perm("activities.archive_activity"))
         editor = User.objects.get(username="editorA")
+        self.assertFalse(editor.has_perm("accounts.archive_official"))
+        self.assertFalse(editor.has_perm("activities.archive_activity"))
         for permission in ("accounts.add_official", "accounts.change_official", "activities.add_activity", "activities.change_activity"):
             self.assertTrue(editor.has_perm(permission), permission)
         for username in ("readerA", "readerB", "clientA", "clientB"):
@@ -188,6 +192,46 @@ class SeedDemoTests(TestCase):
         with self.assertRaisesMessage(CommandError, "cerrado"):
             seed()
         self.assertEqual(counts(), before)
+
+    def test_seed_profiles_can_save_contact_details_without_filling_missing_names(self):
+        from accounts.forms import OwnOfficialProfileForm
+        from activities.client_portal import ClientProfileForm
+
+        for user in User.objects.all():
+            with self.subTest(username=user.username):
+                official = getattr(user, "official", None)
+                profile = official or user.service_recipient
+                form_class = OwnOfficialProfileForm if official else ClientProfileForm
+                self.assertTrue(user.first_name and user.last_name)
+                self.assertEqual(user.get_full_name(), profile.full_name)
+                form = form_class({"first_name": user.first_name, "last_name": user.last_name,
+                                   "email": profile.email, "phone": profile.phone}, instance=profile)
+                self.assertTrue(form.is_valid(), form.errors)
+
+    def test_reseed_upgrades_only_the_previous_administrator_archival_permission(self):
+        permission = Role.objects.get(role_name="Administrador").permissions.get(codename="archive_official")
+        Role.objects.get(role_name="Administrador").permissions.remove(permission)
+        seed()
+        self.assertTrue(User.objects.get(username="adminA").has_perm("accounts.archive_official"))
+        self.assertFalse(User.objects.get(username="editorA").has_perm("accounts.archive_official"))
+
+    def test_reseed_completes_legacy_names_but_preserves_edited_names(self):
+        legacy = User.objects.get(username="editorA")
+        legacy.first_name, legacy.last_name = legacy.username, ""
+        legacy.save(update_fields=["first_name", "last_name"])
+        edited = User.objects.get(username="readerA")
+        edited.first_name, edited.last_name = "Ana", "Rojas"
+        edited.save(update_fields=["first_name", "last_name"])
+        edited.official.full_name = "Ana Rojas"
+        edited.official.save(update_fields=["full_name"])
+
+        seed()
+
+        legacy.refresh_from_db()
+        edited.refresh_from_db()
+        self.assertTrue(legacy.last_name)
+        self.assertEqual(legacy.get_full_name(), legacy.official.full_name)
+        self.assertEqual((edited.first_name, edited.last_name), ("Ana", "Rojas"))
 
     def test_foreign_records_are_preserved(self):
         foreign = Delegation.objects.create(delegation_name="Otra delegación", address="Dirección externa 123", commune="La Serena")

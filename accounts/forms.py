@@ -30,6 +30,8 @@ PRIVILEGED_ROLE_PERMISSIONS = frozenset(
         "accounts.change_delegation",
         "accounts.add_role",
         "accounts.change_role",
+        "accounts.archive_official",
+        "activities.archive_activity",
     }
 )
 
@@ -704,7 +706,7 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
             return user
 
 
-class OfficialForm(RoleAssignmentMixin, forms.Form):
+class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
     """Administra el perfil Official y, opcionalmente, crea su cuenta de acceso."""
 
     full_name = forms.CharField(
@@ -811,6 +813,11 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         widget=forms.PasswordInput(attrs={"class": "form-control", "autocomplete": "new-password"}),
     )
 
+    class Meta:
+        model = Official
+        fields = ("full_name", "national_id", "email", "phone", "area", "position",
+                  "delegation", "authorized_delegations", "status")
+
     def __init__(
         self,
         *args,
@@ -821,10 +828,10 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
         existing_usernames=None,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, instance=instance, **kwargs)
         configure_text_widgets(self)
         self.actor = actor
-        self.instance = instance
+        self.creating_official = not self.instance.pk
         self.existing_usernames = set(existing_usernames or [])
         self.fields["status"].initial = Official.Status.ACTIVE
         current_official = getattr(self, "official_instance", instance)
@@ -961,37 +968,26 @@ class OfficialForm(RoleAssignmentMixin, forms.Form):
                     self.add_error("password1", error)
         return cleaned
 
-    def save(self):
-        cleaned = self.cleaned_data
+    def _save_m2m(self):
         with transaction.atomic():
-            official = self.instance or Official()
-            official.full_name = cleaned["full_name"].strip()
-            official.national_id = cleaned["national_id"]
-            official.email = cleaned["email"]
-            official.phone = (cleaned.get("phone") or "").strip()
-            official.area = cleaned.get("area")
-            official.position = cleaned.get("position")
-            official.delegation = cleaned.get("delegation")
-            official.status = cleaned["status"]
-
-            if (
-                not official.pk
-                and cleaned.get("create_account")
-            ):
+            official = self.instance
+            if self.creating_official and self.cleaned_data.get("create_account") and not official.user_id:
                 user = get_user_model_class()(
-                    username=cleaned["username"],
-                    email=official.email,
-                    first_name=(cleaned.get("first_name") or "").strip(),
-                    last_name=(cleaned.get("last_name") or "").strip(),
+                    username=self.cleaned_data["username"], email=official.email,
+                    first_name=(self.cleaned_data.get("first_name") or "").strip(),
+                    last_name=(self.cleaned_data.get("last_name") or "").strip(),
                     is_active=official.status == Official.Status.ACTIVE,
                 )
-                user.set_password(cleaned["password1"])
+                user.set_password(self.cleaned_data["password1"])
                 user.save()
                 official.user = user
-            official.save()
-            official.roles.set(self.final_roles(cleaned.get("roles")))
-            official.authorized_delegations.set(cleaned.get("authorized_delegations") or [])
-            return official
+                official.save(update_fields=["user", "updated_at"])
+            super()._save_m2m()
+            official.roles.set(self.final_roles(self.cleaned_data.get("roles")))
+
+    def save(self, commit=True):
+        with transaction.atomic():
+            return super().save(commit=commit)
 
 
 FULL_NAME_MAX_LENGTH = 200

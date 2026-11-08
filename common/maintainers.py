@@ -44,8 +44,10 @@ def snapshot(obj):
     return data
 
 
-def activity_queryset(user, permission):
+def activity_queryset(user, permission, include_archived=False):
     qs = Activity.objects.select_related("official", "item", "social_attentions__delegation")
+    if not include_archived:
+        qs = qs.filter(deleted_at__isnull=True)
     scope = permission_scope(user, permission)
     if scope == Role.Scope.ALL:
         return qs
@@ -79,13 +81,26 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
 
     def get_permission_required(self):
         model = self.spec[0]
-        action = "add" if self.operation == "create" else "change" if self.operation in ("update", "activate", "deactivate", "close") else "view"
+        if self.key == "activity" and self.operation in ("activate", "deactivate"):
+            action = "archive"
+        else:
+            action = "add" if self.operation == "create" else "change" if self.operation in ("update", "activate", "deactivate", "close") else "view"
         return (f"{model._meta.app_label}.{action}_{model._meta.model_name}",)
 
     def queryset(self):
         model = self.spec[0]
         if self.key == "activity":
-            return activity_queryset(self.request.user, self.get_permission_required()[0])
+            permission = self.get_permission_required()[0]
+            if self.operation == "activate":
+                return activity_queryset(self.request.user, permission, include_archived=True).filter(deleted_at__isnull=False)
+            history = self.request.GET.get("status") == "INACTIVE" and self.operation == "list"
+            if history and not self.request.user.has_perm("activities.archive_activity"):
+                raise PermissionDenied("No tienes autorización para consultar actividades archivadas.")
+            if history or self.operation == "detail":
+                permitted = activity_queryset(self.request.user, "activities.archive_activity", include_archived=True)
+                return activity_queryset(self.request.user, permission, include_archived=True).filter(
+                    Q(deleted_at__isnull=True) | Q(pk__in=permitted.values("pk")))
+            return activity_queryset(self.request.user, permission)
         if self.key == "territory":
             from common.scopes import permission_scope, delegation_ids
             scope = permission_scope(self.request.user, self.get_permission_required()[0])
@@ -112,7 +127,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         form_title = f"Editar {entity}" if self.operation == "update" else f"{'Nueva' if feminine else 'Nuevo'} {entity}"
         notes = {
             "period": "Los períodos cerrados conservan su historial y no se pueden editar ni reabrir.",
-            "activity": "Las actividades se archivan y restauran sin eliminar su historial. Las vinculadas a atenciones y las de períodos cerrados son de consulta.",
+            "activity": "El listado y Excel habituales muestran actividades vigentes. El historial y la restauración requieren permiso administrativo. Las actividades vinculadas a atenciones y las de períodos cerrados son de consulta.",
             "group": "Los grupos se desactivan y reactivan, conservando sus miembros y permisos.",
         }
         return dict(maintainer_title=self.spec[2], maintainer_kind=self.spec[3],
@@ -120,7 +135,9 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             maintainer_note=notes.get(self.key, "Los registros no se eliminan: se desactivan y reactivan, y conservan su historial."),
             list_url=self.url("list"), export_url=self.url("export"), create_url=self.url("create"),
             can_add=self.request.user.has_perm(f"{permission}.add_{model}"),
-            can_change=self.request.user.has_perm(f"{permission}.change_{model}"), key=self.key)
+            can_change=self.request.user.has_perm(f"{permission}.change_{model}"),
+            can_archive=self.request.user.has_perm(f"{permission}.archive_{model}") if self.key == "activity"
+                        else self.request.user.has_perm(f"{permission}.change_{model}"), key=self.key)
 
     def filtered(self):
         qs = self.queryset()
@@ -174,9 +191,15 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             display_fields = fields.copy()
         code, label = state(obj)
         mutable = not (self.key == "period" and code == "CLOSED")
+        editable = mutable
+        can_archive_row = self.request.user.has_perm(f"{obj._meta.app_label}.change_{obj._meta.model_name}")
         if self.key == "activity":
             mutable = not hasattr(obj, "social_attentions") and Period.objects.filter(
-                start_date__lte=obj.date, end_date__gte=obj.date, status=Period.Status.OPEN).exists()
+                start_date__lte=obj.date, end_date__gte=obj.date, status=Period.Status.OPEN, deleted_at__isnull=True).exists()
+            editable = mutable and obj.deleted_at is None and activity_queryset(
+                self.request.user, "activities.change_activity").filter(pk=obj.pk).exists()
+            can_archive_row = mutable and activity_queryset(
+                self.request.user, "activities.archive_activity", include_archived=True).filter(pk=obj.pk).exists()
         if self.key == "period":
             confirm_message = f"El período {obj} quedará cerrado. No podrás editarlo, reabrirlo ni modificar las actividades de sus fechas."
         elif self.key == "activity":
@@ -188,8 +211,9 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         return dict(cells=fields + [label], display_cells=display_fields, status_code=code,
             status_label=label, is_active=code in ("ACTIVE", "OPEN"), confirm_message=confirm_message, detail=self.url("detail", obj.pk),
             edit=self.url("update", obj.pk), action=self.url("close" if self.key == "period" else "deactivate" if code == "ACTIVE" else "activate", obj.pk),
-            action_label="Cerrar" if self.key == "period" else "Desactivar" if code == "ACTIVE" else "Activar",
-            mutable=mutable)
+            action_label=("Archivar" if code == "ACTIVE" else "Restaurar") if self.key == "activity"
+                         else "Cerrar" if self.key == "period" else "Desactivar" if code == "ACTIVE" else "Activar",
+            mutable=mutable, editable=editable, can_archive=can_archive_row)
 
     def get(self, request, pk=None):
         context = self.context()
@@ -232,6 +256,12 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         if self.operation != "list" and self.operation != "export":
             return HttpResponse(status=405)
         self.prepare_list_state()
+        if self.key == "activity" and request.GET.get("status") == "INACTIVE":
+            if not request.user.has_perm("activities.archive_activity"):
+                raise PermissionDenied("No tienes autorización para consultar actividades archivadas.")
+            if self.operation == "export":
+                messages.info(request, "El Excel solo incluye actividades vigentes. Selecciona Vigente para exportar.")
+                return redirect(self.url("list"))
         qs = ordered(self.filtered(), self.key, request.GET)
         headers = [str(self.spec[0]._meta.get_field(f.split("__")[0]).verbose_name) for f in self.spec[4]] + ["Estado"]
         if self.key == "group":
@@ -252,6 +282,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             from configuration.models import Item
             context["officials"] = Official.objects.filter(pk__in=self.queryset().values("official_id"))
             context["items"] = Item.objects.filter(pk__in=self.queryset().values("item_id"))
+            if not context["can_archive"]:
+                context["statuses"] = (("ACTIVE", "Vigente"),)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
             "activity": "activities/activity_list.html"}[self.key]
