@@ -1,0 +1,34 @@
+{% load static %}
+<!doctype html>
+{% comment %}
+    Solicitud incorrecta (400). No extiende base.html: se renderiza sin contexto de la petición,
+    porque puede deberse a un Host no permitido y la página no debe volver a consultarlo.
+{% endcomment %}
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Solicitud no válida · SGR</title>
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261028-redesign" />
+    </head>
+    <body>
+        <div class="error-shell">
+            <header class="error-shell-header">
+                <strong>Sistema de Gestión de Resultados · SGR</strong>
+                <span>Ilustre Municipalidad de La Serena</span>
+            </header>
+            <main class="error-shell-main">
+                <section class="page-intro" aria-labelledby="bad-request-title">
+                    <p class="page-intro-kicker">Error 400 · Solicitud no válida</p>
+                    <h1 id="bad-request-title">No pudimos procesar la solicitud</h1>
+                    <p>La dirección o los datos enviados no son válidos para el sistema.</p>
+                    <p class="page-intro-note">
+                        Revisa la dirección e inténtalo de nuevo desde el inicio. Si el problema continúa,
+                        informa al administrador la hora en que ocurrió.
+                    </p>
+                    <a class="auth-text-link" href="/">Volver al inicio</a>
+                </section>
+            </main>
+        </div>
+    </body>
+</html>

@@ -137,6 +137,33 @@ python manage.py runserver
 Abrir el sitio en <http://127.0.0.1:8000/>. El Admin está disponible en
 <http://127.0.0.1:8000/admin/>.
 
+### Archivos subidos (`/media/`)
+
+Las fotos de perfil se guardan en `MEDIA_ROOT` (por defecto `media/`, configurable en el `.env`).
+Con `DEBUG=True`, `runserver` las sirve en `/media/` (`config/urls.py`). Con `DEBUG=False` Django
+no las sirve: en el servidor de AWS lo hace Nginx con un bloque como este dentro del `server`,
+reemplazando `<MEDIA_ROOT>` por la ruta absoluta configurada:
+
+```nginx
+location /media/ {
+    alias <MEDIA_ROOT>/;
+}
+```
+
+La configuración de Nginx vive en el servidor, no en este repositorio.
+
+### Páginas de error
+
+Con `DEBUG=False` el sistema usa sus propias páginas para 400 (solicitud no válida, por ejemplo un
+`Host` que no está en `ALLOWED_HOSTS`), 403, 404 y 500 (`templates/`). Con `DEBUG=True` Django
+muestra en su lugar su página técnica de depuración. Para revisarlas en local sin tocar el `.env`:
+
+```bash
+DEBUG=False python manage.py runserver --insecure
+```
+
+`--insecure` hace que `runserver` siga sirviendo los estáticos con `DEBUG=False`.
+
 
 ## Cuentas y datos de demostración
 
