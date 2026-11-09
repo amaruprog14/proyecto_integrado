@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from pathlib import Path
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -34,9 +36,13 @@ urlpatterns = [
     path('configuration/', include('configuration.urls'))
 ]
 
-# Archivos subidos (fotos de perfil) solo en desarrollo; en AWS los sirve Nginx (ver README).
+# Solo se publica el directorio de fotos de funcionarios en desarrollo.
+# Las fotos de clientes se sirven mediante la vista del perfil autenticado.
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(
+        f"{settings.MEDIA_URL}profile_photos/",
+        document_root=Path(settings.MEDIA_ROOT) / "profile_photos",
+    )
 
 handler400 = 'common.views.bad_request'
 handler404 = 'common.views.page_not_found'

@@ -15,7 +15,7 @@ from accounts.models import (
 )
 from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
 from configuration.models import AttentionType, Item, Period, PeriodMutex, SubattentionType
-from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, DEMO_PASSWORD, demo_rut
+from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 from common.sgr_seed_data import (
     ATTENTION_CATALOG, GEOGRAPHY, POSITIONS, POSITION_ITEMS, fictional_name,
 )
@@ -53,9 +53,7 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Valida y muestra conteos; revierte toda la carga.")
 
     def handle(self, *args, **options):
-        # Clave compartida solicitada para las cuentas de demostración del equipo.
-        # No se cambian validadores globales ni contraseñas de usuarios ajenos.
-        password = DEMO_PASSWORD
+        password = require_seed_password()
         self.created = Counter()
         self.used = {}
         self.new_objects = set()
@@ -317,4 +315,4 @@ class Command(BaseCommand):
             self.stdout.write(f"{model.__name__}: {len(ids)} de semilla; {self.created[model.__name__]} nuevos; {model.objects.count()} totales en BD")
         self.stdout.write(f"Negocio: {total} (sin auth, catálogos, historial ni sesiones). Usuarios nuevos: {self.created['User']}.")
         self.stdout.write(f"Contraseñas de cuentas de semilla restablecidas: {self.created['PasswordsReset']}.")
-        self.stdout.write("Cuentas: adminEvalA, editorA, readerA, readerB, clientA, clientB; adicional global: adminA. Contraseña de demostración: demo1234 (solo estas siete cuentas).")
+        self.stdout.write("Cuentas: adminEvalA, editorA, readerA, readerB, clientA, clientB; adicional global: adminA.")

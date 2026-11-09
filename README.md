@@ -31,7 +31,7 @@ el servidor y registran cada cambio en el log de auditoría.
 
 ## Requisitos previos
 
-- Python 3.10 o superior
+- Python 3.11 o superior (requerido por Pillow 13.0.0)
 - Git
 - MySQL en ejecución
 - En Windows se recomienda usar Git Bash
@@ -93,6 +93,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DEBUG` | Modo desarrollo | `False` |
 | `ALLOWED_HOSTS` | Hosts permitidos, separados por coma | `localhost,127.0.0.1` |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Conexión a MySQL | motor MySQL |
+| `SEED_DEMO_PASSWORD` | Clave de las cuentas ficticias. Requerida por `seed_demo` y al crear `adminEvalA` con `prepare_evaluation_admin` | — |
 | `EMAIL_BACKEND`, `DEFAULT_FROM_EMAIL`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` | Envío del enlace de recuperación | correo impreso en la consola |
 | `PASSWORD_RESET_TIMEOUT` | Vigencia del enlace de recuperación, en segundos | `3600` |
 | `PASSWORD_RESET_RESEND_WAIT_SECONDS` | Espera mínima entre dos enlaces a la misma cuenta | `45` |
@@ -117,6 +118,9 @@ El nombre debe coincidir con `DB_NAME` del `.env`. Para ejecutar las pruebas, el
 
 ### 6. Verificar, migrar y cargar datos de demostración
 
+Definir `SEED_DEMO_PASSWORD` en el `.env` del entorno donde se ejecutará la carga, incluido el
+servidor de AWS. Usar comillas simples alrededor del valor para mantener caracteres como `$`.
+
 ```bash
 python manage.py check
 python manage.py migrate
@@ -126,7 +130,7 @@ python manage.py seed_demo
 > Las migraciones ya están versionadas en el repositorio, por lo que no es necesario
 > ejecutar `makemigrations` para levantar el proyecto.
 > `seed_demo` carga 2.000 registros de negocio ficticios del caso SGR, además de sus catálogos.
-> Repetirlo no crea nuevos lotes y restablece `demo1234` solo en sus siete cuentas de demostración.
+> Repetirlo no crea nuevos lotes y aplica `SEED_DEMO_PASSWORD` solo a sus siete cuentas de demostración.
 > Para comprobar la carga sin conservarla, usar
 > `python manage.py seed_demo --dry-run`. No elimina datos previos ni fuerza conflictos.
 > La distribución y las precauciones están en «Cuentas y datos de demostración», más abajo.
@@ -217,18 +221,27 @@ python manage.py test activities.test_realtime common.test_realtime accounts.tes
 
 ### Archivos subidos (`/media/`)
 
-Las fotos de perfil se guardan en `MEDIA_ROOT` (por defecto `media/`, configurable en el `.env`).
-Con `DEBUG=True`, `runserver` las sirve en `/media/` (`config/urls.py`). Con `DEBUG=False` Django
-no las sirve: en el servidor de AWS lo hace Nginx con un bloque como este dentro del `server`,
-reemplazando `<MEDIA_ROOT>` por la ruta absoluta configurada:
+Las fotos se guardan en `MEDIA_ROOT` (por defecto `media/`, configurable en el `.env`).
+Con `DEBUG=True`, `runserver` publica únicamente `profile_photos/`, el directorio de fotos de
+funcionarios. Las fotos del portal, incluidas las ya guardadas en `client_profiles/`, se sirven
+al titular autenticado desde `/portal/perfil/foto/`. Su ruta directa de archivo devuelve 404.
+
+Con `DEBUG=False`, si se necesita servir las fotos de funcionarios desde Nginx, sustituir el
+bloque que publica todo `MEDIA_ROOT` por estas rutas dentro de `server`. Usar la ruta absoluta
+de `MEDIA_ROOT` en el `alias`. [Directivas de ubicación de Nginx](https://nginx.org/en/docs/http/ngx_http_core_module.html#location)
 
 ```nginx
-location /media/ {
-    alias <MEDIA_ROOT>/;
+location ^~ /media/profile_photos/ {
+    alias <MEDIA_ROOT>/profile_photos/;
+}
+
+location ^~ /media/ {
+    return 404;
 }
 ```
 
-La configuración de Nginx vive en el servidor, no en este repositorio.
+Mantener `/portal/perfil/foto/` en el proxy a Django. La configuración de Nginx vive en el
+servidor y se debe actualizar allí si todavía publica todo `MEDIA_ROOT`.
 
 ### Páginas de error
 
@@ -307,17 +320,18 @@ resto de su configuración coincide. No ejecutarla para modificar datos de traba
 sus condiciones. WebSocket avisa después del commit y respeta los ámbitos, filtros y páginas;
 al archivar, la fila desaparece del lector autorizado y un rollback no envía el aviso.
 
-| Usuario | Contraseña | Acceso |
-| --- | --- | --- |
-| `adminEvalA` | `demo1234` | Administrador de evaluación; ambos CRUD solo de Las Compañías, sin gestión de roles/permisos |
-| `adminA` | `demo1234` | Administrador SGR; todas las delegaciones mediante el selector del encabezado |
-| `editorA` | `demo1234` | Crear y editar Actividades y Funcionarios de Las Compañías |
-| `readerA` | `demo1234` | Solo lectura de Las Compañías |
-| `readerB` | `demo1234` | Solo lectura de Antena |
-| `clientA` | `demo1234` | Portal del cliente; solicitudes propias de Latorre, Las Compañías |
-| `clientB` | `demo1234` | Portal del cliente; solicitudes propias de Alfalfares, Antena |
+| Usuario | Acceso |
+| --- | --- |
+| `adminEvalA` | Administrador de evaluación; ambos CRUD solo de Las Compañías, sin gestión de roles/permisos |
+| `adminA` | Administrador SGR; todas las delegaciones mediante el selector del encabezado |
+| `editorA` | Crear y editar Actividades y Funcionarios de Las Compañías |
+| `readerA` | Solo lectura de Las Compañías |
+| `readerB` | Solo lectura de Antena |
+| `clientA` | Portal del cliente; solicitudes propias de Latorre, Las Compañías |
+| `clientB` | Portal del cliente; solicitudes propias de Alfalfares, Antena |
 
-Estas credenciales se aplican después de ejecutar `python manage.py seed_demo` correctamente.
+La clave se aplica después de ejecutar `python manage.py seed_demo` correctamente. Compártela
+con el docente por privado.
 
 ### Responsabilidades y recorridos de las cuentas
 
@@ -340,6 +354,11 @@ autenticado sin permiso recibe 403; un registro inexistente o ajeno puede respon
 reglas de períodos cerrados, actividades de origen automático y protección del propio funcionario
 siguen vigentes aunque el rol tenga permisos de edición o archivado. El portal filtra por
 propietario, no solo por delegación; las pruebas también incluyen dos clientes de la misma delegación.
+
+En Funcionarios y Usuarios, los editores solo pueden asignar roles locales con permisos que ya
+ejercen en las delegaciones autorizadas. Los roles globales, incluidos los de solo lectura, y los
+roles con permisos privilegiados requieren administrar roles con alcance global. Un envío que
+intenta asignar un rol bloqueado se rechaza con 403.
 
 ### Distribución y ejecución segura de la semilla
 
@@ -439,14 +458,18 @@ quedan en `AuditLog` con la IP de origen, nunca con la contraseña.
 
 **Recuperación de contraseña.** Por enlace con token (`django.contrib.auth.tokens`):
 
-1. Se ingresa el correo. La respuesta y el tiempo mínimo de respuesta
+1. Se ingresa el correo de la cuenta (`User.email`). El enlace se envía a esa dirección. Editar
+   el correo de contacto desde Funcionarios no cambia la dirección de recuperación. El titular
+   puede actualizar el correo de su cuenta en «Mi perfil». Las cuentas antiguas sin correo de
+   cuenta deben configurarlo antes de usar la recuperación. La respuesta y el tiempo mínimo de respuesta
    (`PASSWORD_RESET_MIN_RESPONSE_SECONDS`) son los mismos exista o no la cuenta; solo una cuenta
    que puede ingresar recibe el enlace, y como máximo uno cada `PASSWORD_RESET_RESEND_WAIT_SECONDS`.
    Cada solicitud queda en `AuditLog` con el correo enmascarado.
 2. El enlace es absoluto, con el host de la petición (validado contra `ALLOWED_HOSTS`), vence a
    los `PASSWORD_RESET_TIMEOUT` segundos y deja de valer en cuanto cambia la contraseña, así que
    sirve una sola vez. No se guarda nada en la base. Un enlace inválido, vencido o ya usado
-   muestra un mensaje claro y ofrece pedir otro.
+   muestra un mensaje claro y ofrece pedir otro. Los enlaces emitidos antes del cambio a correo
+   de cuenta deben solicitarse de nuevo.
 3. Se define la nueva contraseña. Se validan sus requisitos en el navegador y en el servidor
    (mínimo 8 caracteres, mayúscula, minúscula y número, además de los validadores de Django). Al
    guardar se registra en auditoría y se vuelve al login con una confirmación SweetAlert2.

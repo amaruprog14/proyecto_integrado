@@ -161,7 +161,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         const selected = select.value;
                         const old = select.selectedOptions[0]?.cloneNode(true);
                         select.replaceChildren(...[...fresh.options].map((option) => option.cloneNode(true)));
-                        if (selected && ![...select.options].some((option) => option.value === selected) && old) select.append(old);
+                        const selectionAvailable = [...select.options].some((option) => option.value === selected);
+                        if (name === "official") {
+                            select.value = selectionAvailable ? selected : fresh.value;
+                            if (params.get(name) !== fresh.value) {
+                                const renderedParams = new URLSearchParams(renderedSearch);
+                                renderedParams.set(name, fresh.value);
+                                renderedSearch = lastSearch = renderedParams.toString();
+                            }
+                            return;
+                        }
+                        if (selected && !selectionAvailable && old) select.append(old);
                         select.value = selected;
                     });
                 }

@@ -2,15 +2,17 @@ import re
 
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.models import Permission
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
 from accounts.models import Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
 from common.field_validation import DEFAULT_COMMUNE, clean_catalog_name, clean_address, configure_text_widgets
+from common.scopes import delegation_ids, permission_scope
 from common.text import normalize_spaces
 
 GENERIC_LOGIN_ERROR = "Usuario, correo o contraseña incorrectos."
@@ -203,8 +205,8 @@ def clean_phone(value):
 
 
 def can_assign_privileged_roles(actor):
-    """Asignar o quitar roles privilegiados exige accounts.change_role, igual que en Roles."""
-    return actor is None or actor.is_superuser or actor.has_perm("accounts.change_role")
+    """La asignación sin restricciones requiere administración global de roles."""
+    return actor is None or permission_scope(actor, "accounts.change_role") == Role.Scope.ALL
 
 
 def is_privileged_role(role):
@@ -216,9 +218,9 @@ class RoleAssignmentMixin:
     Reglas de asignación de roles comunes a OfficialUserForm y OfficialForm.
 
     - Solo se ofrecen roles vigentes; los inactivos ya asignados se conservan (kept_roles).
-    - Sin accounts.change_role, los roles privilegiados se muestran bloqueados: los que el
-      funcionario ya tiene se conservan (locked_roles) y pedir uno nuevo queda en
-      denied_privileged_roles para que la vista responda 403 con auditoría.
+    - Un editor solo puede delegar permisos que ejerce por delegación o globalmente.
+    - Los roles globales, privilegiados o que exceden sus permisos se bloquean. Si el
+      funcionario ya tiene uno de esos roles, se conserva al editar los demás campos.
     - El Administrador global no se combina con otros roles vigentes.
     """
 
@@ -227,16 +229,34 @@ class RoleAssignmentMixin:
         field.queryset = Role.objects.filter(is_active=True, deleted_at__isnull=True).order_by("role_name")
         self.kept_roles = assigned_roles_not_offered(official, field.queryset)
         self.locked_roles = []
-        self.denied_privileged_roles = []
-        if can_assign_privileged_roles(actor):
+        self.denied_roles = []
+        self.unrestricted_role_assignment = can_assign_privileged_roles(actor)
+        if self.unrestricted_role_assignment:
             return
-        field.widget.locked_ids = frozenset(role.pk for role in field.queryset if is_privileged_role(role))
+        actor_permissions = actor.get_all_permissions()
+        actor_scopes = {}
+        roles = field.queryset.prefetch_related(
+            Prefetch("permissions", queryset=Permission.objects.select_related("content_type"))
+        )
+        locked_ids = set()
+        for role in roles:
+            permissions = {f"{p.content_type.app_label}.{p.codename}" for p in role.permissions.all()}
+            if (role.scope == Role.Scope.ALL or permissions & PRIVILEGED_ROLE_PERMISSIONS
+                    or not permissions <= actor_permissions):
+                locked_ids.add(role.pk)
+                continue
+            for permission in permissions - actor_scopes.keys():
+                actor_scopes[permission] = permission_scope(actor, permission)
+            # OWN autoriza al actor sobre sus registros, no sobre los de otro titular.
+            if any(actor_scopes[p] not in (Role.Scope.DELEGATION, Role.Scope.ALL) for p in permissions):
+                locked_ids.add(role.pk)
+        field.widget.locked_ids = frozenset(locked_ids)
         if official is not None and official.pk:
             self.locked_roles = list(official.roles.filter(pk__in=field.widget.locked_ids))
         field.widget.kept_ids = frozenset(role.pk for role in self.locked_roles)
         field.help_text += (
-            " Los roles privilegiados aparecen bloqueados: asignarlos o quitarlos requiere el permiso"
-            " para administrar roles."
+            " Puedes asignar roles locales con permisos que ya ejerces en tu ámbito."
+            " Los roles bloqueados que ya están asignados se conservan."
         )
 
     def final_roles(self, roles):
@@ -248,15 +268,30 @@ class RoleAssignmentMixin:
         roles = self.cleaned_data.get("roles")
         selected = list(roles or [])
         assigned_ids = {role.pk for role in self.locked_roles}
-        self.denied_privileged_roles = [
+        self.denied_roles = [
             role
             for role in selected
             if role.pk in self.fields["roles"].widget.locked_ids and role.pk not in assigned_ids
         ]
+        if self.denied_roles:
+            raise ValidationError("No tienes autorización para asignar los roles seleccionados.")
         current = {role.pk: role for role in [*selected, *self.locked_roles]}.values()
         if len(current) > 1 and any(role.scope == Role.Scope.ALL and is_privileged_role(role) for role in current):
             raise ValidationError("El rol Administrador global no puede combinarse con otros roles.")
         return roles
+
+    def clean(self):
+        data = super().clean()
+        if self.unrestricted_role_assignment or not data.get("roles"):
+            return data
+        target_ids = {delegation.pk for delegation in data.get("authorized_delegations") or []}
+        principal = data.get("delegation")
+        if principal is not None:
+            target_ids.add(principal.pk)
+        if target_ids - delegation_ids(self.actor):
+            self.denied_roles = list(data["roles"])
+            self.add_error("roles", "Solo puedes asignar roles dentro de tus delegaciones autorizadas.")
+        return data
 
 
 class DelegationForm(forms.ModelForm):
@@ -825,14 +860,12 @@ class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
         instance=None,
         delegation_queryset=None,
         active_delegation=None,
-        existing_usernames=None,
         **kwargs,
     ):
         super().__init__(*args, instance=instance, **kwargs)
         configure_text_widgets(self)
         self.actor = actor
         self.creating_official = not self.instance.pk
-        self.existing_usernames = set(existing_usernames or [])
         self.fields["status"].initial = Official.Status.ACTIVE
         current_official = getattr(self, "official_instance", instance)
         self.fields["area"].queryset = Area.objects.filter(

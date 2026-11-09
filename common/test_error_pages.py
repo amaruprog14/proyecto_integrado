@@ -17,7 +17,7 @@ from django.urls import clear_url_caches, path, reverse
 from PIL import Image
 
 import config.urls
-from accounts.models import Official
+from accounts.models import Official, ServiceRecipient
 
 User = get_user_model()
 PASSWORD = "Clave-Errores-123"
@@ -85,7 +85,7 @@ class ErrorPagesWithoutDebugTests(TestCase):
 
 
 class MediaFilesTests(TestCase):
-    """config/urls.py agrega /media/ al cargarse según DEBUG; se recarga para cada caso."""
+    """La ruta de fotos públicas se registra al cargar las URLs con DEBUG=True."""
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -143,3 +143,28 @@ class MediaFilesTests(TestCase):
             url, _ = self.upload_photo()
 
             self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_client_photo_is_private_even_with_debug_and_a_known_file_path(self):
+        user = User.objects.create_user("cliente.foto", "cliente-foto@example.test", PASSWORD)
+        content = BytesIO()
+        Image.new("RGB", (60, 60), "blue").save(content, "JPEG")
+        recipient = ServiceRecipient.objects.create(
+            user=user, full_name="Cliente Foto", national_id="11.111.111-1",
+            photo=SimpleUploadedFile("perfil.jpg", content.getvalue(), content_type="image/jpeg"),
+        )
+        raw_url = recipient.photo.url
+        private_url = reverse("client_profile_photo")
+
+        with override_settings(DEBUG=True):
+            self.reload_urls()
+            anonymous = self.client_class()
+            self.assertEqual(anonymous.get(private_url).status_code, 302)
+            with self.assertLogs("django.request", level="WARNING"):
+                self.assertEqual(anonymous.get(raw_url).status_code, 404)
+                self.assertEqual(self.client.get(raw_url).status_code, 404)
+                self.assertEqual(self.client.get(private_url).status_code, 403)
+                self.client.force_login(user)
+                self.assertEqual(self.client.get(raw_url).status_code, 404)
+            response = self.client.get(private_url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(b"".join(response.streaming_content), content.getvalue())

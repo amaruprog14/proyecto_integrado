@@ -13,12 +13,14 @@ from configuration.models import Item, Period, ActivityType, ServiceType, Attent
 
 from common.demo_data import (
     DELEGATIONS, ROLES,
-    DEMO_OFFICIAL_NAMES, DEMO_PASSWORD, AREA_NAMES, POSITION_NAMES,
+    DEMO_OFFICIAL_NAMES, AREA_NAMES, POSITION_NAMES,
     ITEM_NAMES, CATALOG_CHAINS, DEMO_GROUPS, demo_accounts, demo_rut,
     batch_letters,
 )
 
 from common.management.commands.seed_demo import get_permissions, get_administrator_permissions
+
+TEST_SEED_PASSWORD = "Fixture-SGR$2468"
 
 
 class _LegacyFixture:
@@ -52,7 +54,7 @@ class _LegacyFixture:
         for i, account in enumerate(demo_accounts(batch)):
             first, _, last = account["full_name"].partition(" ")
             user = User.objects.create_user(
-                username=account["username"], email=account["email"], password=DEMO_PASSWORD,
+                username=account["username"], email=account["email"], password=TEST_SEED_PASSWORD,
                 first_name=first, last_name=last, is_staff=True, is_superuser=(i == 0),
             )
             area = areas[account["area"]]
