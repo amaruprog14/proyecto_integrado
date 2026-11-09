@@ -2,7 +2,7 @@
 from io import BytesIO, StringIO
 
 from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
@@ -15,9 +15,11 @@ from activities.models import Activity
 from common.demo_data import demo_rut
 from common.realtime import queryset as realtime_queryset
 from common.scopes import permission_scope
+from common.testing_seed import TEST_SEED_PASSWORD
 
 
-@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], ALLOWED_HOSTS=['testserver'])
+@override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],
+                   ALLOWED_HOSTS=['testserver'], SEED_DEMO_PASSWORD=TEST_SEED_PASSWORD)
 class EvaluationAdminTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -35,7 +37,7 @@ class EvaluationAdminTests(TestCase):
         self.foreign_activity = Activity.objects.filter(official=self.foreign, social_attentions__isnull=True).first()
 
     def test_login_exact_permissions_single_delegation_and_global_preserved(self):
-        self.assertIsNotNone(authenticate(username=USERNAME, password='demo1234'))
+        self.assertIsNotNone(authenticate(username=USERNAME, password=TEST_SEED_PASSWORD))
         self.assertFalse(self.user.is_superuser or self.user.is_staff)
         self.assertFalse(self.user.groups.exists() or self.user.user_permissions.exists())
         self.assertSetEqual(set(self.user.official.roles.values_list('role_name', flat=True)), {ROLE_NAME})
@@ -91,6 +93,100 @@ class EvaluationAdminTests(TestCase):
         data.update(changes)
         return data
 
+    def official_account_payload(self, role, **changes):
+        payload = dict(full_name='Cuenta Nueva Evaluación', national_id=demo_rut(73000003),
+                       email='cuenta.nueva@example.invalid', delegation=self.a.pk, status='ACTIVE',
+                       roles=[role.pk], create_account='on', username='cuenta.nueva',
+                       password1='Temporal-Cuenta-2026', password2='Temporal-Cuenta-2026')
+        payload.update(changes)
+        return payload
+
+    def test_editor_cannot_create_account_with_global_scope_or_extra_permissions(self):
+        self.client.force_login(User.objects.get(username='editorA'))
+        coordinator = Role.objects.get(role_name='Coordinador del sistema')
+        verifier = Role.objects.get(role_name='Verificador')
+        response = self.client.get(reverse('official_create'), HTTP_X_MODAL_REQUEST='true')
+        self.assertTrue({coordinator.pk, verifier.pk} <= response.context['form'].fields['roles'].widget.locked_ids)
+
+        before = (User.objects.count(), Official.objects.count())
+        for role in (coordinator, verifier):
+            with self.subTest(role=role.role_name):
+                response = self.client.post(reverse('official_create'), self.official_account_payload(role))
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual((User.objects.count(), Official.objects.count()), before)
+
+        reader = Role.objects.get(role_name='Usuario consulta')
+        self.assertRedirects(self.client.post(reverse('official_create'), self.official_account_payload(reader)),
+                             reverse('official_maintainer'))
+        created = User.objects.get(username='cuenta.nueva')
+        self.assertEqual(set(created.official.roles.all()), {reader})
+        self.assertEqual(permission_scope(created, 'accounts.view_official'), Role.Scope.DELEGATION)
+        self.client.force_login(created)
+        self.assertEqual(self.client.get(reverse('official_detail', args=[self.foreign.pk])).status_code, 404)
+
+    def test_account_management_permission_with_local_scope_cannot_assign_global_role(self):
+        editor = User.objects.get(username='editorA')
+        editor.user_permissions.add(
+            Permission.objects.get(content_type__app_label='auth', codename='add_user'),
+            Permission.objects.get(content_type__app_label='accounts', codename='change_role'),
+        )
+        self.client.force_login(editor)
+        coordinator = Role.objects.get(role_name='Coordinador del sistema')
+        response = self.client.post(reverse('user_create'),
+                                    self.official_account_payload(coordinator, account_type='OFFICIAL'))
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='cuenta.nueva').exists())
+
+    def test_official_form_keeps_foreign_usernames_private_and_rejects_duplicate(self):
+        self.client.force_login(User.objects.get(username='editorA'))
+        url = reverse('official_create')
+        response = self.client.get(url, HTTP_X_MODAL_REQUEST='true')
+        self.assertContains(response, 'name="username"')
+        self.assertNotContains(response, 'readerB')
+        self.assertNotContains(response, 'clientB')
+
+        reader = Role.objects.get(role_name='Usuario consulta')
+        before = (User.objects.count(), Official.objects.count())
+        response = self.client.post(url, self.official_account_payload(reader, username='READERB'),
+                                    HTTP_X_MODAL_REQUEST='true')
+        self.assertContains(response, 'Ya existe una cuenta con este nombre de usuario.')
+        self.assertNotContains(response, 'clientB')
+        self.assertEqual((User.objects.count(), Official.objects.count()), before)
+
+    def test_user_create_and_edit_forms_do_not_disclose_foreign_usernames(self):
+        editor = User.objects.get(username='editorA')
+        editor.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label='auth', codename__in=['add_user', 'change_user'],
+        ))
+        self.client.force_login(editor)
+        local_user = User.objects.get(username='readerA')
+        for url in (reverse('user_create'), reverse('user_update', args=[local_user.pk])):
+            with self.subTest(url=url):
+                response = self.client.get(url, HTTP_X_MODAL_REQUEST='true')
+                self.assertContains(response, 'name="username"')
+                self.assertNotContains(response, 'readerB')
+                self.assertNotContains(response, 'clientB')
+
+    def test_global_role_administrator_can_assign_global_read_role(self):
+        self.client.force_login(User.objects.get(username='adminA'))
+        coordinator = Role.objects.get(role_name='Coordinador del sistema')
+        self.assertRedirects(self.client.post(reverse('official_create'), self.official_account_payload(coordinator)),
+                             reverse('official_maintainer'))
+        created = User.objects.get(username='cuenta.nueva')
+        self.assertEqual(permission_scope(created, 'accounts.view_official'), Role.Scope.ALL)
+
+    def test_global_create_permission_does_not_extend_local_role_assignment(self):
+        editor = User.objects.get(username='editorA')
+        global_create = Role.objects.create(role_name='Alta de funcionarios global', scope=Role.Scope.ALL)
+        global_create.permissions.add(Permission.objects.get(content_type__app_label='accounts', codename='add_official'))
+        editor.official.roles.add(global_create)
+        self.client.force_login(editor)
+        reader = Role.objects.get(role_name='Usuario consulta')
+        response = self.client.post(reverse('official_create'), self.official_account_payload(
+            reader, authorized_delegations=[self.foreign.delegation_id]))
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='cuenta.nueva').exists())
+
     def test_both_crud_create_edit_archive_and_activity_restore(self):
         data = dict(full_name='Persona Evaluación Nueva', national_id=demo_rut(73000001),
                     email='nueva@sgr.example.invalid', delegation=self.a.pk, status='ACTIVE')
@@ -136,8 +232,9 @@ class EvaluationAdminTests(TestCase):
         global_role = Role.objects.get(role_name='Administrador')
         before = set(global_role.permissions.values_list('pk', flat=True))
         counts = (User.objects.count(), Official.objects.count(), Activity.objects.count())
-        for _ in range(2):
-            call_command('prepare_evaluation_admin', stdout=StringIO())
+        with override_settings(SEED_DEMO_PASSWORD=''):
+            for _ in range(2):
+                call_command('prepare_evaluation_admin', stdout=StringIO())
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('Personal-Change-2026'))
         self.assertEqual(counts, (User.objects.count(), Official.objects.count(), Activity.objects.count()))

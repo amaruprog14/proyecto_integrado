@@ -10,13 +10,13 @@ from django.urls import path, reverse
 from django.views import View
 from common.pagination import ClampedPaginationMixin
 from common.list_state import ordered, query_params
-from accounts.models import Position, Area, GroupProfile, Role, Territory
+from accounts.models import Position, Area, GroupProfile, Official, Role, Territory
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
 from common.text import normalize_spaces, describe_changes
 from common.scopes import permission_scope, delegation_ids
 from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
-from configuration.models import Period
+from configuration.models import Item, Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
 from activities.models import Activity
@@ -243,7 +243,6 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 context["values"]["Última actualización"] = timezone.localtime(obj.updated_at).strftime("%d-%m-%Y %H:%M")
             if self.key == "group":
                 from common.scopes import scope_officials
-                from accounts.models import Official
                 members = scope_officials(Official.objects.filter(user__groups=obj), request.user, "auth.view_group")
                 context["values"]["Miembros"] = ", ".join(members.values_list("user__username", flat=True))
             if self.key in ("position", "area"):
@@ -255,13 +254,24 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             return render(request, "maintainers/detail.html", context)
         if self.operation != "list" and self.operation != "export":
             return HttpResponse(status=405)
-        self.prepare_list_state()
+        list_state = self.prepare_list_state()
         if self.key == "activity" and request.GET.get("status") == "INACTIVE":
             if not request.user.has_perm("activities.archive_activity"):
                 raise PermissionDenied("No tienes autorización para consultar actividades archivadas.")
             if self.operation == "export":
                 messages.info(request, "El Excel solo incluye actividades vigentes. Selecciona Vigente para exportar.")
                 return redirect(self.url("list"))
+        if self.key == "activity" and self.operation == "list":
+            activities = self.queryset()
+            officials = Official.objects.filter(
+                deleted_at__isnull=True, pk__in=activities.values("official_id"),
+            )
+            context["officials"] = officials
+            context["items"] = Item.objects.filter(pk__in=activities.values("item_id"))
+            if list_state["official"] and not officials.filter(pk=list_state["official"]).exists():
+                # La opción desapareció. Limpiar el filtro antes de paginar y guardar la sesión.
+                list_state.update(official="", page=1)
+                request.GET = query_params(list_state)
         qs = ordered(self.filtered(), self.key, request.GET)
         headers = [str(self.spec[0]._meta.get_field(f.split("__")[0]).verbose_name) for f in self.spec[4]] + ["Estado"]
         if self.key == "group":
@@ -277,13 +287,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             page_size=size, page_sizes=self.page_size_options,
             record_types=Activity.RecordType.values,
             statuses=(("OPEN", "Abierto"), ("CLOSED", "Cerrado")) if self.key == "period" else (("ACTIVE", "Vigente"), ("INACTIVE", "Archivada" if self.key == "activity" else "No vigente")))
-        if self.key == "activity":
-            from accounts.models import Official
-            from configuration.models import Item
-            context["officials"] = Official.objects.filter(pk__in=self.queryset().values("official_id"))
-            context["items"] = Item.objects.filter(pk__in=self.queryset().values("item_id"))
-            if not context["can_archive"]:
-                context["statuses"] = (("ACTIVE", "Vigente"),)
+        if self.key == "activity" and not context["can_archive"]:
+            context["statuses"] = (("ACTIVE", "Vigente"),)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
             "activity": "activities/activity_list.html"}[self.key]

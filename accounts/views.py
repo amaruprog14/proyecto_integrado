@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
-from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.views import PasswordResetConfirmView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
@@ -44,7 +44,7 @@ from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se 
 from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
 
-from .backends import SGRAuthBackend, find_user_by_email
+from .backends import SGRAuthBackend, find_account_by_email
 from .delegation_context import (
     ACTIVE_DELEGATION_SESSION_KEY,
     authorized_active_delegations,
@@ -110,10 +110,15 @@ class ActiveDelegationSelectView(ProtectedViewMixin, View):
 
 # --- Recuperación de contraseña por enlace (SCRUM-31) ---
 #
-# El enlace lleva el id del usuario (uidb64) y un token de default_token_generator: vence a los
-# PASSWORD_RESET_TIMEOUT segundos y deja de valer en cuanto cambia la contraseña (el token
-# depende de su hash), así que sirve una sola vez. La solicitud responde siempre lo mismo y tarda
-# al menos PASSWORD_RESET_MIN_RESPONSE_SECONDS, exista o no la cuenta.
+# La solicitud responde siempre lo mismo y tarda al menos
+# PASSWORD_RESET_MIN_RESPONSE_SECONDS, exista o no la cuenta.
+
+class RecoveryTokenGenerator(PasswordResetTokenGenerator):
+    # Rechaza enlaces emitidos cuando se aceptaba el correo de contacto editable por terceros.
+    key_salt = 'accounts.password_recovery.v2'
+
+
+recovery_token_generator = RecoveryTokenGenerator()
 
 def mask_email(email):
     name, _, domain = email.partition('@')
@@ -124,12 +129,12 @@ def recovery_link(request, user):
     """Enlace absoluto con el host de la petición, ya validado contra ALLOWED_HOSTS."""
     path = reverse('recovery_confirm', kwargs={
         'uidb64': urlsafe_base64_encode(force_bytes(user.pk)),
-        'token': default_token_generator.make_token(user),
+        'token': recovery_token_generator.make_token(user),
     })
     return request.build_absolute_uri(path)
 
 
-def send_recovery_link(request, user, email):
+def send_recovery_link(request, user):
     minutes = settings.PASSWORD_RESET_TIMEOUT // 60
     try:
         send_mail(
@@ -139,7 +144,7 @@ def send_recovery_link(request, user, email):
             f'El enlace vence en {minutes} minutos y deja de funcionar una vez usado. '
             'Si no solicitaste recuperar tu contraseña, ignora este mensaje.',
             None,
-            [email],
+            [user.email],
         )
     except Exception:
         # La respuesta al usuario no cambia: informar el fallo revelaría que la cuenta existe.
@@ -165,13 +170,13 @@ class RecoveryRequestView(FormView):
     def form_valid(self, form):
         started = time.monotonic()
         email = form.cleaned_data['email']
-        user = find_user_by_email(email)
+        user = find_account_by_email(email)
         if user is None or not SGRAuthBackend().user_can_authenticate(user):
             result = 'Sin envío: el correo no corresponde a una cuenta activa'
         elif not cache.add(f'password-reset:{user.pk}', True, timeout=settings.PASSWORD_RESET_RESEND_WAIT_SECONDS):
             result = 'Sin envío: se envió otro enlace hace menos de la espera mínima'
         else:
-            send_recovery_link(self.request, user, email)
+            send_recovery_link(self.request, user)
             result = 'Enlace enviado'
         AuditoriaService.register_event(
             official=getattr(user, 'official', None),
@@ -196,6 +201,7 @@ class RecoveryConfirmView(PasswordResetConfirmView):
     template_name = 'accounts/recovery_password.html'
     success_url = reverse_lazy('login')
     post_reset_login = False
+    token_generator = recovery_token_generator
 
     def get_user(self, uidb64):
         user = super().get_user(uidb64)
@@ -626,17 +632,11 @@ def sole_global_administrator_user_pk():
     return holders[0] if len(holders) == 1 else None
 
 
-def deny_privileged_role_assignment(request, form):
-    """
-    Responde 403 con auditoría si el formulario pidió roles privilegiados sin accounts.change_role,
-    igual que el mantenedor de Roles con los permisos privilegiados. Las casillas ya se muestran
-    bloqueadas, de modo que solo una petición manipulada llega aquí.
-    """
-    denied = getattr(form, "denied_privileged_roles", None)
-    if denied:
-        register_denied_access(request, ["accounts.change_role"])
-        names = ", ".join(role.role_name for role in denied)
-        raise PermissionDenied(f"Asignar roles privilegiados ({names}) requiere accounts.change_role.")
+def deny_role_assignment(request, form):
+    """Registra y rechaza intentos de asignar roles fuera de los permisos o del ámbito del actor."""
+    if getattr(form, "denied_roles", None):
+        register_denied_access(request, ["un rol delegable en el ámbito del actor o accounts.change_role global"])
+        raise PermissionDenied("No tienes autorización para asignar los roles seleccionados.")
 
 
 def delegation_label(delegation):
@@ -920,7 +920,6 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
                 actor=self.request.user,
                 delegation_queryset=scoped_delegations(self.request.user),
                 active_delegation=get_active_delegation(self.request),
-                existing_usernames=get_user_model().objects.values_list("username", flat=True),
             )
             return kwargs
 
@@ -929,14 +928,11 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             context.update(
                 maintainer_title="Nuevo funcionario",
                 form_mode="create",
-                existing_usernames=list(
-                    get_user_model().objects.values_list("username", flat=True)
-                ),
             )
             return context
 
     def form_valid(self, form):
-            deny_privileged_role_assignment(self.request, form)
+            deny_role_assignment(self.request, form)
             try:
                 with transaction.atomic():
                     official = form.save()
@@ -954,7 +950,7 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
-            deny_privileged_role_assignment(self.request, form)
+            deny_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo guardar el funcionario. Revisa los datos ingresados.",
@@ -1015,7 +1011,7 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             return context
 
     def form_valid(self, form):
-            deny_privileged_role_assignment(self.request, form)
+            deny_role_assignment(self.request, form)
             previous_snapshot = self.previous_official_snapshot
             try:
                 with transaction.atomic():
@@ -1038,7 +1034,7 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             return super().form_valid(form)
 
     def form_invalid(self, form):
-            deny_privileged_role_assignment(self.request, form)
+            deny_role_assignment(self.request, form)
             messages.error(
                 self.request,
                 "No se pudo actualizar el funcionario. Revisa los datos ingresados.",
@@ -1200,14 +1196,11 @@ class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             maintainer_title="Nuevo usuario",
             form_mode="create",
             edited_user=None,
-            existing_usernames=list(
-                get_user_model().objects.values_list("username", flat=True)
-            ),
         )
         return context
 
     def form_valid(self, form):
-        deny_privileged_role_assignment(self.request, form)
+        deny_role_assignment(self.request, form)
         try:
             user = form.save()
         except (ValidationError, IntegrityError) as error:
@@ -1220,7 +1213,7 @@ class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
-        deny_privileged_role_assignment(self.request, form)
+        deny_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
@@ -1328,16 +1321,11 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             maintainer_title=f"Editar usuario {edited_user.username}",
             form_mode="edit",
             edited_user=edited_user,
-            existing_usernames=list(
-                get_user_model()
-                .objects.exclude(pk=edited_user.pk)
-                .values_list("username", flat=True)
-            ),
         )
         return context
 
     def form_valid(self, form):
-        deny_privileged_role_assignment(self.request, form)
+        deny_role_assignment(self.request, form)
         previous_snapshot = user_snapshot(self.get_edited_user())
         try:
             user = form.save()
@@ -1352,7 +1340,7 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
-        deny_privileged_role_assignment(self.request, form)
+        deny_role_assignment(self.request, form)
         messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 

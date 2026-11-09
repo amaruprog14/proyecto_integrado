@@ -11,10 +11,11 @@ from django.urls import reverse
 from accounts.models import Area, Delegation, Function, GroupProfile, Official, Position, Role, ServiceRecipient, Territory
 from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
 from configuration.models import AttentionType, Item, Period, SubattentionType
-from common.demo_data import DEMO_PASSWORD, demo_rut
+from common.demo_data import demo_rut
 from common.sgr_seed_data import GEOGRAPHY, POSITIONS
+from common.testing_seed import TEST_SEED_PASSWORD
 
-PASSWORD = DEMO_PASSWORD
+PASSWORD = TEST_SEED_PASSWORD
 MODELS = (User, Group, GroupProfile, Area, Delegation, Function, Official, Position, Role, ServiceRecipient, Territory,
           Activity, ClientRequest, ClientRequestEvent, SocialAttention, AttentionType, Item, Period, SubattentionType)
 
@@ -29,7 +30,8 @@ def counts():
     return {model.__name__: model.objects.count() for model in MODELS}
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"], ALLOWED_HOSTS=["testserver"])
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+                   ALLOWED_HOSTS=["testserver"], SEED_DEMO_PASSWORD=PASSWORD)
 class SeedDemoTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -46,7 +48,7 @@ class SeedDemoTests(TestCase):
         self.assertEqual(AttentionType.objects.count(), 2)
         self.assertEqual(SubattentionType.objects.count(), 7)
         self.assertIn("Negocio: 2000", self.output)
-        self.assertIn("Contraseña de demostración: demo1234", self.output)
+        self.assertNotIn(PASSWORD, self.output)
 
     def test_source_catalogs_and_all_personal_data_are_synthetic(self):
         for name, names in GEOGRAPHY.items():
@@ -76,11 +78,14 @@ class SeedDemoTests(TestCase):
         activity = Activity.objects.first()
         activity.action_description = "Descripción modificada por el usuario"
         activity.save(update_fields=["action_description"])
-        output = seed()
+        rotated_password = "Fixture-Rotada$3579"
+        with override_settings(SEED_DEMO_PASSWORD=rotated_password):
+            output = seed()
         self.assertEqual(before, counts())
-        user.refresh_from_db()
         activity.refresh_from_db()
-        self.assertTrue(user.check_password("demo1234"))
+        for account in User.objects.exclude(pk=foreign.pk):
+            self.assertTrue(account.check_password(rotated_password), account.username)
+        self.assertNotIn(rotated_password, output)
         foreign.refresh_from_db()
         self.assertTrue(foreign.check_password("Clave-privada-ajena-2026"))
         self.assertEqual(activity.action_description, "Descripción modificada por el usuario")
@@ -241,7 +246,8 @@ class SeedDemoTests(TestCase):
         self.assertEqual(Delegation.objects.count(), 3)
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+                   SEED_DEMO_PASSWORD=PASSWORD)
 class SeedDemoSafetyTests(TestCase):
     def test_dry_run_rolls_back_all_tables(self):
         before = counts()
@@ -266,10 +272,17 @@ class SeedDemoSafetyTests(TestCase):
         self.assertEqual(counts(), before)
         self.assertEqual(Official.objects.get().full_name, "Persona existente")
 
-    def test_default_password_works_without_environment_or_prompts(self):
+    def test_seed_password_applies_to_all_seed_accounts(self):
         seed()
         for user in User.objects.all():
-            self.assertTrue(user.check_password("demo1234"), user.username)
+            self.assertTrue(user.check_password(PASSWORD), user.username)
+
+    @override_settings(SEED_DEMO_PASSWORD="")
+    def test_missing_seed_password_stops_before_writing(self):
+        before = counts()
+        with self.assertRaisesMessage(CommandError, "Configura SEED_DEMO_PASSWORD"):
+            seed()
+        self.assertEqual(counts(), before)
 
     def test_dry_run_does_not_reset_existing_seed_passwords(self):
         seed()

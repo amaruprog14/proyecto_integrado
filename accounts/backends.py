@@ -12,6 +12,14 @@ def _single(queryset):
     return matches[0] if len(matches) == 1 else None
 
 
+def find_account_by_email(email):
+    """Busca por el correo de la cuenta, separado del contacto del funcionario."""
+    email = (email or "").strip()
+    if not email:
+        return None
+    return _single(get_user_model()._default_manager.filter(email__iexact=email))
+
+
 def find_user_by_email(email):
     """
     Usuario dueño de un correo. Primero se busca en el funcionario (correo único) y luego
@@ -25,7 +33,7 @@ def find_user_by_email(email):
     )
     if official is not None:
         return official.user
-    return _single(get_user_model()._default_manager.filter(email__iexact=email))
+    return find_account_by_email(email)
 
 
 class SGRAuthBackend(ModelBackend):

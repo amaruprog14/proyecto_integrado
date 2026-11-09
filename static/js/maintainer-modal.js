@@ -23,11 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!form) return null;
         form.action = actionUrl;
 
-        const usernameData = page.querySelector("#existing-usernames");
         return {
             form,
             title: page.querySelector("main h1")?.textContent.trim() || "Formulario",
-            usernameData,
         };
     };
 
@@ -38,9 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
         parsed.form.classList.add("maintainer-modal-form");
         parsed.form.dataset.modalForm = "true";
         modalBody.append(parsed.form);
-        if (parsed.usernameData) {
-            modalBody.append(parsed.usernameData);
-        }
         parsed.form.querySelectorAll(".attention-entry-field .invalid-feedback").forEach((feedback, index) => {
             const field = feedback.closest(".attention-entry-field").querySelector(
                 "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea",

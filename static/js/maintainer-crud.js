@@ -53,12 +53,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const username = userForm.querySelector("#id_username");
     const fullName = userForm.querySelector("#id_full_name");
     const mode = userForm.dataset.userFormMode || userForm.dataset.officialFormMode;
-    const existingElement =
-        userForm.parentElement.querySelector("#existing-usernames") ||
-        document.getElementById("existing-usernames");
-    const existingUsernames = new Set(
-        existingElement ? JSON.parse(existingElement.textContent).map((value) => value.toLocaleLowerCase()) : [],
-    );
 
     const createAccount = userForm.querySelector("#id_create_account");
     const accountFields = userForm.querySelector("[data-account-fields]");
@@ -87,36 +81,25 @@ document.addEventListener("DOMContentLoaded", () => {
             .filter(Boolean)
             .join(".")
             .toLocaleLowerCase("en-US");
-    const availableUsername = (base) => {
-        if (!base || !existingUsernames.has(base)) return base;
-        let suffix = 2;
-        while (existingUsernames.has(`${base}${suffix}`)) suffix += 1;
-        return `${base}${suffix}`;
-    };
-
     let usernameAutomatic = mode === "create";
     let fullNameAutomatic = mode === "create";
-    let generatedUsername = "";
-    let generatedFullName = "";
     let writingDerivedValue = false;
 
     const updateDerivedNames = () => {
         const combined = `${firstName?.value || ""} ${lastName?.value || ""}`;
         const formattedFullName = titleCase(combined);
         const normalizedUsername = firstName?.value.trim() && lastName?.value.trim()
-            ? availableUsername(usernameBase(combined))
+            ? usernameBase(combined)
             : "";
 
         if (fullName && fullNameAutomatic) {
             writingDerivedValue = true;
             fullName.value = formattedFullName;
-            generatedFullName = formattedFullName;
             writingDerivedValue = false;
         }
         if (username && usernameAutomatic) {
             writingDerivedValue = true;
             username.value = normalizedUsername;
-            generatedUsername = normalizedUsername;
             writingDerivedValue = false;
         }
     };
@@ -127,7 +110,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const initialUsername = usernameBase(`${firstName.value} ${lastName.value}`);
             fullNameAutomatic = fullName.value === initialFullName;
             usernameAutomatic = Boolean(firstName.value.trim() && lastName.value.trim()) &&
-                username.value === availableUsername(initialUsername);
+                username.value === initialUsername;
         }
         firstName.addEventListener("input", updateDerivedNames);
         lastName.addEventListener("input", updateDerivedNames);

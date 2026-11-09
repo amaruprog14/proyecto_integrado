@@ -108,6 +108,27 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[1][0], self.activity.code)
 
+    def test_archiving_official_clears_selector_and_saved_filter_but_keeps_activities(self):
+        remaining_official = self.users['editor'].official
+        other_activity = Activity.objects.create(official=remaining_official, item=self.item,
+            date=self.today, record_type=Activity.RecordType.FIELD, action_description='Visita adicional')
+        url = reverse('activity_maintainer')
+        response = self.client.get(url, {'official': self.target.pk, 'q': 'Visita', 'sort': 'code'})
+        self.assertIn(self.target, response.context['officials'])
+        self.assertEqual(list(response.context['page_obj']), [self.activity])
+
+        self.assertEqual(self.archive().status_code, 302)
+        response = self.client.get(url, {'official': self.target.pk, 'page': 2}, HTTP_X_LIVE_SEARCH='1')
+        self.assertEqual(list(response.context['officials']), [remaining_official])
+        self.assertEqual(set(response.context['page_obj']), {self.activity, other_activity})
+        self.assertEqual(response.context['page_obj'].number, 1)
+        self.assertEqual(response.context['query'], 'Visita')
+        self.assertEqual(response.context['selected_sort'], 'code')
+        self.assertEqual(response.wsgi_request.GET['official'], '')
+        restored = self.client.get(url)
+        self.assertEqual(restored.wsgi_request.GET['official'], '')
+        self.assertEqual(self.client.get(reverse('activity_detail', args=[self.activity.pk])).status_code, 200)
+
     def test_filtered_export_includes_all_pages_and_state_survives_detail_and_archive(self):
         for _ in range(31):
             Activity.objects.create(official=self.target, item=self.item, date=self.today, record_type=Activity.RecordType.FIELD)

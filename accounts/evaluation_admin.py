@@ -4,7 +4,7 @@ from django.core.management.base import CommandError
 from django.db import transaction
 
 from accounts.models import Official, Role
-from common.demo_data import DEMO_PASSWORD, OPERATOR_PERMISSIONS, demo_rut
+from common.demo_data import OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 
 USERNAME = "adminEvalA"
 ROLE_NAME = "Administrador evaluación A"
@@ -57,14 +57,16 @@ def provision_evaluation_admin(*, reset_password=False):
         if official.user_id or User.objects.filter(email__iexact=email).exists():
             raise CommandError("La cuenta o el correo de evaluación está ocupado; no se reutiliza.")
         first, _, last = official.full_name.partition(" ")
-        user = User.objects.create_user(USERNAME, email, DEMO_PASSWORD, first_name=first, last_name=last)
+        user = User.objects.create_user(USERNAME, email, require_seed_password(), first_name=first, last_name=last)
     elif (official.user_id != user.pk or user.email != email or not user.is_active
             or user.is_staff or user.is_superuser or user.groups.exists()
             or user.user_permissions.exists() or hasattr(user, "service_recipient")):
         raise CommandError("La cuenta de evaluación existente tiene otra configuración; no se modifica.")
-    if reset_password and not user.check_password(DEMO_PASSWORD):
-        user.set_password(DEMO_PASSWORD)
-        user.save(update_fields=["password"])
+    if reset_password and not user_created:
+        password = require_seed_password()
+        if not user.check_password(password):
+            user.set_password(password)
+            user.save(update_fields=["password"])
     if official.user_id != user.pk:
         official.user = user
         official.save(update_fields=["user", "updated_at"])

@@ -95,7 +95,17 @@ OFFICIAL_CONTEXT = [
 ]
 
 
-DEMO_PASSWORD = "demo1234"
+def require_seed_password():
+    """Devuelve la clave privada de las cuentas de la semilla."""
+    from django.conf import settings
+    from django.core.management.base import CommandError
+
+    password = settings.SEED_DEMO_PASSWORD
+    if not password.strip():
+        raise CommandError("Configura SEED_DEMO_PASSWORD en el entorno o en el archivo .env local.")
+    return password
+
+
 AREA_NAMES = ["Área Norte", "Área Sur", "Área Centro", "Área Cordillera", "Área Costa"]
 POSITION_NAMES = ["Analista", "Coordinador", "Administrativo", "Supervisor", "Encargado de Terreno"]
 ITEM_NAMES = ["Atención ciudadana", "Terreno", "Reunión de coordinación", "Levantamiento de datos", "Seguimiento de caso"]

@@ -9,7 +9,7 @@ from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission, User
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.core import mail
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -20,9 +20,10 @@ from django.utils import timezone
 from django.utils.http import urlsafe_base64_encode
 
 from accounts.forms import GENERIC_LOGIN_ERROR
-from accounts.models import Official, Role
+from accounts.models import Delegation, Official, Role
 from accounts.validators import PasswordCompositionValidator
 from accounts.views import RECOVERY_SENT_MESSAGE
+from common.demo_data import demo_rut
 from configuration.models import AuditLog
 
 PASSWORD = "Clave-Segura-1"
@@ -287,6 +288,8 @@ class PasswordRecoveryFlowTests(TestCase):
     def setUp(self):
         cache.clear()  # espera mínima entre correos (clave por cuenta)
         self.user = create_official_user("ana", email="ana@example.test")
+        self.user.email = "ana@example.test"
+        self.user.save(update_fields=["email"])
 
     def request_link(self, email="ana@example.test", **extra):
         return self.client.post(reverse("recovery_request"), {"email": email}, follow=True, **extra)
@@ -339,6 +342,58 @@ class PasswordRecoveryFlowTests(TestCase):
                 started = time.monotonic()
                 self.request_link(email)
                 self.assertGreaterEqual(time.monotonic() - started, 0.3)
+
+    def test_editor_changing_another_official_contact_cannot_redirect_recovery(self):
+        delegation = Delegation.objects.create(delegation_name="Ámbito de prueba")
+        editor = create_official_user("editor")
+        editor.official.delegation = delegation
+        editor.official.save(update_fields=["delegation"])
+        role = Role.objects.create(role_name="Editor de funcionarios", scope=Role.Scope.DELEGATION)
+        role.permissions.add(get_permission("accounts.view_official"), get_permission("accounts.change_official"))
+        editor.official.roles.add(role)
+        official = self.user.official
+        official.delegation = delegation
+        official.national_id = demo_rut(72000200)
+        official.save(update_fields=["delegation", "national_id"])
+
+        self.client.force_login(editor)
+        contact_email = "contacto.editado@example.test"
+        response = self.client.post(reverse("official_update", args=[official.pk]), {
+            "full_name": official.full_name, "national_id": official.national_id,
+            "email": contact_email, "status": official.status, "delegation": delegation.pk,
+        })
+        self.assertRedirects(response, reverse("official_maintainer"), fetch_redirect_response=False)
+        official.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertEqual(official.email, contact_email)
+        self.assertEqual(self.user.email, "ana@example.test")
+
+        self.client = self.client_class()
+        self.assertContains(self.request_link(contact_email), RECOVERY_SENT_MESSAGE)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertContains(self.request_link("ANA@EXAMPLE.TEST"), RECOVERY_SENT_MESSAGE)
+        self.assertEqual([message.to for message in mail.outbox], [[self.user.email]])
+        self.assertTrue(self.open_link(self.sent_link()).context["validlink"])
+
+    def test_ambiguous_account_email_is_not_resolved_using_official_contact(self):
+        User.objects.create_user("correo-ambiguo", self.user.email.upper(), PASSWORD)
+
+        self.assertContains(self.request_link(), RECOVERY_SENT_MESSAGE)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_account_without_email_does_not_use_official_contact_as_fallback(self):
+        User.objects.filter(pk=self.user.pk).update(email="")
+
+        self.assertContains(self.request_link(), RECOVERY_SENT_MESSAGE)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_link_signed_before_contact_email_fix_is_rejected(self):
+        url = reverse("recovery_confirm", kwargs={
+            "uidb64": urlsafe_base64_encode(force_bytes(self.user.pk)),
+            "token": default_token_generator.make_token(self.user),
+        })
+
+        self.assertFalse(self.open_link(url).context["validlink"])
 
     def test_inactive_account_receives_no_link(self):
         Official.objects.filter(user=self.user).update(status=Official.Status.INACTIVE)
