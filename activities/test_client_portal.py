@@ -1,9 +1,12 @@
 from common.testing_seed import seed_test_data
 import uuid
+from io import BytesIO
 
 from django.contrib.auth.models import User, Permission
+from django.core.cache import cache
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+from openpyxl import load_workbook
 
 from accounts.models import ServiceRecipient, Delegation, Official, Role, Territory
 from configuration.models import AttentionType, SubattentionType
@@ -70,7 +73,7 @@ class ClientPortalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Cargo</dt>")
         self.client.post(reverse("client_profile"), {"first_name": "Clara", "last_name": "Rojas",
-            "email": "new@example.test", "phone": "+56912345678", "user": self.users[1].pk,
+            "email": "new@example.test", "phone": "56912345678", "user": self.users[1].pk,
             "full_name": "Identidad falsa", "national_id": "11.111.111-1", "status": "INACTIVE"})
         self.people[0].refresh_from_db()
         self.people[1].refresh_from_db()
@@ -134,6 +137,50 @@ class ClientPortalTests(TestCase):
         item.save()
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.post(url, {"status": "REVIEW", "response": "Ajena"}).status_code, 404)
+
+    def test_staff_list_and_export_share_scope_search_status_and_order(self):
+        cache.clear()
+        user = User.objects.create_user("lector-solicitudes")
+        Official.objects.create(user=user, full_name="Lector de solicitudes", national_id="12345678-5",
+                                email="lector-solicitudes@example.test", delegation=self.delegation)
+        user.user_permissions.add(Permission.objects.get(
+            content_type__app_label="activities", codename="view_socialattention"))
+        for index in range(8):
+            item = self.create_request()
+            item.subject = f"Consulta extensa {index} " + "x" * 70
+            item.save(update_fields=["subject"])
+        foreign = self.create_request()
+        foreign.delegation = Delegation.objects.get(delegation_name="Norte")
+        foreign.subject = "Consulta extensa de otra delegación"
+        foreign.save(update_fields=["delegation", "subject"])
+        reviewed = self.create_request()
+        reviewed.subject, reviewed.status = "Consulta extensa revisada", ClientRequest.Status.REVIEW
+        reviewed.save(update_fields=["subject", "status"])
+
+        self.client.force_login(user)
+        listing = reverse("staff_client_requests")
+        export = reverse("staff_client_requests_export")
+        params = {"q": "Consulta extensa", "status": "RECEIVED", "sort": "subject", "direction": "asc", "page_size": 5}
+        response = self.client.get(listing, params)
+        self.assertEqual(response.context["total"], 8)
+        self.assertEqual(len(response.context["page_obj"]), 5)
+        self.assertEqual(response.context["statuses"], ClientRequest.Status.choices)
+        self.assertContains(response, 'data-maintainer-websocket="/ws/maintainers/staff_request/"')
+        page = self.client.get(listing, {"page": 2})
+        self.assertEqual(page.context["page_obj"].number, 2)
+        self.assertEqual(len(page.context["page_obj"]), 3)
+
+        response = self.client.get(export)
+        with BytesIO(response.content) as workbook_data:
+            workbook = load_workbook(workbook_data, read_only=True)
+            subjects = [row[2] for row in list(workbook.active.values)[1:]]
+            workbook.close()
+        self.assertEqual(subjects, [f"Consulta extensa {index} " + "x" * 70 for index in range(8)])
+        self.assertRedirects(self.client.get(export), listing)
+        self.assertEqual(self.client.get(listing).context["page_obj"].number, 2)
+
+        self.client.force_login(self.users[0])
+        self.assertEqual(self.client.get(export).status_code, 403)
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])

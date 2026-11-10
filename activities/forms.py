@@ -4,14 +4,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from accounts.forms import clean_person_name
-from common.field_validation import configure_text_widgets
+from common.field_validation import configure_text_widgets, text_length
 from accounts.models import Delegation, ServiceRecipient
 from common.chilean_rut import normalize_chilean_rut
 from common.text import clean_description_text, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 
 
-DESCRIPTION_MAX_LENGTH = 5000
+DESCRIPTION_MAX_LENGTH = 300
 
 
 class CatalogChoiceField(forms.ModelChoiceField):
@@ -31,6 +31,8 @@ class SubattentionSelect(forms.Select):
 
 
 class SocialAttentionForm(forms.Form):
+    text_limits = {"recipient_full_name": 100}
+
     recipient_national_id = forms.CharField(
         label="RUT o RUN chileno",
         max_length=20,
@@ -126,11 +128,12 @@ class SocialAttentionForm(forms.Form):
     def clean_recipient_national_id(self):
         return normalize_chilean_rut(self.cleaned_data["recipient_national_id"])
 
-    def clean_recipient_full_name(self):
-        return clean_person_name(self.cleaned_data.get("recipient_full_name"))
-
     def clean_description(self):
-        return clean_description_text(self.cleaned_data.get("description"), DESCRIPTION_MAX_LENGTH)
+        value = self.cleaned_data.get("description")
+        raw = self.data.get(self.add_prefix("description"), "")
+        if text_length(raw) > DESCRIPTION_MAX_LENGTH:
+            raise ValidationError(f"La descripción no puede superar los {DESCRIPTION_MAX_LENGTH} caracteres.")
+        return clean_description_text(value, DESCRIPTION_MAX_LENGTH)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -167,6 +170,14 @@ class SocialAttentionForm(forms.Form):
                     "recipient_full_name",
                     "Ingresa el nombre completo para registrar a una persona con este RUT.",
                 )
+
+        if full_name and self.recipient_record is None and "recipient_full_name" in cleaned_data:
+            try:
+                if text_length(self.data.get(self.add_prefix("recipient_full_name"), "")) > 100:
+                    raise ValidationError("El nombre no puede superar los 100 caracteres.")
+                cleaned_data["recipient_full_name"] = clean_person_name(full_name)
+            except ValidationError as error:
+                self.add_error("recipient_full_name", error)
 
         if (
             attention_type is not None

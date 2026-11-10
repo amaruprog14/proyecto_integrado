@@ -2,9 +2,9 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from .forms import OfficialUserForm, clean_person_name
+from .forms import OfficialUserForm
 from .models import ServiceRecipient, Official, Territory
-from common.field_validation import clean_address
+from common.field_validation import clean_address, configure_text_widgets
 
 
 class TerritorySelect(forms.Select):
@@ -65,6 +65,7 @@ class ClientAccountForm(OfficialUserForm):
         creating = self.instance is None or not self.instance.pk
         self.fields['password1'].required = creating
         self.fields['password2'].required = creating
+        configure_text_widgets(self)
         self.order_fields(['account_type', 'first_name', 'last_name', 'username', 'email',
             'password1', 'password2', 'national_id', 'phone', 'delegation', 'territory', 'address', 'status'])
 
@@ -116,7 +117,8 @@ class ClientAccountForm(OfficialUserForm):
                 user.set_password(data['password1'])
             user.save()
             recipient = self.recipient or ServiceRecipient(user=user)
-            recipient.full_name = clean_person_name(f"{user.first_name} {user.last_name}")
+            if not self.recipient or not (self.keeps_original_text("first_name") and self.keeps_original_text("last_name")):
+                recipient.full_name = f"{user.first_name} {user.last_name}".strip()
             for key in ('national_id', 'email', 'phone', 'address', 'territory', 'status'):
                 setattr(recipient, key, data[key])
             recipient.full_clean()

@@ -58,12 +58,12 @@
                         {% for account in users %}
                             <tr data-status="{{ account.status_code }}">
                                 <td>
-                                    {{ account.display_name }}
-                                    <span class="d-block small text-muted">{{ account.username }}</span>
+                                    <span class="maintainer-cell-text" title="{{ account.display_name }}">{{ account.display_name }}</span>
+                                    <span class="maintainer-cell-text small text-muted" title="{{ account.username }}">{{ account.username }}</span>
                                 </td>
-                                <td>{{ account.display_email }}</td>
-                                <td>{{ account.display_roles }}</td>
-                                <td>{% if account.display_delegation %}{{ account.display_delegation.code }} · {{ account.display_delegation.delegation_name }}{% else %}—{% endif %}</td>
+                                <td><span class="maintainer-cell-text" title="{{ account.display_email }}">{{ account.display_email }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ account.display_roles }}">{{ account.display_roles }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ account.display_delegation|default:'—' }}">{% if account.display_delegation %}{{ account.display_delegation.code }} · {{ account.display_delegation.delegation_name }}{% else %}—{% endif %}</span></td>
                                 <td>
                                     <span class="maintainer-status-pill{% if account.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ account.status_label }}</span>
                                 </td>

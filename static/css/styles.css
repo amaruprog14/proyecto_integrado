@@ -1274,6 +1274,24 @@ h3 {
     border-bottom: 0;
 }
 
+.maintainer-cell-text {
+    display: block;
+    max-width: min(24rem, 35vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.staff-request-list .maintainer-table-footer {
+    margin-top: 1.5rem;
+}
+
+.group-member-options {
+    max-height: 16rem;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+}
+
 .maintainer-table tbody tr:hover td {
     background-color: var(--color-neutral-05);
 }
@@ -1483,7 +1501,13 @@ h3 {
     font-size: var(--font-size-md);
 }
 
+.maintainer-table-footer > nav {
+    min-width: 0;
+    max-width: 100%;
+}
+
 .maintainer-pagination {
+    flex-wrap: wrap;
     gap: 0.35rem;
     margin: 0;
 }

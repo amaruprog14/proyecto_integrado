@@ -1,19 +1,22 @@
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from accounts.models import Area, Position, GroupProfile, Role, Official, Territory, Delegation
-from accounts.role_forms import assignable_permissions, can_grant_privileged_permissions
+from accounts.role_forms import (
+    PermissionCheckboxSelectMultiple, PermissionMultipleChoiceField,
+    assignable_permissions, can_grant_privileged_permissions, group_permissions,
+)
 from accounts.forms import privileged_permission_query
 from common.text import normalize_spaces, clean_description_text
-from common.field_validation import clean_catalog_name, configure_text_widgets
+from common.field_validation import LimitedTextFieldsMixin, clean_catalog_name, configure_text_widgets
 from common.scopes import scope_officials
 from configuration.models import Period, Item
 from activities.models import Activity
 
 
-class MaintainerForm(forms.ModelForm):
+class MaintainerForm(LimitedTextFieldsMixin, forms.ModelForm):
     name_field = None
 
     def __init__(self, *args, actor=None, **kwargs):
@@ -27,7 +30,8 @@ class MaintainerForm(forms.ModelForm):
                 field.widget = forms.Select(choices=((True, "Vigente"), (False, "No vigente")))
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
             if isinstance(field.widget, forms.Textarea):
-                field.widget.attrs.update(rows=3, maxlength=500)
+                field.widget.attrs.setdefault("maxlength", 500)
+                field.widget.attrs["rows"] = 3
             if isinstance(field, forms.DateField):
                 field.widget = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"})
 
@@ -54,6 +58,8 @@ class MaintainerForm(forms.ModelForm):
 
 
 class PositionForm(MaintainerForm):
+    text_limits = {"position_name": 50, "description": 200}
+
     name_field = "position_name"
     class Meta:
         model = Position
@@ -61,6 +67,8 @@ class PositionForm(MaintainerForm):
 
 
 class TerritoryForm(MaintainerForm):
+    text_limits = {"territory_name": 50, "description": 200}
+
     class Meta:
         model = Territory
         fields = ("territory_name", "delegation", "description", "is_active")
@@ -83,6 +91,8 @@ class TerritoryForm(MaintainerForm):
 
 
 class AreaForm(MaintainerForm):
+    text_limits = {"area_name": 50}
+
     name_field = "area_name"
     class Meta:
         model = Area
@@ -109,6 +119,8 @@ class PeriodForm(MaintainerForm):
 
 
 class ActivityForm(MaintainerForm):
+    text_limits = {"action_description": 200}
+
     class Meta:
         model = Activity
         fields = ("official", "item", "date", "record_type", "action_description")
@@ -146,11 +158,20 @@ def protect_last_group_administrator(group, scope, permissions, members, is_acti
 
 
 class GroupForm(MaintainerForm):
+    text_limits = {"name": 50, "description": 200}
+
     name_field = "name"
     description = forms.CharField(label="Descripción", required=False, widget=forms.Textarea)
     scope = forms.ChoiceField(label="Alcance", choices=Role.Scope.choices)
     is_active = forms.BooleanField(label="Vigente", required=False, initial=True)
-    members = forms.ModelMultipleChoiceField(label="Miembros", queryset=get_user_model().objects.none(), required=False)
+    permissions = PermissionMultipleChoiceField(
+        label="Permisos", queryset=Permission.objects.none(), required=False,
+        widget=PermissionCheckboxSelectMultiple(),
+    )
+    members = forms.ModelMultipleChoiceField(
+        label="Miembros", queryset=get_user_model().objects.none(), required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
 
     class Meta:
         model = Group
@@ -158,23 +179,41 @@ class GroupForm(MaintainerForm):
 
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, actor=actor, **kwargs)
-        self.fields["permissions"].queryset = assignable_permissions()
+        field = self.fields["permissions"]
+        field.queryset = assignable_permissions()
+        privileged_ids = frozenset(Permission.objects.filter(privileged_permission_query()).values_list("pk", flat=True))
+        field.privileged_ids = field.widget.privileged_ids = privileged_ids
+        self.privileged_locked = not can_grant_privileged_permissions(actor)
+        field.widget.lock_privileged = self.privileged_locked
+        field.widget.attrs.pop("class", None)
         perm = "auth.change_group" if self.instance.pk else "auth.add_group"
         officials = scope_officials(Official.objects.filter(deleted_at__isnull=True), actor, perm)
-        self.fields["members"].queryset = get_user_model().objects.filter(official__in=officials)
+        members = self.fields["members"]
+        members.widget.attrs["class"] = "form-check-input"
+        members.queryset = get_user_model().objects.filter(official__in=officials).select_related("official").order_by("username")
+        members.label_from_instance = lambda user: f"{user.official.full_name} ({user.username})"
+        self.kept_permissions = Permission.objects.none()
         if self.instance.pk:
             profile = getattr(self.instance, "sgr_profile", None)
             if profile:
                 self.initial.update(description=profile.description, scope=profile.scope)
             self.initial["members"] = self.instance.user_set.filter(pk__in=self.fields["members"].queryset)
+            kept_ids = list(self.instance.permissions.exclude(pk__in=field.queryset).values_list("pk", flat=True))
+            self.kept_permissions = Permission.objects.filter(pk__in=kept_ids)
+        configure_text_widgets(self)
+
+    def permission_groups(self):
+        return group_permissions(self["permissions"], lambda checkbox: checkbox.data["value"].instance)
 
     def clean(self):
         data = super().clean()
         permissions = data.get("permissions")
         members = data.get("members")
-        if permissions is not None and permissions.filter(privileged_permission_query()).exists():
-            if not can_grant_privileged_permissions(self.actor):
-                self.add_error("permissions", "Se requiere administrar Roles para otorgar permisos privilegiados.")
+        if self.privileged_locked and (
+            (permissions is not None and permissions.filter(privileged_permission_query()).exists())
+            or (self.instance.pk and self.instance.permissions.filter(privileged_permission_query()).exists())
+        ):
+            self.add_error("permissions", "Se requiere administrar Roles para modificar un grupo con permisos privilegiados.")
         if not self.actor.is_superuser:
             from common.scopes import permission_scope
             actor_scope = permission_scope(self.actor, "auth.change_group" if self.instance.pk else "auth.add_group")
@@ -187,7 +226,7 @@ class GroupForm(MaintainerForm):
             hidden_members = self.instance.user_set.exclude(pk__in=self.fields["members"].queryset)
             final_members = get_user_model().objects.filter(Q(pk__in=hidden_members) | Q(pk__in=members))
             try:
-                protect_last_group_administrator(self.instance, data.get("scope"), permissions, final_members,
+                protect_last_group_administrator(self.instance, data.get("scope"), permissions | self.kept_permissions, final_members,
                     getattr(getattr(self.instance, "sgr_profile", None), "is_active", True))
             except ValidationError as error:
                 self.add_error(None, error)
@@ -196,6 +235,7 @@ class GroupForm(MaintainerForm):
     def save(self, commit=True):
         group = super().save(commit=commit)
         if commit:
+            group.permissions.add(*self.kept_permissions)
             GroupProfile.objects.update_or_create(group=group, defaults={
                 "description": self.cleaned_data["description"], "scope": self.cleaned_data["scope"],
                 **({"is_active": self.cleaned_data["is_active"]} if "is_active" in self.fields else {})})

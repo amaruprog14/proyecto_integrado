@@ -46,9 +46,9 @@
                     <tbody>
                         {% for record in records %}
                             <tr>
-                                <td>{{ record.code }}</td>
-                                <td>{{ record.name }}</td>
-                                <td>{{ record.description|default:"—"|truncatechars:100 }}</td>
+                                <td><span class="maintainer-cell-text" title="{{ record.code }}">{{ record.code }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ record.name }}">{{ record.name }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ record.description|default:"—" }}">{{ record.description|default:"—" }}</span></td>
                                 <td><span class="maintainer-status-pill{% if record.is_active %} is-active{% else %} is-inactive{% endif %}">{% if record.is_active %}Activo{% else %}Inactivo{% endif %}</span></td>
                                 <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">
                                     <a href="{% url 'attention_type_detail' record.pk %}" class="action-icon action-icon--view" aria-label="Ver" data-tooltip="Ver" title="Ver">{% include "includes/action_icon.html" with action="Ver" %}</a>

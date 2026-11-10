@@ -65,7 +65,7 @@ class FieldLevelAuditTests(TestCase):
                 "password2": new_password,
                 "full_name": "Persona Auditada",
                 "national_id": "12.345.678-5",
-                "phone": "+56911112222",
+                "phone": "56911112222",
                 "delegation": self.delegation.pk,
                 "roles": [role.pk],
                 "status": Official.Status.ACTIVE,
@@ -76,7 +76,7 @@ class FieldLevelAuditTests(TestCase):
         self.assertEqual(log.previous_value, "Teléfono: —\nDelegación principal: —\nRoles: Sin rol")
         self.assertEqual(
             log.new_value,
-            f"Teléfono: +56911112222\nDelegación principal: {self.delegation.code} · Zona Auditada\n"
+            f"Teléfono: 56911112222\nDelegación principal: {self.delegation.code} · Zona Auditada\n"
             "Roles: Rol Auditado\nContraseña: Actualizada (no se registra su valor)",
         )
         self.assertNotIn(new_password, log.new_value)

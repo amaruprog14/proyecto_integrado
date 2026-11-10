@@ -59,10 +59,10 @@
                     <tbody>
                         {% for delegation in delegations %}
                             <tr data-status="{{ delegation.status }}">
-                                <td>{{ delegation.code }}</td>
-                                <td>{{ delegation.delegation_name }}</td>
-                                <td>{{ delegation.address }}</td>
-                                <td>{{ delegation.commune }}</td>
+                                <td><span class="maintainer-cell-text" title="{{ delegation.code }}">{{ delegation.code }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ delegation.delegation_name }}">{{ delegation.delegation_name }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ delegation.address }}">{{ delegation.address }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ delegation.commune }}">{{ delegation.commune }}</span></td>
                                 <td>
                                     <span class="maintainer-status-pill{% if delegation.status == 'ACTIVE' %} is-active{% else %} is-inactive{% endif %}">{{ delegation.get_status_display }}</span>
                                 </td>

@@ -58,11 +58,11 @@
                     <tbody>
                         {% for role in roles %}
                             <tr data-status="{% if role.is_active %}ACTIVE{% else %}INACTIVE{% endif %}">
-                                <td>{{ role.role_name }}</td>
-                                <td>{{ role.description|default:"—"|truncatechars:90 }}</td>
-                                <td>{{ role.get_scope_display }}</td>
-                                <td>{{ role.permission_count }}</td>
-                                <td>{{ role.active_official_count }}</td>
+                                <td><span class="maintainer-cell-text" title="{{ role.role_name }}">{{ role.role_name }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ role.description|default:"—" }}">{{ role.description|default:"—" }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ role.get_scope_display }}">{{ role.get_scope_display }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ role.permission_count }}">{{ role.permission_count }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ role.active_official_count }}">{{ role.active_official_count }}</span></td>
                                 <td>
                                     <span class="maintainer-status-pill{% if role.is_active %} is-active{% else %} is-inactive{% endif %}">{% if role.is_active %}Activo{% else %}Inactivo{% endif %}</span>
                                 </td>

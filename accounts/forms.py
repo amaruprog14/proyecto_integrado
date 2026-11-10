@@ -11,7 +11,10 @@ from django.db.models import Prefetch, Q
 
 from accounts.models import Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
-from common.field_validation import DEFAULT_COMMUNE, clean_catalog_name, clean_address, configure_text_widgets
+from common.field_validation import (
+    ACCOUNT_TEXT_LIMITS, DEFAULT_COMMUNE, PHONE_PATTERN, LimitedTextFieldsMixin,
+    clean_address, clean_catalog_name, configure_text_widgets,
+)
 from common.scopes import delegation_ids, permission_scope
 from common.text import normalize_spaces
 
@@ -171,37 +174,32 @@ def sole_global_administrator_errors(official, status, roles):
     return errors
 
 
-# Palabras de letras separadas por un espacio, guion o apóstrofo; cada palabra puede terminar en
-# punto para las abreviaturas ("Ma. José", "J. Pablo").
-PERSON_NAME_PATTERN = re.compile(r"[^\W\d_]+\.?(?:(?: |['’-])[^\W\d_]+\.?)*")
-PHONE_PATTERN = re.compile(r"\+?[0-9 ()-]+")
-PHONE_MIN_DIGITS = 8
-PHONE_MAX_DIGITS = 15
-
-
 def clean_person_name(value):
-    """Nombre de persona: letras (con tildes), un espacio entre palabras, guiones, apóstrofos y puntos."""
     name = normalize_spaces(value)
-    if name and not PERSON_NAME_PATTERN.fullmatch(name):
-        raise ValidationError("Usa solo letras, tildes, espacios, guiones, apóstrofos y puntos.")
+    if name and not all(word.isalpha() for word in name.split(" ")):
+        raise ValidationError("Usa solo letras, tildes y espacios.")
     return name
 
 
 def clean_phone(value):
-    """
-    Teléfono opcional: dígitos con + inicial, espacios, guiones o paréntesis, y entre 8 y 15
-    dígitos (8 o 9 en Chile sin código de país, 11 con +56; 15 es el máximo internacional).
-    """
-    phone = normalize_spaces(value)
-    if not phone:
-        return phone
-    digits = sum(char.isdigit() for char in phone)
-    if not PHONE_PATTERN.fullmatch(phone) or not PHONE_MIN_DIGITS <= digits <= PHONE_MAX_DIGITS:
-        raise ValidationError(
-            f"Ingresa un teléfono válido: entre {PHONE_MIN_DIGITS} y {PHONE_MAX_DIGITS} dígitos; "
-            "puede incluir +, espacios, guiones y paréntesis."
-        )
+    phone = value or ""
+    if phone and (not re.fullmatch(PHONE_PATTERN, phone) or not 8 <= len(phone) <= 15):
+        raise ValidationError("Ingresa un teléfono válido de 8 a 15 dígitos, sin espacios ni signos.")
     return phone
+
+
+class AccountTextFieldsMixin(LimitedTextFieldsMixin):
+    text_limits = ACCOUNT_TEXT_LIMITS
+
+    def clean_person_field(self, name):
+        if self.keeps_original_text(name):
+            return self.initial[name]
+        return clean_person_name(self.cleaned_data.get(name))
+
+    def clean_phone(self):
+        if self.keeps_original_text("phone"):
+            return self.initial["phone"]
+        return clean_phone(self.data.get(self.add_prefix("phone")))
 
 
 def can_assign_privileged_roles(actor):
@@ -294,8 +292,10 @@ class RoleAssignmentMixin:
         return data
 
 
-class DelegationForm(forms.ModelForm):
+class DelegationForm(LimitedTextFieldsMixin, forms.ModelForm):
     """Alta y edición de delegaciones. El código se genera automáticamente."""
+
+    text_limits = {"delegation_name": 50, "address": 50}
 
     class Meta:
         model = Delegation
@@ -350,7 +350,7 @@ class DelegationForm(forms.ModelForm):
         return DEFAULT_COMMUNE
 
 
-class OfficialUserForm(RoleAssignmentMixin, forms.Form):
+class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
     """
     Administra la relación entre auth.User y accounts.Official.
 
@@ -392,12 +392,14 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
     password1 = forms.CharField(
         label="Contraseña",
         required=False,
+        strip=False,
         widget=forms.PasswordInput(attrs={"class": "form-control", "autocomplete": "new-password"}),
         help_text="Al editar, deja el campo vacío para conservar la contraseña actual.",
     )
     password2 = forms.CharField(
         label="Confirmar contraseña",
         required=False,
+        strip=False,
         widget=forms.PasswordInput(attrs={"class": "form-control", "autocomplete": "new-password"}),
     )
     is_staff = forms.BooleanField(
@@ -488,7 +490,6 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        configure_text_widgets(self)
         self.actor = actor
         self.instance = instance
         self.official_instance = (
@@ -544,12 +545,13 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
                     "status",
                     Official.Status.ACTIVE if instance.is_active else Official.Status.INACTIVE,
                 )
+        configure_text_widgets(self)
 
     def clean_first_name(self):
-        return clean_person_name(self.cleaned_data.get("first_name"))
+        return self.clean_person_field("first_name")
 
     def clean_last_name(self):
-        return clean_person_name(self.cleaned_data.get("last_name"))
+        return self.clean_person_field("last_name")
 
     def clean_username(self):
         username = (self.cleaned_data.get("username") or "").strip()
@@ -565,10 +567,7 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
         return normalize_chilean_rut(value) if value else value
 
     def clean_full_name(self):
-        return clean_person_name(self.cleaned_data.get("full_name"))
-
-    def clean_phone(self):
-        return clean_phone(self.cleaned_data.get("phone"))
+        return self.clean_person_field("full_name")
 
     def clean(self):
         cleaned = super().clean()
@@ -741,7 +740,7 @@ class OfficialUserForm(RoleAssignmentMixin, forms.Form):
             return user
 
 
-class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
+class OfficialForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.ModelForm):
     """Administra el perfil Official y, opcionalmente, crea su cuenta de acceso."""
 
     full_name = forms.CharField(
@@ -840,11 +839,13 @@ class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
     password1 = forms.CharField(
         label="Contraseña inicial",
         required=False,
+        strip=False,
         widget=forms.PasswordInput(attrs={"class": "form-control", "autocomplete": "new-password"}),
     )
     password2 = forms.CharField(
         label="Confirmar contraseña inicial",
         required=False,
+        strip=False,
         widget=forms.PasswordInput(attrs={"class": "form-control", "autocomplete": "new-password"}),
     )
 
@@ -863,7 +864,6 @@ class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
         **kwargs,
     ):
         super().__init__(*args, instance=instance, **kwargs)
-        configure_text_widgets(self)
         self.actor = actor
         self.creating_official = not self.instance.pk
         self.fields["status"].initial = Official.Status.ACTIVE
@@ -904,6 +904,7 @@ class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
                 self.fields["create_account"].help_text = (
                     f"Este funcionario ya está vinculado a la cuenta «{instance.user.username}»."
                 )
+        configure_text_widgets(self)
 
     def clean_national_id(self):
         value = normalize_chilean_rut(self.cleaned_data.get("national_id"))
@@ -931,16 +932,13 @@ class OfficialForm(RoleAssignmentMixin, forms.ModelForm):
         return value
 
     def clean_full_name(self):
-        return clean_person_name(self.cleaned_data.get("full_name"))
-
-    def clean_phone(self):
-        return clean_phone(self.cleaned_data.get("phone"))
+        return self.clean_person_field("full_name")
 
     def clean_first_name(self):
-        return clean_person_name(self.cleaned_data.get("first_name"))
+        return self.clean_person_field("first_name")
 
     def clean_last_name(self):
-        return clean_person_name(self.cleaned_data.get("last_name"))
+        return self.clean_person_field("last_name")
 
     def clean_username(self):
         value = (self.cleaned_data.get("username") or "").strip()
@@ -1031,7 +1029,7 @@ def profile_snapshot(profile):
     return {"Nombre": profile.full_name, "Correo": profile.email or "—", "Teléfono": profile.phone or "—"}
 
 
-class OwnOfficialProfileForm(forms.ModelForm):
+class OwnOfficialProfileForm(AccountTextFieldsMixin, forms.ModelForm):
     """
     Campos personales permitidos al funcionario sobre su propio perfil (ClientProfileForm lo
     reutiliza para el cliente). Nombres y apellidos se guardan en el User y forman el nombre
@@ -1062,12 +1060,13 @@ class OwnOfficialProfileForm(forms.ModelForm):
         self.initial.setdefault("last_name", user.last_name)
         self.previous_snapshot = profile_snapshot(self.instance)
         self.order_fields(["first_name", "last_name", "email", "phone", "photo", "photo_crop"])
+        configure_text_widgets(self)
 
     def clean_first_name(self):
-        return clean_person_name(self.cleaned_data.get("first_name"))
+        return self.clean_person_field("first_name")
 
     def clean_last_name(self):
-        return clean_person_name(self.cleaned_data.get("last_name"))
+        return self.clean_person_field("last_name")
 
     def full_name(self):
         return f"{self.cleaned_data['first_name']} {self.cleaned_data['last_name']}"
@@ -1100,9 +1099,6 @@ class OwnOfficialProfileForm(forms.ModelForm):
             raise ValidationError("Este correo ya está asociado a otra cuenta de acceso.")
         return value
 
-    def clean_phone(self):
-        return clean_phone(self.cleaned_data.get("phone"))
-
     def clean_photo(self):
         photo = self.cleaned_data.get("photo")
         if self.files.get("photo"):
@@ -1114,7 +1110,9 @@ class OwnOfficialProfileForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
-        if data.get("first_name") and data.get("last_name") and len(self.full_name()) > FULL_NAME_MAX_LENGTH:
+        if data.get("first_name") and data.get("last_name") and len(self.full_name()) > FULL_NAME_MAX_LENGTH and not (
+            self.keeps_original_text("first_name") and self.keeps_original_text("last_name")
+        ):
             self.add_error(
                 "last_name",
                 f"Nombres y apellidos no pueden superar en total los {FULL_NAME_MAX_LENGTH} caracteres.",
@@ -1156,7 +1154,9 @@ class OwnOfficialProfileForm(forms.ModelForm):
 
     def save(self, commit=True):
         profile = super().save(commit=False)
-        profile.full_name = self.full_name()
+        full_name = self.full_name()
+        if len(full_name) <= FULL_NAME_MAX_LENGTH:
+            profile.full_name = full_name
         if commit:
             with transaction.atomic():
                 profile.save(update_fields=["full_name", "email", "phone", "photo", "updated_at"])

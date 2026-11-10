@@ -1,6 +1,7 @@
 from common.testing_seed import seed_test_data
 import uuid
 from io import BytesIO
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User, Permission
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -33,7 +34,7 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         rut = number + '-' + ('0' if result == 11 else 'K' if result == 10 else str(result))
         return dict(account_type='CLIENT', username='cliente.nuevo', first_name='Persona', last_name='Demo',
             email='cliente.nuevo@example.test', password1='Prueba-Portal-2026!', password2='Prueba-Portal-2026!',
-            national_id=rut, phone='+56912345678', delegation=self.south.pk, territory=self.territory.pk,
+            national_id=rut, phone='56912345678', delegation=self.south.pk, territory=self.territory.pk,
             address='Calle de Prueba 123', status='ACTIVE') | overrides
 
     def create_client(self):
@@ -71,6 +72,36 @@ class ClientAccountsAndTerritoriesTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.context['form'].errors)
             self.assertFalse(User.objects.filter(username='cliente.nuevo').exists())
+
+    def test_password_limit_applies_to_input_before_hashing(self):
+        password = "Clave Segura 9!" + "x" * 25
+        self.assertEqual(len(password), 40)
+        route = reverse("user_create")
+        response = self.client.post(route, self.payload(password1=password + "x", password2=password + "x"))
+        self.assertIn("password1", response.context["form"].errors)
+        self.assertIn("password2", response.context["form"].errors)
+        self.assertFalse(User.objects.filter(username="cliente.nuevo").exists())
+
+        response = self.client.post(route, self.payload(password1=password, password2=password))
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username="cliente.nuevo")
+        self.assertNotEqual(user.password, password)
+        self.assertEqual(authenticate(username=user.username, password=password), user)
+
+    def test_client_can_keep_legacy_name_and_phone_when_editing(self):
+        user = self.create_client()
+        user.first_name = "Ma. Persona"
+        user.save(update_fields=["first_name"])
+        person = user.service_recipient
+        person.phone = "+56 9 1234 5678"
+        person.save(update_fields=["phone"])
+        data = self.payload(first_name=user.first_name, phone=person.phone, password1="", password2="",
+                            address="Calle Editada 456")
+        response = self.client.post(reverse("user_update", args=[user.pk]), data)
+        self.assertEqual(response.status_code, 302)
+        person.refresh_from_db()
+        self.assertEqual(person.phone, "+56 9 1234 5678")
+        self.assertEqual(person.address, "Calle Editada 456")
 
     def test_territory_duplicate_normalization_and_immutable_used_delegation(self):
         payload = dict(territory_name='  barrio   SUR ', delegation=self.south.pk, description='', is_active='True')

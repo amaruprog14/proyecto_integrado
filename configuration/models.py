@@ -11,6 +11,10 @@ class Item(AutoCodeMixin, BaseModel):
 
     code_prefix = "ITM"
 
+    code = models.CharField(
+        max_length=25, unique=True, blank=True, verbose_name="Código",
+        help_text="Si se deja vacío se genera automáticamente.",
+    )
     item_name = models.CharField(max_length=150, unique=True, verbose_name="Nombre del ítem")
     description = models.TextField(blank=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Vigente")

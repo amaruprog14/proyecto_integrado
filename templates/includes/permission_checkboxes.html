@@ -1,0 +1,16 @@
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+    {% for group_label, checkboxes in form.permission_groups %}
+        <div class="col">
+            <p class="fw-semibold mb-1">{{ group_label }}</p>
+            {% for checkbox in checkboxes %}
+                <div class="form-check">
+                    {{ checkbox.tag }}
+                    <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                </div>
+            {% endfor %}
+        </div>
+    {% empty %}
+        <span class="text-muted">No hay permisos disponibles.</span>
+    {% endfor %}
+</div>
+{% for error in form.permissions.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}

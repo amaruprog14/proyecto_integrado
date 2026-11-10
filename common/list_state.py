@@ -62,6 +62,7 @@ ROUTES = {'official_maintainer': 'official', 'delegation_list': 'delegation', 'u
     'subattention_type_maintainer': 'subattention_type',
     **{k + '_maintainer': k for k in ('position', 'area', 'group', 'period', 'activity', 'territory')},
     'client_requests': 'client_request', 'staff_client_requests': 'staff_request',
+    'staff_client_requests_export': 'staff_request',
     **{k + '_export': k for k in SORTS}}
 
 
