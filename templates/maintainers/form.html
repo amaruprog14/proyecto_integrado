@@ -18,12 +18,37 @@
                 {% endif %}
                 <div class="attention-entry-grid">
                     {% for field in form %}
+                        {% if field.name == 'permissions' %}
+                            <fieldset class="attention-entry-field attention-entry-field-full">
+                                <legend class="form-label">Permisos</legend>
+                                {% if form.privileged_locked %}<p class="attention-entry-hint">Los permisos privilegiados requieren el permiso para editar roles.</p>{% endif %}
+                                {% include "includes/permission_checkboxes.html" %}
+                            </fieldset>
+                        {% elif field.name == 'members' %}
+                            <fieldset class="attention-entry-field attention-entry-field-full" data-member-picker>
+                                <legend class="form-label">Miembros</legend>
+                                <label for="group-member-search">Buscar por nombre o usuario</label>
+                                <input class="form-control" id="group-member-search" type="search" data-member-search autocomplete="off">
+                                <div class="group-member-options">
+                                    {% for checkbox in field %}
+                                        <div class="form-check" data-member-option>
+                                            {{ checkbox.tag }}
+                                            <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                                        </div>
+                                    {% empty %}
+                                        <p class="text-muted">No hay funcionarios disponibles.</p>
+                                    {% endfor %}
+                                </div>
+                                {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                            </fieldset>
+                        {% else %}
                         <div class="attention-entry-field{% if field.name == 'description' or field.name == 'action_description' or field.name == 'permissions' or field.name == 'members' %} attention-entry-field-full{% endif %}">
                             <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
                             {{ field }}
                             {% if field.help_text %}<p class="attention-entry-hint">{{ field.help_text }}</p>{% endif %}
                             {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
+                        {% endif %}
                     {% endfor %}
                     {% if form_mode == 'edit' %}
                         <div class="attention-entry-field">

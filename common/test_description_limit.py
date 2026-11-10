@@ -1,6 +1,5 @@
 """
-Endurecimiento de los mantenedores: límite de 500 caracteres en las descripciones (Ítems, Roles y
-Tipo de Atención), nombres de usuario con los caracteres de auth.User, e identificadores
+Endurecimiento de los mantenedores: límites de las descripciones de Ítems, Roles y Tipo de Atención, nombres de usuario con los caracteres de auth.User, e identificadores
 inexistentes, enormes, negativos o no numéricos en las URLs, que responden 404 y nunca 500.
 """
 
@@ -74,45 +73,33 @@ class DescriptionLimitFormTests(TestCase):
             ),
         }
 
-    def test_500_characters_are_accepted(self):
-        for name, form in self.build_forms("d" * 500).items():
-            with self.subTest(form=name):
+    def test_description_limits_match_browser_and_server(self):
+        limits = {"Ítem": 200, "Tipo de Atención": 500, "Rol": 200}
+        for name, limit in limits.items():
+            with self.subTest(form=name, limit=limit):
+                text = ("a" * 19 + "\r\n") * (limit // 20 - 1) + "a" * 20
+                form = self.build_forms(text)[name]
                 self.assertTrue(form.is_valid(), form.errors)
-                self.assertEqual(form.cleaned_data["description"], "d" * 500)
-
-    def test_501_characters_are_rejected(self):
-        for name, form in self.build_forms("d" * 501).items():
-            with self.subTest(form=name):
-                self.assertFalse(form.is_valid())
-                self.assertIn("description", form.errors)
-
-    def test_crlf_text_within_the_browser_limit_is_accepted(self):
-        text = "\r\n".join(["linea"] * 83)  # 83 * 5 + 82 = 497 caracteres.
-        for name, form in self.build_forms(text).items():
-            with self.subTest(form=name):
-                self.assertTrue(form.is_valid(), form.errors)
-
-    def test_textarea_renders_maxlength(self):
-        for name, form in self.build_forms("").items():
-            with self.subTest(form=name):
-                self.assertIn('maxlength="500"', str(form["description"]))
+                self.assertEqual(form.cleaned_data["description"], text)
+                self.assertIn(f'maxlength="{limit}"', str(form["description"]))
+                self.assertIn("description", self.build_forms(text + "a")[name].errors)
 
     def test_create_views_render_maxlength_in_the_modal(self):
         self.client.force_login(self.admin)
-        for route in ("item_create", "role_create", "attention_type_create"):
+        for route, limit in (("item_create", 200), ("role_create", 200), ("attention_type_create", 500)):
             with self.subTest(route=route):
                 response = self.client.get(reverse(route), **MODAL_HEADERS)
-                self.assertContains(response, 'maxlength="500"')
+                self.assertContains(response, f'maxlength="{limit}"')
 
-    def test_item_view_rejects_501_characters_without_saving(self):
+    def test_item_view_rejects_201_characters_without_saving(self):
         self.client.force_login(self.admin)
         response = self.client.post(
             reverse("item_create"),
-            {"item_name": "Ítem Largo", "description": "x" * 501, "is_active": "True"},
+            {"item_name": "Ítem Largo", "description": "x" * 201, "is_active": "True"},
             **MODAL_HEADERS,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "no puede superar los 500 caracteres")
+        self.assertContains(response, "no puede superar los 200 caracteres")
         self.assertFalse(Item.objects.filter(item_name="Ítem Largo").exists())
 
 
@@ -250,26 +237,25 @@ class OfficialFieldRulesTests(TestCase):
 
     def official_form(self, **overrides):
         data = {
-            "full_name": "María José O'Ryan-Pérez",
+            "full_name": "María José Núñez Pérez",
             "national_id": "12.345.678-5",
             "email": "maria.jose@example.test",
-            "phone": "+56 9 1234 5678",
+            "phone": "56912345678",
             "status": Official.Status.ACTIVE,
         }
         data.update(overrides)
         return OfficialForm(data=data)
 
     def test_valid_names_are_accepted_and_spaces_collapsed(self):
-        form = self.official_form(full_name="  María   José O'Ryan-Pérez  ")
+        form = self.official_form(full_name="  María   José Núñez Pérez  ")
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["full_name"], "María José O'Ryan-Pérez")
+        self.assertEqual(form.cleaned_data["full_name"], "María José Núñez Pérez")
 
-    def test_abbreviations_with_a_period_are_accepted(self):
+    def test_abbreviations_with_a_period_are_rejected(self):
         for name in ("Ma. José Rojas", "J. Pablo Díaz", "Juan Pablo Jr.", "M. J. O'Ryan"):
             with self.subTest(name=name):
                 form = self.official_form(full_name=name)
-                self.assertTrue(form.is_valid(), form.errors)
-                self.assertEqual(form.cleaned_data["full_name"], name)
+                self.assertIn("full_name", form.errors)
 
     def test_names_with_digits_or_symbols_are_rejected(self):
         for name in ("Juan 2", "Juan_Pérez", "<b>Juan</b>", "Juan -- Pérez", "-Juan", "Juan > Pedro",
@@ -280,11 +266,11 @@ class OfficialFieldRulesTests(TestCase):
                 self.assertIn("full_name", form.errors)
 
     def test_phone_formats(self):
-        for phone in ("+56912345678", "+56 9 1234 5678", "(51) 222 3344", "512223344", "22223333", ""):
+        for phone in ("56912345678", "512223344", "22223333", ""):
             with self.subTest(phone=phone):
                 form = self.official_form(phone=phone)
                 self.assertTrue(form.is_valid(), form.errors)
-        for phone in ("1234567", "+56 9 1234 5678 90123", "912345678 ext 2", "+56-9-abc", "56+912345678"):
+        for phone in ("1234567", "+56912345678", "+56 9 1234 5678", "(51) 222 3344", "+56 9 1234 5678 90123", "912345678 ext 2", "+56-9-abc", "56+912345678"):
             with self.subTest(phone=phone):
                 form = self.official_form(phone=phone)
                 self.assertFalse(form.is_valid())

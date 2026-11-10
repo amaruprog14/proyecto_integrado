@@ -12,23 +12,26 @@ from django.db.models.signals import pre_save, post_save, pre_delete, post_delet
 from django.dispatch import receiver
 
 from accounts.models import Official, Delegation, Role, Area, Position, GroupProfile, Territory, ServiceRecipient
-from activities.models import Activity, SocialAttention
+from activities.models import Activity, ClientRequest, SocialAttention
 from configuration.models import Item, Period, AttentionType, SubattentionType, ServiceType
 from common.scopes import current_permission
 
 logger = logging.getLogger(__name__)
 MODELS = dict(territory=Territory, activity=Activity, official=Official, delegation=Delegation, user=get_user_model(),
     role=Role, area=Area, position=Position, group=Group, period=Period,
-    item=Item, attention_type=AttentionType, subattention_type=SubattentionType)
+    item=Item, attention_type=AttentionType, subattention_type=SubattentionType, staff_request=ClientRequest)
 ROUTES = dict(territory='territory_maintainer', activity='activity_maintainer', official='official_maintainer',
     delegation='delegation_list', user='user_maintainer', role='role_list', area='area_maintainer',
     position='position_maintainer', group='group_maintainer', period='period_maintainer',
-    item='item_maintainer', attention_type='attention_type_maintainer', subattention_type='subattention_type_maintainer')
+    item='item_maintainer', attention_type='attention_type_maintainer', subattention_type='subattention_type_maintainer',
+    staff_request='staff_client_requests')
 _readers = Counter()
 _lock = Lock()
 
 
 def permission(key):
+    if key == 'staff_request':
+        return 'activities.view_socialattention'
     model = MODELS[key]
     return f'{model._meta.app_label}.view_{model._meta.model_name}'
 
@@ -69,6 +72,9 @@ def queryset(key, user):
     # No heredar el permiso de escritura ni el contexto del actor que guardó.
     token = current_permission.set(permission(key))
     try:
+        if key == 'staff_request':
+            from activities.client_portal import staff_requests
+            return staff_requests(user, permission(key))
         if key == 'official':
             return scoped_officials(user)
         if key == 'user':
@@ -132,7 +138,9 @@ def affected(instance):
     related = {
         Official: (('activity', Activity, 'official_id'),),
         Territory: (('user', get_user_model(), 'service_recipient__territory_id'),),
-        Delegation: (('territory', Territory, 'delegation_id'), ('official', Official, 'delegation_id'), ('activity', Activity, 'official__delegation_id')),
+        Delegation: (('territory', Territory, 'delegation_id'), ('official', Official, 'delegation_id'),
+                     ('activity', Activity, 'official__delegation_id'), ('staff_request', ClientRequest, 'delegation_id')),
+        ServiceRecipient: (('staff_request', ClientRequest, 'recipient_id'),),
         Area: (('official', Official, 'area_id'),),
         Position: (('official', Official, 'position_id'),),
         Item: (('activity', Activity, 'item_id'),),

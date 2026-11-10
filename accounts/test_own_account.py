@@ -143,27 +143,27 @@ class OwnNameEditTests(TestCase):
 
     def test_name_and_email_are_saved_in_the_profile_and_the_user(self):
         response = self.post_profile(
-            first_name="  María   José ", last_name="O'Ryan-Pérez", email="mj.oryan@example.test"
+            first_name="  María   José ", last_name="Núñez Pérez", email="mj.oryan@example.test"
         )
 
         self.assertRedirects(response, reverse("my_profile"))
         self.official.refresh_from_db()
         self.user.refresh_from_db()
-        self.assertEqual(self.official.full_name, "María José O'Ryan-Pérez")
+        self.assertEqual(self.official.full_name, "María José Núñez Pérez")
         self.assertEqual(self.official.email, "mj.oryan@example.test")
         self.assertEqual(
             (self.user.first_name, self.user.last_name, self.user.email),
-            ("María José", "O'Ryan-Pérez", "mj.oryan@example.test"),
+            ("María José", "Núñez Pérez", "mj.oryan@example.test"),
         )
         log = AuditLog.objects.get(action="Actualización del perfil propio")
         self.assertIn("Nombre: Ana Rojas", log.previous_value)
-        self.assertIn("Nombre: María José O'Ryan-Pérez", log.new_value)
+        self.assertIn("Nombre: María José Núñez Pérez", log.new_value)
 
-    def test_abbreviations_ñ_and_tildes_are_accepted(self):
-        self.post_profile(first_name="Ma. Ñuñoa", last_name="Muñoz Jr.")
+    def test_ñ_and_tildes_are_accepted(self):
+        self.post_profile(first_name="María Ñuñoa", last_name="Muñoz")
 
         self.official.refresh_from_db()
-        self.assertEqual(self.official.full_name, "Ma. Ñuñoa Muñoz Jr.")
+        self.assertEqual(self.official.full_name, "María Ñuñoa Muñoz")
 
     def test_invalid_names_are_rejected_without_saving(self):
         cases = {

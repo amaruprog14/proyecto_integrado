@@ -7,17 +7,20 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import path, reverse_lazy
+from django.urls import path, reverse, reverse_lazy
 from django.utils.cache import add_never_cache_headers
 from django.views.decorators.cache import never_cache
-from django.views.generic import FormView, TemplateView
+from django.views.generic import FormView, TemplateView, View
 
 from accounts.forms import OwnOfficialProfileForm, profile_snapshot
 from accounts.models import Delegation, Role, ServiceRecipient, Territory
 from common.pagination import ClampedPaginationMixin
 from common.access import ProtectedViewMixin
+from common.exports import xlsx_response
+from common.list_state import ordered, positive
 from common.scopes import delegation_ids, permission_scope
 from common.text import clean_description_text, describe_changes, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
@@ -260,13 +263,44 @@ class RequestReviewForm(forms.ModelForm):
         return data
 
 
-class StaffRequestListView(ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
+class StaffRequestQueryMixin:
     permission_required = "activities.view_socialattention"
+
+    def filtered_requests(self):
+        queryset = staff_requests(self.request.user, self.permission_required)
+        status = self.request.GET.get("status")
+        if status in ClientRequest.Status.values:
+            queryset = queryset.filter(status=status)
+        query = self.request.GET.get("q")
+        if query:
+            match = (Q(recipient__full_name__icontains=query) | Q(subject__icontains=query)
+                     | Q(delegation__delegation_name__icontains=query))
+            if query.upper().startswith("SOL-") and query[4:].isascii() and query[4:].isdigit():
+                folio = positive(query[4:], 0)
+                if folio:
+                    match |= Q(pk=folio)
+            queryset = queryset.filter(match)
+        return queryset
+
+
+class StaffRequestListView(StaffRequestQueryMixin, ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
     template_name = "client/staff_list.html"
 
     def get_context_data(self, **kwargs):
-        return {**super().get_context_data(**kwargs), "page_obj": self.clamp_page(
-            staff_requests(self.request.user, self.permission_required))}
+        context = super().get_context_data(**kwargs)
+        page = self.clamp_page(self.filtered_requests())
+        return {**context, "page_obj": page, "total": page.paginator.count,
+                "query": self.request.GET["q"], "selected_status": self.request.GET["status"],
+                "statuses": ClientRequest.Status.choices, "export_url": reverse("staff_client_requests_export")}
+
+
+class StaffRequestExportView(StaffRequestQueryMixin, ProtectedViewMixin, View):
+    def get(self, request):
+        queryset = ordered(self.filtered_requests(), "staff_request", request.GET)
+        rows = ((item.identifier, str(item.recipient), item.subject, str(item.delegation),
+                 item.get_status_display()) for item in queryset.iterator())
+        return xlsx_response("solicitudes-ciudadanas", ("Folio", "Solicitante", "Motivo", "Delegación", "Estado"),
+                             rows, sheet_title="Solicitudes ciudadanas")
 
 
 class StaffRequestReviewView(ProtectedViewMixin, FormView):
@@ -314,5 +348,6 @@ urlpatterns = [
     path("perfil/", ClientProfileView.as_view(), name="client_profile"),
     path("perfil/foto/", ClientPhotoView.as_view(), name="client_profile_photo"),
     path("gestion/", StaffRequestListView.as_view(), name="staff_client_requests"),
+    path("gestion/exportar/", StaffRequestExportView.as_view(), name="staff_client_requests_export"),
     path("gestion/<int:pk>/", StaffRequestReviewView.as_view(), name="staff_client_request_review"),
 ]

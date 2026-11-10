@@ -56,9 +56,9 @@
                     <tbody>
                         {% for item in items %}
                             <tr data-status="{% if item.is_active %}ACTIVE{% else %}INACTIVE{% endif %}">
-                                <td>{{ item.code }}</td>
-                                <td>{{ item.item_name }}</td>
-                                <td>{{ item.description|default:"—"|truncatechars:90 }}</td>
+                                <td><span class="maintainer-cell-text" title="{{ item.code }}">{{ item.code }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ item.item_name }}">{{ item.item_name }}</span></td>
+                                <td><span class="maintainer-cell-text" title="{{ item.description|default:"—" }}">{{ item.description|default:"—" }}</span></td>
                                 <td>
                                     <span class="maintainer-status-pill{% if item.is_active %} is-active{% else %} is-inactive{% endif %}">{% if item.is_active %}Activo{% else %}Inactivo{% endif %}</span>
                                 </td>

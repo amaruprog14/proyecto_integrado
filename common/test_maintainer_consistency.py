@@ -72,7 +72,7 @@ class MaintainerDataTests(TestCase):
         self.assertEqual(form.save().commune, "La Serena")
 
     def test_lengths_are_enforced_without_truncation(self):
-        data = dict(delegation_name="Á" * 100, address="C" * 100, status="ACTIVE")
+        data = dict(delegation_name="Á" * 50, address="C" * 50, status="ACTIVE")
         self.assertTrue(DelegationForm(data).is_valid())
         data["delegation_name"] += "a"
         self.assertIn("delegation_name", DelegationForm(data).errors)

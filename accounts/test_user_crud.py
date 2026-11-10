@@ -106,7 +106,7 @@ class UserCrudAdminTests(TestCase):
                 has_official="on",
                 full_name="Nuevo Funcionario",
                 national_id="12.345.678-5",
-                phone="+56911111111",
+                phone="56911111111",
                 area=area.pk,
                 position=position.pk,
                 delegation=delegation.pk,

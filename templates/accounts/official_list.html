@@ -50,7 +50,7 @@
                                     <td>
                                         {% if forloop.last and record.status %}
                                             <span class="maintainer-status-pill{% if record.status_is_active %} is-active{% else %} is-inactive{% endif %}">{{ value }}</span>
-                                        {% else %}{{ value }}{% endif %}
+                                        {% else %}<span class="maintainer-cell-text" title="{{ value }}">{{ value }}</span>{% endif %}
                                     </td>
                                 {% endfor %}
                                 <td class="maintainer-actions delegation-actions"><div class="delegation-action-group">

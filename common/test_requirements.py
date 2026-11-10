@@ -6,10 +6,11 @@ en las búsquedas (SEG-03).
 """
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
-from accounts.models import Delegation, Official, Role
+from accounts.models import Area, Delegation, Official, Position, Role, Territory
 from activities.models import SocialAttention
 from configuration.models import AttentionType, AuditLog, Item, SubattentionType
 
@@ -87,6 +88,7 @@ class FieldLengthAndRelationTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_superuser("limites", "limites@example.test", PASSWORD)
         cls.attention_type = AttentionType.objects.create(name="Tipo Base")
+        cls.delegation = Delegation.objects.create(delegation_name="Delegación base", address="Calle base")
 
     def setUp(self):
         self.client.force_login(self.admin)
@@ -94,15 +96,21 @@ class FieldLengthAndRelationTests(TestCase):
     def cases(self):
         """(ruta, campo, longitud máxima, datos base, modelo, campo del modelo)."""
         return (
-            ("delegation_create", "delegation_name", Delegation._meta.get_field("delegation_name").max_length,
+            ("delegation_create", "delegation_name", 50,
              {"address": "Calle 1", "commune": "La Serena", "status": "ACTIVE"}, Delegation, "delegation_name"),
-            ("role_create", "role_name", 100,
+            ("role_create", "role_name", 30,
              {"scope": Role.Scope.DELEGATION, "is_active": "True",
               "permissions": [self.view_activity_permission()]}, Role, "role_name"),
-            ("item_create", "item_name", 150, {"is_active": "True"}, Item, "item_name"),
-            ("attention_type_create", "name", 150, {"is_active": "True"}, AttentionType, "name"),
-            ("subattention_type_create", "name", 150,
+            ("item_create", "item_name", 50, {"is_active": "True"}, Item, "item_name"),
+            ("attention_type_create", "name", 50, {"is_active": "True"}, AttentionType, "name"),
+            ("subattention_type_create", "name", 50,
              {"attention_type": self.attention_type.pk, "is_active": "True"}, SubattentionType, "name"),
+            ("position_create", "position_name", 50, {"is_active": "True"}, Position, "position_name"),
+            ("territory_create", "territory_name", 50,
+             {"delegation": self.delegation.pk, "is_active": "True"}, Territory, "territory_name"),
+            ("area_create", "area_name", 50, {"is_active": "True"}, Area, "area_name"),
+            ("group_create", "name", 50, {"scope": Role.Scope.DELEGATION, "is_active": "True"}, Group, "name"),
+            ("item_create", "code", 25, {"item_name": "Ítem con código manual", "is_active": "True"}, Item, "code"),
         )
 
     @staticmethod
@@ -128,7 +136,7 @@ class FieldLengthAndRelationTests(TestCase):
     def test_username_length_is_validated_on_the_server(self):
         response = self.client.post(
             reverse("user_create"),
-            {"username": "u" * 151, "email": "largo@example.test", "password1": PASSWORD, "password2": PASSWORD,
+            {"username": "u" * 51, "email": "largo@example.test", "password1": PASSWORD, "password2": PASSWORD,
              "status": Official.Status.ACTIVE},
         )
 

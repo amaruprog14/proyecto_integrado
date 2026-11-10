@@ -15,7 +15,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261108-actions-row" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261109-maintainer-fields" />
         <link rel="stylesheet" href="{% static 'css/client-portal.css' %}">
         {% block extra_head %}{% endblock %}
     </head>
@@ -322,7 +322,7 @@
         {% endif %}
         <script src="{% static 'js/chilean-rut.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
-        <script src="{% static 'js/field-validation.js' %}" defer></script>
+        <script src="{% static 'js/field-validation.js' %}?v=20261109-maintainer-fields" defer></script>
         <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
         {% if can_select_active_delegation %}
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}

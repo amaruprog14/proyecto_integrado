@@ -15,7 +15,7 @@ Mantenedor de Roles: formulario y reglas que lo mantienen coherente con el CRUD 
   serlo (ni reactivarse como tal) si algún funcionario lo tiene junto con otro rol vigente.
 """
 
-from common.field_validation import clean_catalog_name, configure_text_widgets
+from common.field_validation import LimitedTextFieldsMixin, clean_catalog_name, configure_text_widgets
 
 import unicodedata
 
@@ -240,11 +240,13 @@ class PermissionMultipleChoiceField(forms.ModelMultipleChoiceField):
         return f"{label} (privilegiado)" if obj.pk in self.privileged_ids else label
 
 
-class RoleForm(forms.ModelForm):
+class RoleForm(LimitedTextFieldsMixin, forms.ModelForm):
     """
     Alta y edición de roles. El estado solo se elige al crear; después se cambia con
     Desactivar/Reactivar, que muestran a cuántos funcionarios afecta.
     """
+
+    text_limits = {"role_name": 30, "description": 200}
 
     is_active = forms.TypedChoiceField(
         label="Estado",

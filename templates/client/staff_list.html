@@ -1,3 +1,84 @@
-{% extends 'base.html' %}
-{% load list_headers %}
-{% block content %}<section class="maintainer-content"><header class="maintainer-heading"><div><p class="maintainer-breadcrumb">Gestión municipal / Solicitudes ciudadanas</p><h1>Solicitudes ciudadanas</h1><p>Solicitudes de las delegaciones autorizadas para tu perfil.</p></div></header><div class="table-responsive"><table class="table maintainer-table"><thead><tr>{% sort_header "Folio" 0 %}{% sort_header "Solicitante" 1 %}{% sort_header "Motivo" 2 %}{% sort_header "Delegación" 3 %}{% sort_header "Estado" 4 %}{% sort_header "Acciones" 5 %}</tr></thead><tbody>{% for item in page_obj %}<tr><td>{{ item.identifier }}</td><td>{{ item.recipient }}</td><td>{{ item.subject }}</td><td>{{ item.delegation }}</td><td>{% include 'client/status.html' %}</td><td class="maintainer-actions delegation-actions"><div class="delegation-action-group">{% if perms.activities.change_socialattention %}<a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'staff_client_request_review' item.pk %}" aria-label="Ver {{ item.identifier }}" data-tooltip="Ver y responder">{% include 'includes/action_icon.html' with action='Ver' %}</a>{% endif %}</div></td></tr>{% empty %}<tr><td colspan="6">No hay solicitudes ciudadanas disponibles.</td></tr>{% endfor %}</tbody></table></div>{% include 'client/pagination.html' %}</section>{% endblock %}
+{% extends "base.html" %}
+{% load list_headers static %}
+
+{% block title %}Solicitudes ciudadanas · SGR{% endblock %}
+
+{% block content %}
+<section class="maintainer-content staff-request-list">
+    <header class="maintainer-heading">
+        <div>
+            <p class="maintainer-breadcrumb">Gestión municipal / Solicitudes ciudadanas</p>
+            <h1>Solicitudes ciudadanas</h1>
+            <p>Solicitudes de las delegaciones autorizadas para tu perfil.</p>
+        </div>
+    </header>
+
+    <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-live-search data-loading data-loading-target="#staff-request-table">
+        <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
+        <div class="maintainer-controls">
+            <div class="input-group">
+                <input class="form-control maintainer-search" id="maintainer-search" type="search" name="q" maxlength="200" value="{{ query }}" placeholder="Buscar por folio, solicitante, motivo o delegación" autocomplete="off">
+                <button class="btn btn-primary" type="submit" data-loading-text="Buscando…">Buscar</button>
+            </div>
+            <a class="btn maintainer-export-button" data-export-base="{{ export_url }}" href="{{ export_url }}?{{ querystring }}">Exportar a Excel</a>
+            <select class="form-select maintainer-status-filter" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
+                <option value="">Todos los estados</option>
+                {% for value, label in statuses %}
+                    <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <label class="maintainer-page-size-label" for="maintainer-page-size">Registros por página</label>
+        <select class="form-select maintainer-page-size" id="maintainer-page-size" name="page_size" data-swal-autosubmit>
+            {% for size in page_sizes %}
+                <option value="{{ size }}"{% if page_size == size %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+        </select>
+        {% include "includes/list_sort_state.html" %}
+    </form>
+    <p class="maintainer-live-status" data-live-status role="status"></p>
+
+    <div class="table-responsive maintainer-table-wrap" id="staff-request-table" data-live-region="table">
+        <table class="table maintainer-table">
+            <thead>
+                <tr>
+                    {% sort_header "Folio" 0 %}
+                    {% sort_header "Solicitante" 1 %}
+                    {% sort_header "Motivo" 2 %}
+                    {% sort_header "Delegación" 3 %}
+                    {% sort_header "Estado" 4 %}
+                    {% sort_header "Acciones" 5 %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in page_obj %}
+                    <tr>
+                        <td><span class="maintainer-cell-text" title="{{ item.identifier }}">{{ item.identifier }}</span></td>
+                        <td><span class="maintainer-cell-text" title="{{ item.recipient }}">{{ item.recipient }}</span></td>
+                        <td><span class="maintainer-cell-text" title="{{ item.subject }}">{{ item.subject }}</span></td>
+                        <td><span class="maintainer-cell-text" title="{{ item.delegation }}">{{ item.delegation }}</span></td>
+                        <td>{% include "client/status.html" %}</td>
+                        <td class="maintainer-actions delegation-actions">
+                            <div class="delegation-action-group">
+                                {% if perms.activities.change_socialattention %}
+                                    <a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'staff_client_request_review' item.pk %}" aria-label="Ver {{ item.identifier }}" data-tooltip="Ver y responder">{% include "includes/action_icon.html" with action="Ver" %}</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="text-center">
+                        {% if query or selected_status %}No hay solicitudes que coincidan con la búsqueda o el filtro aplicado.
+                        {% else %}No hay solicitudes ciudadanas disponibles.{% endif %}
+                    </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "includes/live_pagination.html" %}
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
+{% endblock %}

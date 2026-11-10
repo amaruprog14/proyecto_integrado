@@ -1,4 +1,4 @@
-from common.field_validation import clean_catalog_name, clean_code, configure_text_widgets
+from common.field_validation import LimitedTextFieldsMixin, clean_catalog_name, clean_code, configure_text_widgets
 import re
 
 from django import forms
@@ -53,7 +53,7 @@ def catalog_snapshot(record):
     return attention_type_snapshot(record)
 
 
-class ItemForm(forms.ModelForm):
+class ItemForm(LimitedTextFieldsMixin, forms.ModelForm):
     """
     Alta y edición de ítems.
 
@@ -71,6 +71,8 @@ class ItemForm(forms.ModelForm):
         coerce=lambda value: value == "True",
         widget=forms.Select(attrs={"class": "form-select"}),
     )
+
+    text_limits = {"code": CODE_MAX_LENGTH, "item_name": 50, "description": 200}
 
     class Meta:
         model = Item
@@ -157,7 +159,9 @@ class ItemForm(forms.ModelForm):
         return clean_description_text(self.cleaned_data.get("description"))
 
 
-class AttentionTypeForm(forms.ModelForm):
+class AttentionTypeForm(LimitedTextFieldsMixin, forms.ModelForm):
+    text_limits = {"name": 50}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         configure_text_widgets(self)
@@ -220,7 +224,9 @@ class AttentionTypeForm(forms.ModelForm):
         return cleaned_data
 
 
-class SubattentionTypeForm(forms.ModelForm):
+class SubattentionTypeForm(LimitedTextFieldsMixin, forms.ModelForm):
+    text_limits = {"name": 50}
+
     class Meta:
         model = SubattentionType
         fields = ("name", "attention_type", "is_active")
