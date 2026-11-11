@@ -121,10 +121,24 @@ class ClientPortalTests(TestCase):
                                            email="reviewer@example.test", delegation=self.delegation)
         role = Role.objects.create(role_name="Revisión ciudadana", scope=Role.Scope.DELEGATION)
         role.permissions.add(*Permission.objects.filter(content_type__app_label="activities",
-            codename__in=["view_socialattention", "change_socialattention"]))
+            codename__in=["view_socialattention", "change_socialattention", "view_activity"]))
         official.roles.add(role)
         self.client.force_login(user)
         url = reverse("staff_client_request_review", args=[item.pk])
+        listing = reverse("staff_client_requests")
+        for page in (listing, url, listing):
+            self.assertContains(self.client.get(page),
+                f'<a class="maintainer-sidebar-link is-active" href="{listing}" aria-current="page">Solicitudes ciudadanas</a>',
+                html=True, count=1)
+        activities = reverse("activity_maintainer")
+        response = self.client.get(activities)
+        self.assertContains(response,
+            f'<a class="maintainer-sidebar-link is-active" href="{activities}" aria-current="page">Actividades</a>',
+            html=True, count=1)
+        self.assertContains(response,
+            f'<a class="maintainer-sidebar-link" href="{listing}">Solicitudes ciudadanas</a>',
+            html=True, count=1)
+
         self.assertEqual(self.client.post(url, {"status": "RESOLVED", "response": ""}).status_code, 200)
         self.assertEqual(self.client.post(url, {"status": "RESOLVED", "response": "Tu consulta fue atendida."}).status_code, 302)
         item.refresh_from_db()

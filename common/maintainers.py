@@ -13,6 +13,7 @@ from common.list_state import ordered, query_params
 from accounts.models import Position, Area, GroupProfile, Official, Role, Territory
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
+from common.modal_forms import add_form_success, is_modal_request
 from common.text import normalize_spaces, describe_changes
 from common.scopes import permission_scope, delegation_ids
 from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
@@ -218,7 +219,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
     def get(self, request, pk=None):
         context = self.context()
         if self.operation in ("create", "update"):
-            if request.headers.get("X-Modal-Request") != "true":
+            if not is_modal_request(request):
                 from django.http import Http404
                 raise Http404
             obj = self.object(pk) if pk else None
@@ -371,8 +372,11 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 return render(request, "maintainers/form.html", dict(self.context(), form=form, current_status=state(obj)[1] if obj else ""))
             messages.error(request, "; ".join(error.messages))
             return redirect(self.url("list"))
-        messages.success(request, "Registro guardado correctamente.")
-        if request.headers.get("X-Modal-Request") == "true":
+        if self.operation in ("create", "update"):
+            add_form_success(request, "Registro guardado correctamente.")
+        else:
+            messages.success(request, "Registro guardado correctamente.")
+        if is_modal_request(request):
             return HttpResponse(status=204)
         return redirect(self.url("list"))
 

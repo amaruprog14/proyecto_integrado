@@ -146,8 +146,10 @@ h3 {
 /* ---------- Estructura con sesión: menú lateral, barra superior y contenido ---------- */
 
 .app-shell {
+    --app-gutter: clamp(1rem, 2.3vw, 2.5rem);
     display: flex;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 .app-sidebar {
@@ -296,6 +298,7 @@ h3 {
     min-width: 0;
     flex: 1 1 auto;
     flex-direction: column;
+    overflow-wrap: anywhere;
 }
 
 .app-topbar {
@@ -304,13 +307,14 @@ h3 {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem 1.5rem;
-    padding: 0.75rem 2rem;
+    padding: 0.75rem var(--app-gutter);
     border-bottom: 1px solid var(--color-border);
     background-color: var(--color-surface);
 }
 
 .municipal-context {
     display: flex;
+    min-width: 0;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem 1.75rem;
@@ -318,9 +322,14 @@ h3 {
 
 .municipal-context-item {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 0.65rem;
     line-height: 1.25;
+}
+
+.municipal-context-item > :last-child {
+    min-width: 0;
 }
 
 .municipal-context-icon {
@@ -364,8 +373,9 @@ h3 {
 }
 
 .active-delegation-switch select {
-    width: auto;
-    min-width: min(16rem, 60vw);
+    width: min(100%, 24rem);
+    min-width: 0;
+    flex: 1 1 12rem;
     border-color: var(--color-neutral-20);
     background-color: var(--color-surface);
     color: var(--color-text);
@@ -427,10 +437,9 @@ h3 {
 
 .app-content {
     width: 100%;
-    max-width: 78rem;
     flex: 1 1 auto;
     box-sizing: border-box;
-    padding: 2.25rem 2rem 3rem;
+    padding: clamp(1.25rem, 3vw, 2.25rem) var(--app-gutter) 3rem;
 }
 
 .app-footer {
@@ -438,7 +447,7 @@ h3 {
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 0.5rem 1.5rem;
-    padding: 1.1rem 2rem;
+    padding: 1.1rem var(--app-gutter);
     border-top: 1px solid var(--color-border);
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
@@ -456,16 +465,17 @@ h3 {
 /* ---------- Estructura sin sesión: panel institucional + formulario ---------- */
 
 .auth-shell {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     min-height: 100vh;
+    min-height: 100dvh;
     background-color: var(--color-surface);
+    overflow-wrap: anywhere;
 }
 
 .auth-brand {
     position: relative;
     display: flex;
-    flex: 1 1 30rem;
     flex-direction: column;
     justify-content: space-between;
     gap: 3rem;
@@ -491,6 +501,7 @@ h3 {
 .auth-brand-logo {
     display: block;
     width: 13.75rem;
+    max-width: 100%;
     height: 3.5rem;
     object-fit: contain;
     object-position: left center;
@@ -570,7 +581,7 @@ h3 {
 
 .auth-main {
     display: flex;
-    flex: 1 1 32rem;
+    min-width: 0;
     flex-direction: column;
     justify-content: center;
     padding: 3rem 1.5rem;
@@ -1009,7 +1020,7 @@ h3 {
 
 .home-tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr));
     gap: 1rem;
 }
 
@@ -1159,7 +1170,7 @@ h3 {
     align-items: flex-end;
     gap: 0.75rem 1rem;
     margin: 0;
-    padding: 1rem 1.25rem;
+    padding: 1rem clamp(0.75rem, 2vw, 1.25rem);
     border: 1px solid var(--color-border);
     border-bottom: 0;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
@@ -1176,15 +1187,28 @@ h3 {
 }
 
 .maintainer-controls {
-    display: grid;
+    display: flex;
     min-width: 0;
     flex: 1 1 36rem;
-    grid-template-columns: minmax(12rem, 1fr) auto minmax(10rem, 0.4fr);
+    flex-wrap: wrap;
     gap: 0.75rem;
 }
 
-.maintainer-controls.has-no-status-filter {
-    grid-template-columns: minmax(12rem, 1fr) auto;
+.maintainer-controls > .input-group,
+.maintainer-controls > .form-control {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 12rem;
+}
+
+.maintainer-controls > .form-select {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 10rem;
+}
+
+.maintainer-controls > .btn {
+    flex-shrink: 0;
 }
 
 .maintainer-tools .form-control,
@@ -1239,10 +1263,20 @@ h3 {
 }
 
 .maintainer-table-wrap {
+    --action-size: 2.75rem;
+    --action-gap: 0.375rem;
+    --table-cell-padding: clamp(0.5rem, 1.25vw, 1.25rem);
+    max-width: 100%;
     margin: 0;
     border: 1px solid var(--color-border);
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background-color: var(--color-surface);
+    scroll-padding-inline: 0.25rem calc(3 * var(--action-size) + 2 * var(--action-gap) + 2 * var(--table-cell-padding) + 0.25rem);
+}
+
+.table-responsive[tabindex]:focus-visible {
+    outline: 3px solid var(--color-primary-light);
+    outline-offset: 2px;
 }
 
 .maintainer-table {
@@ -1250,8 +1284,13 @@ h3 {
     background-color: var(--color-surface);
 }
 
+.maintainer-table-wrap .maintainer-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
 .maintainer-table thead th {
-    padding: 0.8rem 1.25rem;
+    padding: 0.8rem var(--table-cell-padding, 1.25rem);
     border-top: 1px solid var(--color-border);
     border-bottom: 1px solid var(--color-border);
     background-color: var(--color-neutral-05);
@@ -1260,11 +1299,14 @@ h3 {
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    white-space: nowrap;
+}
+
+.maintainer-table-wrap th:not(.maintainer-actions) {
+    min-width: 6rem;
 }
 
 .maintainer-table td {
-    padding: 0.85rem 1.25rem;
+    padding: 0.85rem var(--table-cell-padding, 1.25rem);
     border-bottom-color: var(--color-border);
     font-size: var(--font-size-md);
     vertical-align: middle;
@@ -1272,14 +1314,6 @@ h3 {
 
 .maintainer-table tbody tr:last-child td {
     border-bottom: 0;
-}
-
-.maintainer-cell-text {
-    display: block;
-    max-width: min(24rem, 35vw);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .staff-request-list .maintainer-table-footer {
@@ -1310,6 +1344,7 @@ h3 {
 .maintainer-status-pill::before {
     width: 0.4rem;
     height: 0.4rem;
+    flex-shrink: 0;
     border-radius: 50%;
     background-color: currentColor;
     content: "";
@@ -1325,9 +1360,22 @@ h3 {
     color: var(--color-neutral-70);
 }
 
-.maintainer-actions {
-    min-width: 9rem;
+.maintainer-table-wrap .maintainer-table .maintainer-actions {
+    position: sticky;
+    z-index: 1;
+    inset-inline-end: 0;
+    width: 1%;
+    border-inline-start: 1px solid var(--color-border);
+    background-color: var(--color-surface);
     white-space: nowrap;
+}
+
+.maintainer-table-wrap .maintainer-table th.maintainer-actions {
+    background-color: var(--color-neutral-05);
+}
+
+.maintainer-table-wrap .maintainer-table tr:hover td.maintainer-actions {
+    background-color: var(--color-neutral-05);
 }
 
 .maintainer-actions button {
@@ -1345,16 +1393,12 @@ h3 {
     opacity: 0.8;
 }
 
-.delegation-actions {
-    min-width: 19rem;
-}
-
 .delegation-action-group {
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
     width: max-content;
-    gap: 0.55rem;
+    gap: var(--action-gap, 0.375rem);
 }
 
 .delegation-action-group > * {
@@ -1432,8 +1476,8 @@ h3 {
 .delegation-actions .delegation-action.action-icon {
     position: relative;
     display: inline-flex;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: var(--action-size, 2.75rem);
+    height: var(--action-size, 2.75rem);
     align-items: center;
     justify-content: center;
     margin: 0 0.25rem 0 0;
@@ -1463,8 +1507,7 @@ h3 {
     position: absolute;
     z-index: 20;
     bottom: calc(100% + 0.5rem);
-    left: 50%;
-    transform: translateX(-50%);
+    inset-inline-end: 0;
     padding: 0.3rem 0.5rem;
     border-radius: 0.3rem;
     background: #24242a;
@@ -1478,7 +1521,6 @@ h3 {
 }
 .maintainer-actions .action-icon[data-tooltip]:hover::after,
 .maintainer-actions .action-icon[data-tooltip]:focus-visible::after { opacity: 1; }
-.delegation-actions { min-width: 9rem; }
 
 .maintainer-empty {
     margin: 1rem 0 0;
@@ -1573,10 +1615,6 @@ h3 {
 
 /* ---------- Formularios, fichas de detalle y modal ---------- */
 
-.attention-entry {
-    max-width: 68rem;
-}
-
 .attention-entry-heading {
     margin-bottom: 1.5rem;
 }
@@ -1619,7 +1657,7 @@ h3 {
 }
 
 .attention-entry-card {
-    padding: clamp(1.25rem, 3vw, 2rem);
+    padding: clamp(0.875rem, 3vw, 2rem);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     background-color: var(--color-surface);
@@ -1650,7 +1688,12 @@ h3 {
 .attention-entry-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.35rem 1.5rem;
+    gap: 1.25rem clamp(1rem, 2vw, 1.5rem);
+}
+
+.attention-entry-field,
+.attention-entry-card fieldset {
+    min-width: 0;
 }
 
 .attention-entry-field label,
@@ -1675,6 +1718,7 @@ h3 {
 .attention-entry-field .form-control,
 .attention-entry-field .form-select {
     min-height: var(--control-height);
+    max-width: 100%;
 }
 
 .attention-entry-field textarea.form-control {
@@ -1727,7 +1771,8 @@ h3 {
     min-height: 3rem;
     align-items: center;
     justify-content: center;
-    padding: 0 1.4rem;
+    max-width: 100%;
+    padding: 0.5rem clamp(0.75rem, 2vw, 1.4rem);
 }
 
 .attention-entry-cancel {
@@ -1770,6 +1815,11 @@ h3 {
 }
 
 /* Modal de Bootstrap para crear y editar desde los listados. */
+#maintainer-form-modal {
+    --modal-gutter: clamp(1rem, 3vw, 1.75rem);
+    overflow-wrap: anywhere;
+}
+
 #maintainer-form-modal .modal-content {
     overflow: hidden;
     border: 0;
@@ -1778,7 +1828,7 @@ h3 {
 }
 
 #maintainer-form-modal .modal-header {
-    padding: 1.15rem 1.5rem 1.1rem 1.75rem;
+    padding: 1.15rem var(--modal-gutter) 1.1rem;
     border-bottom-color: var(--color-border);
 }
 
@@ -1788,7 +1838,7 @@ h3 {
 }
 
 #maintainer-form-modal .modal-body {
-    padding: 1.5rem 1.75rem 0;
+    padding: 1.5rem var(--modal-gutter) 0;
 }
 
 .modal-backdrop.show {
@@ -1806,8 +1856,8 @@ h3 {
     position: sticky;
     z-index: 2;
     bottom: 0;
-    margin: 1.75rem -1.75rem 0;
-    padding: 1rem 1.75rem;
+    margin: 1.75rem calc(-1 * var(--modal-gutter)) 0;
+    padding: 1rem var(--modal-gutter);
     border-top: 1px solid var(--color-border);
     background-color: var(--color-neutral-05);
 }
@@ -1825,11 +1875,13 @@ h3 {
 .error-shell {
     display: flex;
     min-height: 100vh;
+    min-height: 100dvh;
     flex-direction: column;
+    overflow-wrap: anywhere;
 }
 
 .error-shell-header {
-    padding: 1.25rem 2rem;
+    padding: 1.25rem clamp(1rem, 3vw, 2rem);
     background-color: var(--color-primary-darkest);
     color: var(--color-white);
 }
@@ -1849,7 +1901,7 @@ h3 {
     max-width: 48rem;
     box-sizing: border-box;
     margin: 0 auto;
-    padding: 3rem 1.5rem;
+    padding: clamp(1.5rem, 5vw, 3rem) clamp(1rem, 3vw, 1.5rem);
 }
 
 /* ---------- Pantallas medianas y pequeñas ---------- */
@@ -1896,18 +1948,12 @@ h3 {
         display: none;
     }
 
-    .app-topbar,
-    .app-footer {
-        padding-right: 1rem;
-        padding-left: 1rem;
-    }
-
-    .app-content {
-        padding: 1.5rem 1rem 2.5rem;
+    .auth-shell {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto 1fr;
     }
 
     .auth-brand {
-        flex-basis: 100%;
         gap: 1.5rem;
         padding: 1.5rem;
     }
@@ -1932,6 +1978,7 @@ h3 {
         position: sticky;
         top: 0;
         height: 100vh;
+        height: 100dvh;
         overflow-y: auto;
     }
 
@@ -1941,11 +1988,6 @@ h3 {
 }
 
 @media (max-width: 767.98px) {
-    .maintainer-controls,
-    .maintainer-controls.has-no-status-filter {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
     .maintainer-page-size-label {
         margin-left: 0;
     }
@@ -1956,6 +1998,17 @@ h3 {
 }
 
 @media (max-width: 575.98px) {
+    .maintainer-controls {
+        flex-basis: 100%;
+    }
+
+    .maintainer-controls > .input-group,
+    .maintainer-controls > .form-control,
+    .maintainer-controls > .form-select,
+    .maintainer-controls > .btn {
+        flex-basis: 100%;
+    }
+
     .attention-entry-grid {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -1965,12 +2018,13 @@ h3 {
     }
 
     .attention-entry-actions {
-        flex-direction: column-reverse;
+        flex-direction: column;
     }
 
     .attention-entry-actions .btn,
     .attention-entry-actions form {
         width: 100%;
+        min-width: 0;
     }
 
     .attention-entry-actions form .btn {
@@ -1987,9 +2041,8 @@ h3 {
         gap: 0.75rem;
     }
 
-    .maintainer-modal-form .attention-entry-actions {
-        margin-right: -1.75rem;
-        margin-left: -1.75rem;
+    #maintainer-form-modal .modal-content {
+        border-radius: 0;
     }
 }
 

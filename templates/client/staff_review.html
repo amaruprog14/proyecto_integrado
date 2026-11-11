@@ -1,2 +1,17 @@
 {% extends 'base.html' %}
-{% block content %}<section class="attention-entry-card"><p class="maintainer-breadcrumb">Solicitudes ciudadanas / {{ form.instance.identifier }}</p><h1>{{ form.instance.subject }}</h1><p>{{ form.instance.recipient }} · {{ form.instance.delegation }}</p><div class="mb-4">{{ form.instance.description|linebreaksbr }}</div><form method="post">{% csrf_token %}{{ form.as_p }}<a class="btn attention-entry-cancel" href="{% url 'staff_client_requests' %}">Volver</a><button class="btn btn-primary">Guardar respuesta</button></form></section>{% endblock %}
+{% block content %}
+<section class="attention-entry-card">
+    <p class="maintainer-breadcrumb">Solicitudes ciudadanas / {{ form.instance.identifier }}</p>
+    <h1>{{ form.instance.subject }}</h1>
+    <p>{{ form.instance.recipient }} · {{ form.instance.delegation }}</p>
+    <div class="mb-4">{{ form.instance.description|linebreaksbr }}</div>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="attention-entry-actions">
+            <a class="btn attention-entry-cancel" href="{% url 'staff_client_requests' %}">Volver</a>
+            <button class="btn btn-primary">Guardar respuesta</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

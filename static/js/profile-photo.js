@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cropValue = document.getElementById('id_photo_crop');
     const editor = document.getElementById('profile-crop-editor');
     const source = document.getElementById('profile-crop-image');
+    const cropFrame = source.parentElement;
     const preview = document.getElementById('profile-photo-preview');
     const initials = document.getElementById('profile-photo-initials');
     const canvas = document.getElementById('profile-crop-preview');
@@ -13,12 +14,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalURL = preview.getAttribute('src');
     let cropper = null;
     let objectURL = null;
-    let ready = false;
+    let selection = null;
+    let cropWidth = 0;
+    let resizingCrop = false;
     let pending = false;
     const release = () => {
         cropper?.destroy(); cropper = null;
         if (objectURL) URL.revokeObjectURL(objectURL);
-        objectURL = null; ready = false;
+        objectURL = null; selection = null;
     };
     const squareCrop = rect => {
         const x = Math.max(0, Math.round(rect.x));
@@ -27,10 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
             source.naturalWidth - x, source.naturalHeight - y);
         return { x, y, width: side, height: side };
     };
-    const draw = rect => {
-        if (!source.naturalWidth) return;
-        const square = squareCrop(rect);
-        if (square.width < 1) return;
+    const draw = square => {
+        if (!source.naturalWidth || square.width < 1) return;
         const context = canvas.getContext('2d');
         context.clearRect(0, 0, canvas.width, canvas.height);
         context.fillStyle = '#ffffff';
@@ -38,6 +39,23 @@ document.addEventListener('DOMContentLoaded', () => {
         context.drawImage(source, square.x, square.y, square.width, square.height,
             0, 0, canvas.width, canvas.height);
     };
+    const updateSelection = rect => {
+        if (resizingCrop) return;
+        selection = squareCrop(rect);
+        draw(selection);
+    };
+    new ResizeObserver(() => {
+        const width = cropFrame.getBoundingClientRect().width;
+        if (!cropper || !selection || !width || width === cropWidth) return;
+
+        // Croppr posiciona la selección en píxeles de pantalla. La selección guardada usa la imagen original.
+        cropWidth = width;
+        const scale = width / source.naturalWidth;
+        const side = selection.width * scale;
+        resizingCrop = true;
+        cropper.resizeTo(side, side, [0, 0]).moveTo(selection.x * scale, selection.y * scale);
+        resizingCrop = false;
+    }).observe(cropFrame);
     file.addEventListener('change', () => {
         release(); cropValue.value = ''; recrop.hidden = true;
         const selected = file.files[0];
@@ -56,18 +74,19 @@ document.addEventListener('DOMContentLoaded', () => {
         source.onload = () => {
             if (cropper) return;
             cropper = new Croppr(source, { aspectRatio: 1, startSize: [80, 80, '%'],
-                onInitialize: instance => { ready = true; draw(instance.getValue()); },
-                onCropMove: draw, onCropEnd: draw });
+                onInitialize: instance => {
+                    cropWidth = cropFrame.getBoundingClientRect().width;
+                    updateSelection(instance.getValue());
+                },
+                onCropMove: updateSelection, onCropEnd: updateSelection });
         };
         source.onerror = () => { file.value = ''; pending = false; editor.hidden = true; status.textContent = 'No se pudo leer la imagen.'; };
         source.src = objectURL;
         status.textContent = 'Selecciona el área y pulsa Usar recorte.';
     });
     document.getElementById('profile-crop-apply').addEventListener('click', () => {
-        if (!ready || !cropper) return;
-        const rect = squareCrop(cropper.getValue('real'));
-        if (rect.width < 1) return;
-        draw(rect); cropValue.value = JSON.stringify(rect);
+        if (!selection || selection.width < 1) return;
+        draw(selection); cropValue.value = JSON.stringify(selection);
         preview.src = canvas.toDataURL('image/jpeg', .9);
         preview.hidden = false; initials.hidden = true;
         editor.hidden = true; recrop.hidden = false; pending = false;

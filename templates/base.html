@@ -15,7 +15,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261109-maintainer-fields" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261111-responsive" />
         <link rel="stylesheet" href="{% static 'css/client-portal.css' %}">
         {% block extra_head %}{% endblock %}
     </head>
@@ -199,17 +199,17 @@
 
         <main id="contenido" class="{% if user.is_authenticated %}app-content{% else %}auth-main{% endif %}">
             {% comment %}
-                Las peticiones de la búsqueda en tiempo real (X-Live-Search) solo reemplazan el
-                listado: no muestran ni consumen los mensajes pendientes del usuario.
+                La búsqueda en tiempo real y los formularios del modal solo reemplazan fragmentos.
+                Los mensajes pendientes se muestran al navegar a una página completa.
             {% endcomment %}
-            {% if messages and not request.headers.x_live_search %}
+            {% if messages and not request.headers.x_live_search and request.headers.x_modal_request != 'true' %}
                 <div data-sgr-messages>
                     {% for message in messages %}
                         <div class="alert alert-{{ message.level_tag }}" role="alert" data-sgr-message data-level="{{ message.level_tag }}">{{ message }}</div>
                     {% endfor %}
                 </div>
             {% endif %}
-            {% if maintainer_ws_url %}<p class="container" data-maintainer-websocket="{{ maintainer_ws_url }}" role="status" aria-live="polite">Conectando actualización automática…</p>{% endif %}
+            {% if maintainer_ws_url %}<p data-maintainer-websocket="{{ maintainer_ws_url }}" role="status" aria-live="polite">Conectando actualización automática…</p>{% endif %}
             {% block content %}
                 <section class="home" aria-labelledby="inicioTitulo">
                     <header class="home-heading">
@@ -314,13 +314,14 @@
         {% endif %}
 
         {% bootstrap_javascript %}
-        {% if messages or can_select_active_delegation %}
+        {% if messages or can_select_active_delegation or maintainer_ws_url %}
             <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
         {% endif %}
         {% if messages %}
             <script src="{% static 'js/messages.js' %}" defer></script>
         {% endif %}
         <script src="{% static 'js/chilean-rut.js' %}" defer></script>
+        <script src="{% static 'js/live-list-region.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
         <script src="{% static 'js/field-validation.js' %}?v=20261109-maintainer-fields" defer></script>
         <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
@@ -328,10 +329,10 @@
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}
             <script src="{% static 'js/delegation-switch.js' %}" defer></script>
         {% endif %}
-        <script src="{% static 'js/maintainer-modal.js' %}" defer></script>
+        <script src="{% static 'js/maintainer-modal.js' %}?v=20261111-modal-feedback" defer></script>
         <script src="{% static 'js/account-type.js' %}" defer></script>
-        <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true" aria-labelledby="maintainer-form-modal-title">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h2 class="modal-title fs-5" id="maintainer-form-modal-title">Formulario</h2>

@@ -38,7 +38,7 @@
             </form>
             <p class="maintainer-live-status" data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table">
+            <div class="table-responsive maintainer-table-wrap" id="maintainer-table-wrap" data-live-region="table" tabindex="0" role="region" aria-label="Tabla de {{ maintainer_title }}">
                 <table class="table maintainer-table" id="maintainer-table">
                     <thead>
                         <tr>{% sort_header "Código" 0 %}{% sort_header "Nombre" 1 %}{% sort_header "Tipo de Atención asociado" 2 %}{% sort_header "Estado" 3 %}{% sort_header "Acciones" 4 %}</tr>
@@ -99,6 +99,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}?v=20261111-responsive" defer></script>
 {% endblock %}

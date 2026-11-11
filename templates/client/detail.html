@@ -1,5 +1,70 @@
 {% extends 'client/base.html' %}
-{% block content %}<section class="attention-entry-card" data-client-live><a href="{% url 'client_requests' %}">← Volver a mis solicitudes</a><p class="maintainer-breadcrumb mt-4">{{ attention_request.identifier }}</p><h1>{{ attention_request.subject }}</h1>{% include 'client/status.html' with item=attention_request %}
-<dl class="row mt-4"><dt class="col-sm-4">Fecha de ingreso</dt><dd class="col-sm-8">{{ attention_request.created_at|date:'d/m/Y H:i' }}</dd><dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ attention_request.delegation }}</dd><dt class="col-sm-4">Tipo / Sub atención</dt><dd class="col-sm-8">{{ attention_request.attention_type }} / {{ attention_request.subattention_type }}</dd><dt class="col-sm-4">Territorio al ingresar</dt><dd class="col-sm-8">{{ attention_request.territory|default:"Sin registro histórico" }}</dd><dt class="col-sm-4">Dirección al ingresar</dt><dd class="col-sm-8">{{ attention_request.address_snapshot|default:"Sin registro histórico" }}</dd></dl>
-<h2>Detalle de la solicitud</h2><div>{{ attention_request.description|linebreaksbr }}</div><h2 class="mt-4">Respuesta del municipio</h2><div>{{ attention_request.response|default:'Aún no hay una respuesta publicada.'|linebreaksbr }}</div>
-<h2 class="mt-4">Historial de atención</h2><ol class="client-history">{% for event in attention_request.events.all %}<li><strong>{{ event.get_status_display }}</strong> · {{ event.created_at|date:'d/m/Y H:i' }}{% if event.response %}<div>{{ event.response|linebreaksbr }}</div>{% endif %}</li>{% endfor %}</ol></section>{% endblock %}
+
+{% block title %}Detalle de solicitud · SGR{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-label="Detalle de solicitud">
+        <p class="maintainer-breadcrumb">
+            Portal del cliente <span aria-hidden="true">/</span>
+            <a class="auth-text-link" href="{% url 'client_requests' %}">Mis solicitudes</a>
+            <span aria-hidden="true">/</span> Detalle
+        </p>
+
+        <div data-client-live>
+            <header class="maintainer-heading">
+                <h1>{{ attention_request.subject }}</h1>
+            </header>
+
+            <section class="attention-entry-card" aria-labelledby="request-data-title">
+                <h2 class="h5 mb-3" id="request-data-title">Datos de la solicitud</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Folio</dt>
+                    <dd class="col-sm-8">{{ attention_request.identifier }}</dd>
+                    <dt class="col-sm-4">Estado</dt>
+                    <dd class="col-sm-8">{% include 'client/status.html' with item=attention_request %}</dd>
+                    <dt class="col-sm-4">Fecha de ingreso</dt>
+                    <dd class="col-sm-8">{{ attention_request.created_at|date:'d/m/Y H:i' }}</dd>
+                    <dt class="col-sm-4">Delegación</dt>
+                    <dd class="col-sm-8">{{ attention_request.delegation }}</dd>
+                    <dt class="col-sm-4">Tipo / Sub atención</dt>
+                    <dd class="col-sm-8">{{ attention_request.attention_type }} / {{ attention_request.subattention_type }}</dd>
+                    <dt class="col-sm-4">Territorio al ingresar</dt>
+                    <dd class="col-sm-8">{{ attention_request.territory|default:"Sin registro histórico" }}</dd>
+                    <dt class="col-sm-4">Dirección al ingresar</dt>
+                    <dd class="col-sm-8">{{ attention_request.address_snapshot|default:"Sin registro histórico" }}</dd>
+                </dl>
+            </section>
+
+            <section class="attention-entry-card mt-3" aria-labelledby="request-description-title">
+                <h2 class="h5 mb-3" id="request-description-title">Detalle de la solicitud</h2>
+                <div>{{ attention_request.description|linebreaksbr }}</div>
+            </section>
+
+            <section class="attention-entry-card mt-3" aria-labelledby="request-response-title">
+                <h2 class="h5 mb-3" id="request-response-title">Respuesta del municipio</h2>
+                <div>{{ attention_request.response|default:'Aún no hay una respuesta publicada.'|linebreaksbr }}</div>
+            </section>
+
+            <section class="attention-entry-card mt-3" aria-labelledby="request-history-title">
+                <h2 class="h5 mb-3" id="request-history-title">Historial de atención</h2>
+                <ol class="client-history mb-0">
+                    {% for event in attention_request.events.all %}
+                        <li>
+                            <strong>{{ event.get_status_display }}</strong> · {{ event.created_at|date:'d/m/Y H:i' }}
+                            {% if event.response %}<div>{{ event.response|linebreaksbr }}</div>{% endif %}
+                        </li>
+                    {% empty %}
+                        <li>Aún no hay movimientos registrados.</li>
+                    {% endfor %}
+                </ol>
+            </section>
+        </div>
+
+        <p class="small text-body-secondary mt-3 mb-0" data-client-live-status role="status"></p>
+        <div class="attention-entry-actions">
+            <a class="btn attention-entry-cancel" href="{% url 'client_requests' %}">Volver a mis solicitudes</a>
+        </div>
+    </section>
+</div>
+{% endblock %}
