@@ -199,10 +199,10 @@
 
         <main id="contenido" class="{% if user.is_authenticated %}app-content{% else %}auth-main{% endif %}">
             {% comment %}
-                Las peticiones de la búsqueda en tiempo real (X-Live-Search) solo reemplazan el
-                listado: no muestran ni consumen los mensajes pendientes del usuario.
+                La búsqueda en tiempo real y los formularios del modal solo reemplazan fragmentos.
+                Los mensajes pendientes se muestran al navegar a una página completa.
             {% endcomment %}
-            {% if messages and not request.headers.x_live_search %}
+            {% if messages and not request.headers.x_live_search and request.headers.x_modal_request != 'true' %}
                 <div data-sgr-messages>
                     {% for message in messages %}
                         <div class="alert alert-{{ message.level_tag }}" role="alert" data-sgr-message data-level="{{ message.level_tag }}">{{ message }}</div>
@@ -314,7 +314,7 @@
         {% endif %}
 
         {% bootstrap_javascript %}
-        {% if messages or can_select_active_delegation %}
+        {% if messages or can_select_active_delegation or maintainer_ws_url %}
             <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
         {% endif %}
         {% if messages %}
@@ -329,7 +329,7 @@
             {# Después de los scripts de la página: toma la foto de los formularios ya preparados. #}
             <script src="{% static 'js/delegation-switch.js' %}" defer></script>
         {% endif %}
-        <script src="{% static 'js/maintainer-modal.js' %}" defer></script>
+        <script src="{% static 'js/maintainer-modal.js' %}?v=20261111-modal-feedback" defer></script>
         <script src="{% static 'js/account-type.js' %}" defer></script>
         <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true" aria-labelledby="maintainer-form-modal-title">
             <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">

@@ -1,12 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
     let target = document.querySelector('[data-client-live]');
     if (!target) return;
-    const status = document.createElement('p');
-    status.className = 'maintainer-live-status';
-    status.setAttribute('role', 'status');
-    status.setAttribute('aria-live', 'polite');
+    const status = document.querySelector('[data-client-live-status]') || document.createElement('p');
+    if (!status.isConnected) {
+        status.className = 'maintainer-live-status';
+        status.setAttribute('role', 'status');
+        target.before(status);
+    }
     status.textContent = 'Actualización automática conectada.';
-    target.before(status);
     let stopped = false;
     let timer;
     const refresh = async () => {

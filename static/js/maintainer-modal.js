@@ -104,17 +104,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
+            const headers = { "X-Modal-Request": "true" };
+            const inlineFeedback = typeof window.Swal?.fire === "function"
+                && document.querySelector('form[data-live-search-ready="true"]') !== null;
+            if (inlineFeedback) headers["X-Modal-Feedback"] = "inline";
             const response = await fetch(form.action || window.location.href, {
                 method: "POST",
                 body: new FormData(form),
-                headers: { "X-Modal-Request": "true" },
+                headers,
                 credentials: "same-origin",
             });
             if (response.status === 204) {
                 modal.hide();
-                if (document.querySelector('[data-maintainer-websocket]')) {
+                if (inlineFeedback) {
                     document.dispatchEvent(new CustomEvent('sgr:maintainer-saved'));
-                    if (window.Swal) window.Swal.fire({ icon: 'success', title: 'Registro guardado correctamente.', timer: 1800, showConfirmButton: false });
+                    window.Swal.fire({ icon: 'success', title: 'Registro guardado correctamente.', timer: 1800, showConfirmButton: false });
                     return;
                 }
                 window.location.reload();

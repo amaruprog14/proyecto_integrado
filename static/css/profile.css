@@ -16,10 +16,23 @@
 .profile-crop-image .croppr-imageClipped { display: block; width: 100%; height: auto; max-height: none; }
 #profile-crop-preview { width: min(100%, 160px); height: auto; border-radius: 50%; display: block; margin-bottom: 1rem; }
 .profile-crop-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.profile-actions {
+    justify-content: space-between;
+    align-items: center;
+}
+.profile-save-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .75rem;
+    margin-inline-start: auto;
+}
 #profile-form [hidden] { display: none !important; }
 @media (max-width: 575.98px) {
     .profile-photo { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
     .profile-avatar { width: 64px; height: 64px; flex-basis: auto; }
     .profile-crop-editor { padding: 1rem; }
     .profile-crop-layout { grid-template-columns: minmax(0, 420px); }
+    .profile-actions { align-items: stretch; }
+    .profile-save-actions { flex-direction: column; margin-inline-start: 0; }
 }

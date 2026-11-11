@@ -8,7 +8,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from common.access import ProtectedViewMixin
 from common.exports import xlsx_response
-from common.modal_forms import ModalFormOnlyMixin
+from common.modal_forms import ModalFormOnlyMixin, add_form_error, add_form_success
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
@@ -157,11 +157,11 @@ class CatalogCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
                 new_value=format_snapshot(catalog_snapshot(self.object)),
                 origin_ip=self.request.META.get("REMOTE_ADDR") or None,
             )
-        messages.success(self.request, self.created_message)
+        add_form_success(self.request, self.created_message)
         return response
 
     def form_invalid(self, form):
-        messages.error(self.request, "No se pudo guardar el registro. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el registro. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
@@ -201,11 +201,11 @@ class CatalogUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
                 new_value=new,
                 origin_ip=self.request.META.get("REMOTE_ADDR") or None,
             )
-        messages.success(self.request, self.updated_message)
+        add_form_success(self.request, self.updated_message)
         return response
 
     def form_invalid(self, form):
-        messages.error(self.request, "No se pudo guardar el registro. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el registro. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 

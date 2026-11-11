@@ -16,7 +16,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from common.access import ProtectedViewMixin, register_denied_access
 from common.exports import xlsx_response
-from common.modal_forms import ModalFormOnlyMixin
+from common.modal_forms import ModalFormOnlyMixin, add_form_error, add_form_success
 from common.pagination import ClampedPaginationMixin
 from common.text import describe_changes, format_snapshot, normalize_spaces
 
@@ -200,12 +200,12 @@ class RoleCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
         _registrar_auditoria(
             self.request, "Creación de rol", self.object, new=format_snapshot(role_snapshot(self.object))
         )
-        messages.success(self.request, f"El rol {self.object.role_name} fue creado correctamente.")
+        add_form_success(self.request, f"El rol {self.object.role_name} fue creado correctamente.")
         return redirect(self.get_success_url())
 
     def form_invalid(self, form):
         self.deny_privileged_permissions(form)
-        messages.error(self.request, "No se pudo guardar el rol. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el rol. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
@@ -236,11 +236,11 @@ class RoleUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, UpdateView):
         self.object = form.save()
         previous, new = describe_changes(previous_snapshot, role_snapshot(self.object))
         _registrar_auditoria(self.request, "Actualización de rol", self.object, previous=previous, new=new)
-        messages.success(self.request, f"El rol {self.object.role_name} fue actualizado correctamente.")
+        add_form_success(self.request, f"El rol {self.object.role_name} fue actualizado correctamente.")
         return redirect(self.get_success_url())
 
     def form_invalid(self, form):
-        messages.error(self.request, "No se pudo guardar el rol. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el rol. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 

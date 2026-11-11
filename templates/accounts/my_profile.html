@@ -4,7 +4,7 @@
 {% block title %}Mi perfil · SGR{% endblock %}
 {% block extra_head %}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/croppr@2.3.1/dist/croppr.min.css">
-    <link rel="stylesheet" href="{% static 'css/profile.css' %}?v=20261111-responsive">
+    <link rel="stylesheet" href="{% static 'css/profile.css' %}?v=20261111-profile-actions">
 {% endblock %}
 
 {% block content %}
@@ -14,8 +14,6 @@
         <p class="attention-entry-note">
             Desde aquí puedes actualizar tu foto, tu nombre y tus datos de contacto. {% if not client_portal %}Los roles, delegaciones, cargo, área y estado laboral son administrados por personal autorizado.{% else %}Tu RUT, tu territorio y el estado de tu cuenta son administrados por personal autorizado.{% endif %}
         </p>
-        <p><a class="auth-text-link" href="{% url 'password_change' %}">Cambiar contraseña</a></p>
-
         <form method="post" enctype="multipart/form-data" novalidate id="profile-form">
             {% csrf_token %}
             {{ form.photo_crop }}
@@ -83,9 +81,12 @@
                     {% endif %}
                 {% endfor %}
             </div>
-            <div class="attention-entry-actions">
-                <a class="btn attention-entry-cancel" href="{% if client_portal %}{% url 'client_profile' %}{% else %}{% url 'my_profile' %}{% endif %}">Cancelar</a>
-                <button class="btn btn-primary attention-entry-submit" type="submit">Guardar cambios</button>
+            <div class="attention-entry-actions profile-actions">
+                <a class="btn btn-outline-secondary" href="{% url 'password_change' %}">Cambiar contraseña</a>
+                <div class="profile-save-actions">
+                    <a class="btn attention-entry-cancel" href="{% if client_portal %}{% url 'client_profile' %}{% else %}{% url 'my_profile' %}{% endif %}">Cancelar</a>
+                    <button class="btn btn-primary attention-entry-submit" type="submit">Guardar cambios</button>
+                </div>
             </div>
         </form>
     </section>

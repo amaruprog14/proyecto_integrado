@@ -39,7 +39,7 @@ from common.access import (
     register_denied_access,
 )
 from common.exports import xlsx_response
-from common.modal_forms import ModalFormOnlyMixin
+from common.modal_forms import ModalFormOnlyMixin, add_form_error, add_form_success
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
 from configuration.services import AuditoriaService
@@ -791,14 +791,14 @@ class DelegationCreateView(ProtectedViewMixin, ModalFormOnlyMixin, CreateView):
             self.object,
             new=format_snapshot(delegation_snapshot(self.object)),
         )
-        messages.success(
+        add_form_success(
             self.request,
             f"La delegación {self.object.delegation_name} fue creada correctamente.",
         )
         return response
 
     def form_invalid(self, form):
-        messages.error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
@@ -825,14 +825,14 @@ class DelegationUpdateView(ScopedObjectMixin, ProtectedViewMixin, ModalFormOnlyM
         _registrar_auditoria(
             self.request, "Actualización de delegación", self.object, previous=previous, new=new
         )
-        messages.success(
+        add_form_success(
             self.request,
             f"La delegación {self.object.delegation_name} fue actualizada correctamente.",
         )
         return response
 
     def form_invalid(self, form):
-        messages.error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar la delegación. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
@@ -943,7 +943,7 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             except IntegrityError:
                 form.add_error(None, "Ya existe una cuenta o un funcionario con esos datos. Revisa el formulario.")
                 return self.form_invalid(form)
-            messages.success(
+            add_form_success(
                 self.request,
                 f"El funcionario {official.full_name} fue creado correctamente.",
             )
@@ -951,7 +951,7 @@ class OfficialCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def form_invalid(self, form):
             deny_role_assignment(self.request, form)
-            messages.error(
+            add_form_error(
                 self.request,
                 "No se pudo guardar el funcionario. Revisa los datos ingresados.",
             )
@@ -1027,7 +1027,7 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
                 previous=previous,
                 new=new,
             )
-            messages.success(
+            add_form_success(
                 self.request,
                 f"El funcionario {official.full_name} fue actualizado correctamente.",
             )
@@ -1035,7 +1035,7 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def form_invalid(self, form):
             deny_role_assignment(self.request, form)
-            messages.error(
+            add_form_error(
                 self.request,
                 "No se pudo actualizar el funcionario. Revisa los datos ingresados.",
             )
@@ -1209,12 +1209,12 @@ class UserCreateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
         _registrar_auditoria(
             self.request, "Creación de usuario", user, new=format_snapshot(user_snapshot(user))
         )
-        messages.success(self.request, f"El usuario {user.username} fue creado correctamente.")
+        add_form_success(self.request, f"El usuario {user.username} fue creado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
         deny_role_assignment(self.request, form)
-        messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
@@ -1336,12 +1336,12 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             previous_snapshot, password_change_note(user_snapshot(user), form)
         )
         _registrar_auditoria(self.request, "Actualización de usuario", user, previous=previous, new=new)
-        messages.success(self.request, f"El usuario {user.username} fue actualizado correctamente.")
+        add_form_success(self.request, f"El usuario {user.username} fue actualizado correctamente.")
         return super().form_valid(form)
 
     def form_invalid(self, form):
         deny_role_assignment(self.request, form)
-        messages.error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
+        add_form_error(self.request, "No se pudo guardar el usuario. Revisa los datos ingresados.")
         return super().form_invalid(form)
 
 
