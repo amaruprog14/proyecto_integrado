@@ -80,9 +80,12 @@ def positive(value, default=1):
 
 def normalize(params, module):
     statuses = ('RECEIVED', 'REVIEW', 'RESOLVED') if module in REQUEST_SORTS else ('ACTIVE', 'INACTIVE', 'SUSPENDED') if module == 'official' else ('1', '0') if module in ('attention_type', 'subattention_type') else ('OPEN', 'CLOSED') if module == 'period' else ('ACTIVE', 'INACTIVE')
+    if module == 'activity':
+        from activities.models import ClientRequest
+        statuses += tuple(ClientRequest.Status.values)
     state = dict(q=normalize_spaces(params.get('q'))[:200], status=params.get('status', ''),
         page=positive(params.get('page')), page_size=positive(params.get('page_size'), DEFAULT_SIZE),
-        sort=params.get('sort', 'created'), direction=params.get('direction', 'desc'))
+        sort=params.get('sort', 'date' if module == 'activity' else 'created'), direction=params.get('direction', 'desc'))
     if state['status'] not in statuses:
         state['status'] = ''
     if state['page_size'] not in PAGE_SIZES:
@@ -93,10 +96,18 @@ def normalize(params, module):
         state['direction'] = 'desc'
     if module == 'activity':
         from activities.models import Activity
+        source = params.get('record_source', '')
+        state['record_source'] = source if source in ('activity', 'request') else ''
         for key in ('official', 'item'):
             state[key] = str(positive(params.get(key), 0) or '')
         value = params.get('record_type', '')
         state['record_type'] = value if value in Activity.RecordType.values else ''
+        if state['record_source'] == 'request':
+            state.update(official='', item='', record_type='')
+            if state['status'] in ('ACTIVE', 'INACTIVE'):
+                state['status'] = ''
+        if state['record_source'] == 'activity' and state['status'] in ClientRequest.Status.values:
+            state['status'] = ''
         for key in ('date_from', 'date_to'):
             try:
                 value = parse_date(params.get(key, ''))
@@ -130,6 +141,10 @@ def prepare(request, module):
         previous['page'] = 1
     combined = {**previous, **{k: request.GET[k] for k in previous if k in request.GET}}
     state = normalize(combined, module)
+    if module == 'activity' and not request.user.has_perm('activities.view_socialattention'):
+        from activities.models import ClientRequest
+        if state['record_source'] == 'request' or state['status'] in ClientRequest.Status.values:
+            state.update(record_source='', status='', page=1)
     if saved and any(state[k] != previous[k] for k in state if k != 'page'):
         state['page'] = 1
     request._list_state, request._list_state_key, request._list_module = state, key, module

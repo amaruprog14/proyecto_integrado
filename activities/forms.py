@@ -7,6 +7,7 @@ from accounts.forms import clean_person_name
 from common.field_validation import configure_text_widgets, text_length
 from accounts.models import Delegation, ServiceRecipient
 from common.chilean_rut import normalize_chilean_rut
+from common.list_state import positive
 from common.text import clean_description_text, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 
@@ -30,9 +31,35 @@ class SubattentionSelect(forms.Select):
         return option
 
 
+def attention_delegations(official, active_delegation):
+    if official is None or not official.is_enabled:
+        return Delegation.objects.none()
+    delegations = official.get_authorized_delegations().filter(deleted_at__isnull=True)
+    if active_delegation is not None:
+        return delegations.filter(pk=active_delegation.pk)
+    return delegations
+
+
 class SocialAttentionForm(forms.Form):
     text_limits = {"recipient_full_name": 100}
+    DIRECT = "direct"
+    LINKED = "linked"
 
+    origin = forms.ChoiceField(
+        label="Origen de la atención",
+        choices=((DIRECT, "Atención directa"), (LINKED, "Vincular a una solicitud ciudadana")),
+        initial=DIRECT,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    client_request = forms.RegexField(
+        regex=r"(?i)\ASOL-[0-9]+\Z",
+        max_length=23,
+        required=False,
+        label="Solicitud ciudadana",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        error_messages={"invalid": "Selecciona una solicitud válida."},
+    )
     recipient_national_id = forms.CharField(
         label="RUT o RUN chileno",
         max_length=20,
@@ -84,19 +111,18 @@ class SocialAttentionForm(forms.Form):
         ),
     )
 
-    def __init__(self, *args, official=None, active_delegation=None, **kwargs):
+    def __init__(self, *args, official=None, active_delegation=None, can_link_request=False, **kwargs):
         super().__init__(*args, **kwargs)
+        if not can_link_request:
+            self.fields.pop("client_request")
+            self.fields["origin"].choices = ((self.DIRECT, "Atención directa"),)
         configure_text_widgets(self)
         self.official = official
         self.recipient_record = None
 
+        delegations = attention_delegations(official, active_delegation)
+        self.fields["delegation"].queryset = delegations
         if official is not None and official.is_enabled:
-            delegations = official.get_authorized_delegations().filter(
-                deleted_at__isnull=True
-            )
-            if active_delegation is not None:
-                delegations = delegations.filter(pk=active_delegation.pk)
-            self.fields["delegation"].queryset = delegations
             if active_delegation is not None and delegations.filter(
                 pk=active_delegation.pk
             ).exists():
@@ -188,6 +214,22 @@ class SocialAttentionForm(forms.Form):
                 "subattention_type",
                 "Selecciona una Sub Atención asociada al Tipo de Atención elegido.",
             )
+
+        folio = cleaned_data.get("client_request")
+        # Los formularios anteriores al selector enviaban solo el folio.
+        origin = cleaned_data.get("origin") or (self.LINKED if folio else self.DIRECT)
+        if "client_request" not in self.fields and self.data.get(self.add_prefix("client_request")):
+            self.add_error(None, "Tu perfil no puede vincular solicitudes ciudadanas.")
+        elif origin == self.LINKED and not folio and "client_request" not in self.errors:
+            self.add_error("client_request", "Selecciona una solicitud ciudadana.")
+        elif origin == self.DIRECT and folio:
+            self.add_error("client_request", "Para usar este folio, elige vincular a una solicitud ciudadana.")
+        elif folio:
+            request_id = positive(folio[4:], 0)
+            if not request_id:
+                self.add_error("client_request", "Ingresa un folio válido.")
+            else:
+                cleaned_data["client_request"] = request_id
 
         return cleaned_data
 

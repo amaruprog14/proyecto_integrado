@@ -4,6 +4,7 @@ atención registrada con su identificador, limitada a las delegaciones autorizad
 """
 
 from unittest import mock
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -12,7 +13,7 @@ from django.urls import reverse
 
 from accounts.models import Delegation, Official, ServiceRecipient
 from activities import views as activity_views
-from activities.models import SocialAttention
+from activities.models import Activity, ClientRequest, SocialAttention
 from configuration.models import AttentionType, AuditLog, SubattentionType
 
 User = get_user_model()
@@ -119,6 +120,81 @@ class AttentionSubmissionTests(TestCase):
         self.assertContains(response, f'href="{reverse("attention_detail", args=[attention.pk])}"')
         self.assertContains(self.client.get(reverse("attention_entry")), "Ingreso de atención")
         self.assertNotContains(self.client.get(reverse("attention_entry")), "Atención registrada:")
+
+    def make_request(self, delegation=None, national_id="12345678-5"):
+        recipient = ServiceRecipient.objects.create(national_id=national_id, full_name="Persona Solicitante")
+        return ClientRequest.objects.create(
+            recipient=recipient, delegation=delegation or self.delegation, attention_type=self.attention_type,
+            subattention_type=self.subattention_type, subject="Consulta ciudadana", submission_token=uuid4(),
+        )
+
+    def test_linked_attention_keeps_the_folio_and_its_own_activity(self):
+        origin = self.make_request()
+        self.user.user_permissions.add(Permission.objects.get(
+            content_type__app_label="activities", codename="view_activity",
+        ))
+        entry = reverse("attention_entry")
+        form = self.client.get(entry, {"folio": origin.identifier}).context["form"]
+        self.assertEqual(form.initial["recipient_national_id"], origin.recipient.national_id)
+        self.assertEqual(form.initial["recipient_full_name"], origin.recipient.full_name)
+        self.assertEqual(form.initial["client_request"], origin.identifier)
+        self.assertEqual(form.initial["origin"], "linked")
+
+        self.assertRedirects(self.client.post(entry, self.payload(
+            origin="linked", client_request=origin.identifier, recipient_full_name=form.initial["recipient_full_name"],
+        )), entry)
+        attention = SocialAttention.objects.get()
+        self.assertEqual(attention.client_request, origin)
+        self.assertEqual(attention.activity.record_type, Activity.RecordType.ATTENTION)
+        self.assertEqual(ClientRequest.objects.get().status, ClientRequest.Status.RECEIVED)
+        origin_url = reverse("staff_client_request_detail", args=[origin.pk])
+        self.assertContains(self.client.get(origin_url), attention.identifier)
+        self.assertContains(self.client.get(reverse("activity_detail", args=[attention.activity_id])), origin_url)
+
+    def test_origin_requires_a_folio_only_for_linked_attention(self):
+        entry = reverse("attention_entry")
+        missing = self.client.post(entry, self.payload(origin="linked"))
+        self.assertIn("client_request", missing.context["form"].errors)
+        origin = self.make_request()
+        mismatch = self.client.post(entry, self.payload(origin="direct", client_request=origin.identifier))
+        self.assertIn("client_request", mismatch.context["form"].errors)
+        self.assertFalse(SocialAttention.objects.exists())
+        self.assertRedirects(self.client.post(entry, self.payload(origin="direct")), entry)
+        self.assertIsNone(SocialAttention.objects.get().client_request_id)
+
+    def test_request_dropdown_and_selection_respect_permissions_and_delegation(self):
+        origin = self.make_request()
+        other_delegation = Delegation.objects.create(delegation_name="Sur", address="Calle 2", commune="La Serena")
+        foreign = self.make_request(other_delegation, national_id="11111111-1")
+        url = reverse("attention_request_lookup")
+        entry = reverse("attention_entry")
+        response = self.client.get(entry)
+        self.assertContains(response, f'<option value="{origin.identifier}">'
+                            f'{origin.identifier} · {origin.recipient.full_name} · {origin.subject}</option>', html=True)
+        self.assertNotContains(response, foreign.identifier)
+        self.assertNotContains(response, origin.recipient.national_id)
+        self.assertEqual(self.client.get(url, {"folio": origin.identifier}).json(), {
+            "folio": origin.identifier, "rut": origin.recipient.national_id, "name": origin.recipient.full_name,
+            "delegation_id": self.delegation.pk,
+        })
+        self.assertEqual(self.client.get(url, {"folio": foreign.identifier}).status_code, 404)
+        self.user.user_permissions.remove(Permission.objects.get(
+            content_type__app_label="activities", codename="view_socialattention",
+        ))
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertNotContains(self.client.get(entry), 'id="id_client_request"')
+
+    def test_cannot_link_a_folio_for_a_different_person_or_delegation(self):
+        other_delegation = Delegation.objects.create(delegation_name="Sur", address="Calle 2", commune="La Serena")
+        origin = self.make_request(other_delegation)
+        other_person = self.make_request(national_id="11111111-1")
+        for item in (origin, other_person):
+            with self.subTest(folio=item.identifier):
+                response = self.client.post(reverse("attention_entry"), self.payload(client_request=item.identifier))
+                self.assertIn("client_request", response.context["form"].errors)
+        self.assertFalse(SocialAttention.objects.exists())
+        self.assertFalse(Activity.objects.exists())
+        self.assertEqual(self.client.get(reverse("staff_client_request_detail", args=[origin.pk])).status_code, 404)
 
 
 class AttentionDetailTests(TestCase):

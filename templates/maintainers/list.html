@@ -30,7 +30,7 @@
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
                         <option value="">Filtrar estado</option>
                         {% for value, label in statuses %}
-                            <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}>{{ label }}</option>
+                            <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}{% if key == 'activity' %}{% if value == 'ACTIVE' or value == 'INACTIVE' %} data-record-source="activity"{% if request.GET.record_source == 'request' %} disabled{% endif %}{% else %} data-record-source="request"{% if request.GET.record_source == 'activity' %} disabled{% endif %}{% endif %}{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -40,6 +40,16 @@
                 </select>
                 {% if key == 'activity' %}
                     <div class="attention-entry-grid maintainer-activity-filters">
+                        {% if can_list_requests %}
+                            <div class="attention-entry-field attention-entry-field-full">
+                                <label for="filter-record-source">Mostrar</label>
+                                <select class="form-select" id="filter-record-source" name="record_source" data-swal-autosubmit>
+                                    <option value="">Todos</option>
+                                    <option value="activity"{% if request.GET.record_source == 'activity' %} selected{% endif %}>Actividades</option>
+                                    <option value="request"{% if request.GET.record_source == 'request' %} selected{% endif %}>Solicitudes ciudadanas</option>
+                                </select>
+                            </div>
+                        {% endif %}
                         <div class="attention-entry-field">
                             <label for="filter-date-from">Desde</label>
                             <input class="form-control" id="filter-date-from" type="date" name="date_from" value="{{ request.GET.date_from }}">
@@ -50,21 +60,21 @@
                         </div>
                         <div class="attention-entry-field">
                             <label for="filter-official">Funcionario</label>
-                            <select class="form-select" id="filter-official" name="official" data-swal-autosubmit>
+                            <select class="form-select" id="filter-official" name="official" data-swal-autosubmit{% if request.GET.record_source == 'request' %} disabled{% endif %}>
                                 <option value="">Todos los funcionarios</option>
                                 {% for official in officials %}<option value="{{ official.pk }}"{% if request.GET.official == official.pk|stringformat:"s" %} selected{% endif %}>{{ official }}</option>{% endfor %}
                             </select>
                         </div>
                         <div class="attention-entry-field">
                             <label for="filter-item">Ítem</label>
-                            <select class="form-select" id="filter-item" name="item" data-swal-autosubmit>
+                            <select class="form-select" id="filter-item" name="item" data-swal-autosubmit{% if request.GET.record_source == 'request' %} disabled{% endif %}>
                                 <option value="">Todos los ítems</option>
                                 {% for item in items %}<option value="{{ item.pk }}"{% if request.GET.item == item.pk|stringformat:"s" %} selected{% endif %}>{{ item }}</option>{% endfor %}
                             </select>
                         </div>
                         <div class="attention-entry-field attention-entry-field-full">
                             <label for="filter-record-type">Tipo de registro</label>
-                            <select class="form-select" id="filter-record-type" name="record_type" data-swal-autosubmit>
+                            <select class="form-select" id="filter-record-type" name="record_type" data-swal-autosubmit{% if request.GET.record_source == 'request' %} disabled{% endif %}>
                                 <option value="">Todos los tipos</option>
                                 {% for value in record_types %}<option value="{{ value }}"{% if request.GET.record_type == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
                             </select>
@@ -96,7 +106,7 @@
                             </tr>
                         {% empty %}
                             <tr><td colspan="{{ headers|length|add:'1' }}" class="text-center">
-                                {% if query or selected_status or request.GET.date_from or request.GET.date_to or request.GET.official or request.GET.item or request.GET.record_type %}
+                                {% if query or selected_status or request.GET.date_from or request.GET.date_to or request.GET.official or request.GET.item or request.GET.record_type or request.GET.record_source %}
                                     No hay registros que coincidan con la búsqueda o el filtro aplicado.
                                 {% else %}
                                     Aún no hay registros disponibles.
@@ -147,5 +157,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="{% static 'js/maintainer-states.js' %}?v=20261111-responsive" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}?v=20261111-list" defer></script>
 {% endblock %}

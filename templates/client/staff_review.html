@@ -1,17 +1,45 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="attention-entry-card">
-    <p class="maintainer-breadcrumb">Solicitudes ciudadanas / {{ form.instance.identifier }}</p>
-    <h1>{{ form.instance.subject }}</h1>
-    <p>{{ form.instance.recipient }} · {{ form.instance.delegation }}</p>
-    <div class="mb-4">{{ form.instance.description|linebreaksbr }}</div>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
+    <p class="maintainer-breadcrumb">Solicitudes ciudadanas / {{ citizen_request.identifier }}</p>
+    <h1>{{ citizen_request.subject }}</h1>
+    <p>{{ citizen_request.recipient }} · {{ citizen_request.delegation }}</p>
+    <div class="mb-4">{{ citizen_request.description|linebreaksbr }}</div>
+    {% if form %}
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="attention-entry-actions">
+                <a class="btn attention-entry-cancel" href="{% url 'staff_client_requests' %}">Volver</a>
+                <button class="btn btn-primary">Guardar respuesta</button>
+            </div>
+        </form>
+    {% else %}
+        <dl>
+            <dt>Estado</dt><dd>{{ citizen_request.get_status_display }}</dd>
+            <dt>Respuesta del municipio</dt><dd>{{ citizen_request.response|default:"Pendiente"|linebreaksbr }}</dd>
+        </dl>
         <div class="attention-entry-actions">
-            <a class="btn attention-entry-cancel" href="{% url 'staff_client_requests' %}">Volver</a>
-            <button class="btn btn-primary">Guardar respuesta</button>
+            <a class="btn attention-entry-cancel" href="{{ request_list_url }}">Volver al listado</a>
+            {% if can_review_request %}<a class="btn btn-primary" href="{% url 'staff_client_request_review' citizen_request.pk %}">Responder solicitud</a>{% endif %}
         </div>
-    </form>
+    {% endif %}
+    {% if perms.activities.view_socialattention %}
+        <section class="mt-4" aria-labelledby="linked-attentions-title">
+            <h2 class="h5" id="linked-attentions-title">Atenciones vinculadas</h2>
+            {% if linked_attentions %}
+                <ul>
+                    {% for attention in linked_attentions %}
+                        <li><a href="{% url 'attention_detail' attention.pk %}">{{ attention.identifier }}</a> · {{ attention.date|date:"d-m-Y" }} · {{ attention.attention_type }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No hay atenciones vinculadas disponibles.</p>
+            {% endif %}
+            {% if can_register_attention %}
+                <a class="auth-text-link" href="{% url 'attention_entry' %}?folio={{ citizen_request.identifier }}">Registrar atención para este folio</a>
+            {% endif %}
+        </section>
+    {% endif %}
 </section>
 {% endblock %}

@@ -125,14 +125,15 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
         from django.db import transaction
 
         item = ClientRequest.objects.get(subject="Solicitud de prueba")
-        permission = Permission.objects.get(content_type__app_label="activities", codename="view_socialattention")
+        permissions = Permission.objects.filter(content_type__app_label="activities",
+            codename__in=("view_socialattention", "view_activity"))
         users = []
         for index, delegation in enumerate((item.delegation, Delegation.objects.get(delegation_name="Norte"))):
             user = User.objects.create_user(f"lector-solicitud-{index}")
             Official.objects.create(user=user, full_name="Lector de solicitudes",
                 national_id=f"lector-solicitud-{index}", email=f"lector-solicitud-{index}@example.test",
                 delegation=delegation)
-            user.user_permissions.add(permission)
+            user.user_permissions.add(*permissions)
             self.clients[user.pk] = Client()
             self.clients[user.pk].force_login(user)
             users.append(user)
@@ -146,17 +147,21 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
 
         async def scenario():
             own, foreign = (self.socket("staff_request", user) for user in users)
+            own_activity, foreign_activity = (self.socket("activity", user) for user in users)
             try:
-                self.assertTrue((await own.connect())[0])
-                self.assertTrue((await foreign.connect())[0])
+                for socket in (own, foreign, own_activity, foreign_activity):
+                    self.assertTrue((await socket.connect())[0])
                 await sync_to_async(save_request)(False)
                 self.assertTrue(await own.receive_nothing(timeout=.1))
+                self.assertTrue(await own_activity.receive_nothing(timeout=.1))
                 await sync_to_async(save_request)(True)
                 self.assertEqual(await own.receive_json_from(timeout=3), {"type": "maintainer.changed"})
+                self.assertEqual(await own_activity.receive_json_from(timeout=3), {"type": "activities.changed"})
                 self.assertTrue(await foreign.receive_nothing(timeout=.1))
+                self.assertTrue(await foreign_activity.receive_nothing(timeout=.1))
             finally:
-                await own.disconnect()
-                await foreign.disconnect()
+                for socket in (own, foreign, own_activity, foreign_activity):
+                    await socket.disconnect()
 
         async_to_sync(scenario)()
 

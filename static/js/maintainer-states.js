@@ -213,6 +213,20 @@ document.addEventListener("DOMContentLoaded", () => {
         liveForm.querySelectorAll('select[name="official"], select[name="item"], select[name="record_type"], input[type="date"], select[name="sort"], select[name="direction"]').forEach((control) => {
             control.addEventListener("change", () => { syncExportLink(); refresh(); });
         });
+        const sourceFilter = liveForm.querySelector('select[name="record_source"]');
+        sourceFilter?.addEventListener("change", () => {
+            const source = sourceFilter.value;
+            liveForm.querySelectorAll('select[name="official"], select[name="item"], select[name="record_type"]').forEach((control) => {
+                control.disabled = source === "request";
+                if (control.disabled) control.value = "";
+            });
+            statusFilter.querySelectorAll("option[data-record-source]").forEach((option) => {
+                option.disabled = Boolean(source && source !== option.dataset.recordSource);
+            });
+            if (statusFilter.selectedOptions[0]?.disabled) statusFilter.value = "";
+            syncExportLink();
+            refresh();
+        });
         document.addEventListener('sgr:maintainer-saved', () => refresh({ preservePage: true, force: true }));
 
         const connectionStatus = document.querySelector('[data-maintainer-websocket]');
