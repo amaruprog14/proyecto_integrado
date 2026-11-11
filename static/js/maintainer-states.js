@@ -148,7 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     throw new Error("Respuesta sin el listado");
                 }
                 if (controller !== request || request.signal.aborted) return false;
-                replacements.forEach(([region, replacement]) => region.replaceWith(document.importNode(replacement, true)));
+                replacements.forEach(([region, replacement]) => replaceLiveListRegion(region, replacement));
                 renderedSearch = search;
                 const currentPage = page.querySelector('[data-current-page]')?.dataset.currentPage;
                 if (preservePage && currentPage) url.searchParams.set("page", currentPage);

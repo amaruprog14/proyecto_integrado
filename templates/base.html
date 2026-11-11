@@ -15,7 +15,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" />
         {% bootstrap_css %}
-        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261109-maintainer-fields" />
+        <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=20261111-responsive" />
         <link rel="stylesheet" href="{% static 'css/client-portal.css' %}">
         {% block extra_head %}{% endblock %}
     </head>
@@ -209,7 +209,7 @@
                     {% endfor %}
                 </div>
             {% endif %}
-            {% if maintainer_ws_url %}<p class="container" data-maintainer-websocket="{{ maintainer_ws_url }}" role="status" aria-live="polite">Conectando actualización automática…</p>{% endif %}
+            {% if maintainer_ws_url %}<p data-maintainer-websocket="{{ maintainer_ws_url }}" role="status" aria-live="polite">Conectando actualización automática…</p>{% endif %}
             {% block content %}
                 <section class="home" aria-labelledby="inicioTitulo">
                     <header class="home-heading">
@@ -321,6 +321,7 @@
             <script src="{% static 'js/messages.js' %}" defer></script>
         {% endif %}
         <script src="{% static 'js/chilean-rut.js' %}" defer></script>
+        <script src="{% static 'js/live-list-region.js' %}" defer></script>
         {% block extra_scripts %}{% endblock %}
         <script src="{% static 'js/field-validation.js' %}?v=20261109-maintainer-fields" defer></script>
         <script src="{% static 'js/maintainer-crud.js' %}" defer></script>
@@ -330,8 +331,8 @@
         {% endif %}
         <script src="{% static 'js/maintainer-modal.js' %}" defer></script>
         <script src="{% static 'js/account-type.js' %}" defer></script>
-        <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal fade" id="maintainer-form-modal" tabindex="-1" aria-hidden="true" aria-labelledby="maintainer-form-modal-title">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h2 class="modal-title fs-5" id="maintainer-form-modal-title">Formulario</h2>

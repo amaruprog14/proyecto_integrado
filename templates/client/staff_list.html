@@ -38,7 +38,7 @@
     </form>
     <p class="maintainer-live-status" data-live-status role="status"></p>
 
-    <div class="table-responsive maintainer-table-wrap" id="staff-request-table" data-live-region="table">
+    <div class="table-responsive maintainer-table-wrap" id="staff-request-table" data-live-region="table" tabindex="0" role="region" aria-label="Tabla de solicitudes ciudadanas">
         <table class="table maintainer-table">
             <thead>
                 <tr>
@@ -80,5 +80,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="{% static 'js/maintainer-states.js' %}" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}?v=20261111-responsive" defer></script>
 {% endblock %}

@@ -21,7 +21,7 @@
 
             <form class="maintainer-tools" method="get" aria-label="Búsqueda y filtros" data-live-search>
                 <label class="maintainer-search-label" for="maintainer-search">Búsqueda inteligente</label>
-                <div class="maintainer-controls{% if not statuses %} has-no-status-filter{% endif %}">
+                <div class="maintainer-controls">
                     <div class="input-group"><input class="form-control maintainer-search" id="maintainer-search" name="q" value="{{ query }}" type="search" placeholder="Buscar por nombre, código u otro campo..." autocomplete="off"><button class="btn btn-primary" type="submit">Buscar</button></div>
                     <a class="btn maintainer-export-button" href="{% url 'official_export' %}?{{ querystring }}" data-export-base="{% url 'official_export' %}">Exportar a Excel</a>
                     {% if statuses %}
@@ -40,7 +40,7 @@
             </form>
             <p data-live-status role="status"></p>
 
-            <div class="table-responsive maintainer-table-wrap" data-live-region="table">
+            <div class="table-responsive maintainer-table-wrap" data-live-region="table" tabindex="0" role="region" aria-label="Tabla de {{ maintainer_title }}">
                 <table class="table maintainer-table" id="maintainer-table" data-page-size="10">
                     <thead><tr>{% for column in columns %}{% sort_header column forloop.counter0 %}{% endfor %}<th class="maintainer-actions" scope="col">Acciones</th></tr></thead>
                     <tbody>
@@ -76,4 +76,4 @@
     </div>
 {% endblock %}
 
-{% block extra_scripts %}<script src="{% static 'js/maintainer-states.js' %}" defer></script>{% endblock %}
+{% block extra_scripts %}<script src="{% static 'js/maintainer-states.js' %}?v=20261111-responsive" defer></script>{% endblock %}

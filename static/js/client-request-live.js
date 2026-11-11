@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const target = document.querySelector('[data-client-live]');
+    let target = document.querySelector('[data-client-live]');
     if (!target) return;
     const status = document.createElement('p');
     status.className = 'maintainer-live-status';
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (canonical) window.history.replaceState(window.history.state, "", canonical);
                 if (!fresh) throw new Error('Listado no disponible');
                 if (target.innerHTML !== fresh.innerHTML) {
-                    target.replaceChildren(...Array.from(fresh.childNodes, node => document.importNode(node, true)));
+                    target = replaceLiveListRegion(target, fresh);
                     status.textContent = 'Solicitud actualizada automáticamente.';
                 }
             } catch {
