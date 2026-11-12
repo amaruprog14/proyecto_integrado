@@ -11,7 +11,7 @@
         <section class="maintainer-content" aria-labelledby="maintainer-title">
             <header class="maintainer-heading">
                 <div>
-                    <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
+                    <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {% if list_parent_url %}<a class="auth-text-link" href="{{ list_parent_url }}">{{ list_parent }}</a> <span aria-hidden="true">/</span> {% endif %}{{ maintainer_title }}</p>
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
                 {% if key == 'activity' %}
@@ -21,7 +21,7 @@
                         {% if perms.activities.view_socialattention %}<a class="btn attention-entry-cancel" href="{% url 'attention_cases' %}">Casos sociales</a>{% endif %}
                     </div>
                 {% elif can_add %}
-                    <a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>+ Nuevo registro</a>
+                    <a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>{{ create_label|default:"+ Nuevo registro" }}</a>
                 {% endif %}
             </header>
 

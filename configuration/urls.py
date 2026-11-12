@@ -15,6 +15,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path
+from analytics.measurement_views import MeasurementEdit, MeasurementPlanDetail, MeasurementPlanList
+from configuration.period_views import PeriodReopenView
 
 from .item_views import (
     ItemActivateView,
@@ -125,3 +127,28 @@ urlpatterns += [
 
 from common.maintainers import maintainer_urls
 urlpatterns += maintainer_urls('period', 'periodos/')
+
+period_path = "periodos/<int:period_id>/"
+plan_list_path = period_path + "medicion/"
+plan_path = plan_list_path + "<int:plan_id>/"
+version_path = plan_path + "versiones/<int:version_id>/"
+line_path = version_path + "items/<int:line_id>/"
+adjustment_path = line_path + "ajustes/<int:adjustment_id>/"
+
+urlpatterns += [
+    path(period_path + "reabrir/", PeriodReopenView.as_view(), name="period_reopen"),
+    path(plan_list_path, MeasurementPlanList.as_view(), name="measurement_plan_list"),
+    path(plan_list_path + "exportar/", MeasurementPlanList.as_view(export=True), name="measurement_plan_export"),
+    path(plan_list_path + "nuevo/", MeasurementEdit.as_view(operation="plan"), name="measurement_plan_create"),
+    path(plan_path, MeasurementPlanDetail.as_view(), name="measurement_plan_detail"),
+    path(plan_path + "nueva-version/", MeasurementEdit.as_view(operation="revision"), name="measurement_revision_create"),
+    path(version_path, MeasurementPlanDetail.as_view(), name="measurement_version_detail"),
+    path(version_path + "editar/", MeasurementEdit.as_view(operation="version"), name="measurement_version_edit"),
+    path(version_path + "publicar/", MeasurementEdit.as_view(operation="publish"), name="measurement_version_publish"),
+    path(version_path + "items/nuevo/", MeasurementEdit.as_view(operation="item"), name="measurement_item_create"),
+    path(line_path + "editar/", MeasurementEdit.as_view(operation="item"), name="measurement_item_edit"),
+    path(line_path + "quitar/", MeasurementEdit.as_view(operation="remove_item"), name="measurement_item_remove"),
+    path(line_path + "ajustes/nuevo/", MeasurementEdit.as_view(operation="adjustment"), name="measurement_adjustment_create"),
+    path(adjustment_path + "editar/", MeasurementEdit.as_view(operation="adjustment"), name="measurement_adjustment_edit"),
+    path(adjustment_path + "quitar/", MeasurementEdit.as_view(operation="remove_adjustment"), name="measurement_adjustment_remove"),
+]

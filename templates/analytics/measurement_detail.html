@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Plan de medición · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="periods" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="maintainer-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span>
+                    <a class="auth-text-link" href="{% url 'measurement_plan_list' period.pk %}">Configuración de medición</a>
+                    <span aria-hidden="true">/</span> {{ period }}
+                </p>
+                <h1 id="maintainer-title">{{ plan.position }}</h1>
+            </div>
+            {% if can_revise %}<a class="btn btn-primary maintainer-new-button" data-modal-form href="{% url 'measurement_revision_create' period.pk plan.pk %}">+ Nueva versión</a>{% endif %}
+        </header>
+
+        <section class="attention-entry-card mb-3" aria-labelledby="versiones-title">
+            <h2 class="h5" id="versiones-title">Versiones</h2>
+            <nav class="d-flex flex-wrap gap-2" aria-labelledby="versiones-title">
+                {% for option in versions %}
+                    <a class="btn {% if option.pk == version.pk %}btn-primary{% else %}attention-entry-cancel{% endif %}"
+                        href="{% url 'measurement_version_detail' period.pk plan.pk option.pk %}"{% if option.pk == version.pk %} aria-current="page"{% endif %}>
+                        Versión {{ option.number }} · {% if option.is_published %}{{ option.effective_from|date:"d-m-Y" }}{% else %}Borrador{% endif %}
+                    </a>
+                {% endfor %}
+            </nav>
+        </section>
+
+        <section class="attention-entry-card mb-3" aria-labelledby="reglas-title">
+            <h2 class="h5" id="reglas-title">Vigencia y umbrales</h2>
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><span class="maintainer-status-pill {% if version.is_published %}is-active{% else %}is-inactive{% endif %}">{% if version.is_published %}Publicada{% else %}Borrador{% endif %}</span></dd>
+                <dt class="col-sm-4">Vigente desde</dt><dd class="col-sm-8">{{ version.effective_from|date:"d-m-Y" }}</dd>
+                <dt class="col-sm-4">Tope computable</dt><dd class="col-sm-8">{{ version.max_computable }} %</dd>
+                <dt class="col-sm-4">Umbral naranjo</dt><dd class="col-sm-8">{{ version.amber_threshold }} %</dd>
+                <dt class="col-sm-4">Umbral verde</dt><dd class="col-sm-8">{{ version.green_threshold }} %</dd>
+                <dt class="col-sm-4">Umbral colectivo</dt><dd class="col-sm-8">{{ version.collective_threshold }} %</dd>
+            </dl>
+            {% if can_edit %}
+                <div class="attention-entry-actions">
+                    <a class="btn attention-entry-cancel" data-modal-form href="{% url 'measurement_version_edit' period.pk plan.pk version.pk %}">Editar vigencia y umbrales</a>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="attention-entry-card" aria-labelledby="items-title">
+            <header class="maintainer-heading">
+                <h2 class="h5" id="items-title">Ítems de medición</h2>
+                {% if can_edit %}
+                    <a class="btn btn-primary maintainer-new-button" data-modal-form href="{% url 'measurement_item_create' period.pk plan.pk version.pk %}">+ Agregar ítem</a>
+                {% endif %}
+            </header>
+            <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="items-title">
+                <table class="table maintainer-table">
+                    <thead><tr>
+                        <th scope="col">Ítem</th><th scope="col">Función</th><th scope="col">Tipo</th><th scope="col">Meta</th><th scope="col">Ponderador</th>
+                        {% if can_edit %}<th class="maintainer-actions" scope="col">Acciones</th>{% endif %}
+                    </tr></thead>
+                    <tbody>
+                    {% for line in lines %}
+                        <tr>
+                            <th scope="row">{{ line.item }}</th><td>{{ line.function }}</td><td>{{ line.get_goal_type_display }}</td>
+                            <td>{{ line.goal|default_if_none:"—" }}{% if line.goal != None and line.goal_type == "PERCENTAGE" %} %{% endif %}</td>
+                            <td>{{ line.weight|default_if_none:"—" }}{% if line.weight != None %} %{% endif %}</td>
+                            {% if can_edit %}
+                                <td class="maintainer-actions delegation-actions">
+                                    <div class="delegation-action-group">
+                                        <a class="auth-text-link action-icon action-icon--edit" href="{% url 'measurement_item_edit' period.pk plan.pk version.pk line.pk %}" data-modal-form aria-label="Editar {{ line.item }}" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
+                                        <a class="auth-text-link action-icon action-icon--deactivate" href="{% url 'measurement_item_remove' period.pk plan.pk version.pk line.pk %}" data-modal-form aria-label="Quitar {{ line.item }}" data-tooltip="Quitar" title="Quitar">{% include "includes/action_icon.html" with action="Archivar" %}</a>
+                                    </div>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="{% if can_edit %}6{% else %}5{% endif %}" class="text-center">Aún no hay ítems en esta versión.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="maintainer-record-count mt-2">Ponderación base total {{ total_weight }} %</p>
+        </section>
+
+        {% for line in lines %}
+            {% if can_edit or line.adjustments.all %}
+                <section class="attention-entry-card mt-3" aria-labelledby="ajustes-{{ line.pk }}">
+                    <header class="maintainer-heading">
+                        <h2 class="h5" id="ajustes-{{ line.pk }}">Ajustes individuales · {{ line.item }}</h2>
+                        {% if can_edit %}<a class="btn btn-primary maintainer-new-button" data-modal-form href="{% url 'measurement_adjustment_create' period.pk plan.pk version.pk line.pk %}">+ Agregar ajuste</a>{% endif %}
+                    </header>
+                    <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="ajustes-{{ line.pk }}">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Funcionario</th><th scope="col">Meta individual</th><th scope="col">Ponderador individual</th>
+                                {% if can_edit %}<th class="maintainer-actions" scope="col">Acciones</th>{% endif %}
+                            </tr></thead>
+                            <tbody>
+                            {% for adjustment in line.adjustments.all %}
+                                <tr>
+                                    <th scope="row">{{ adjustment.official }}</th>
+                                    <td>{{ adjustment.goal|default_if_none:"Meta del cargo" }}{% if adjustment.goal != None and line.goal_type == "PERCENTAGE" %} %{% endif %}</td>
+                                    <td>{{ adjustment.weight|default_if_none:"Ponderador del cargo" }}{% if adjustment.weight != None %} %{% endif %}</td>
+                                    {% if can_edit %}
+                                        <td class="maintainer-actions delegation-actions">
+                                            <div class="delegation-action-group">
+                                                <a class="auth-text-link action-icon action-icon--edit" href="{% url 'measurement_adjustment_edit' period.pk plan.pk version.pk line.pk adjustment.pk %}" data-modal-form aria-label="Editar ajuste de {{ adjustment.official }}" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
+                                                <a class="auth-text-link action-icon action-icon--deactivate" href="{% url 'measurement_adjustment_remove' period.pk plan.pk version.pk line.pk adjustment.pk %}" data-modal-form aria-label="Quitar ajuste de {{ adjustment.official }}" data-tooltip="Quitar" title="Quitar">{% include "includes/action_icon.html" with action="Archivar" %}</a>
+                                            </div>
+                                        </td>
+                                    {% endif %}
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="4" class="text-center">Aún no hay ajustes para este ítem.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% endif %}
+        {% endfor %}
+
+        <div class="attention-entry-actions">
+            <a class="btn attention-entry-cancel" href="{% url 'measurement_plan_list' period.pk %}">Volver al listado</a>
+            {% if can_publish %}
+                <a class="btn btn-primary attention-entry-submit" data-modal-form href="{% url 'measurement_version_publish' period.pk plan.pk version.pk %}">Publicar versión</a>
+            {% endif %}
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -30,8 +30,9 @@ from accounts.models import Official, Role
 from common.text import DESCRIPTION_MAX_LENGTH, clean_description_text, normalize_spaces
 
 SGR_APP_LABELS = ("accounts", "activities", "agenda", "analytics", "configuration")
-ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "archive": "Archivar", "delete": "Eliminar"}
-ACTION_ORDER = ("view", "add", "change", "archive")
+ACTION_LABELS = {"view": "Consultar", "add": "Crear", "change": "Editar", "archive": "Archivar",
+                 "delete": "Eliminar", "publish": "Publicar", "reopen": "Reabrir"}
+ACTION_ORDER = ("view", "add", "change", "archive", "publish", "reopen")
 ROLE_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
 
 
@@ -296,7 +297,7 @@ class RoleForm(LimitedTextFieldsMixin, forms.ModelForm):
         self.actor = actor
         catalog = assignable_permissions()
         privileged_ids = frozenset(
-            Permission.objects.filter(privileged_permission_query()).values_list("pk", flat=True)
+            Permission.objects.filter(privileged_permission_query(for_assignment=True)).values_list("pk", flat=True)
         )
         field = self.fields["permissions"]
         field.queryset = catalog
@@ -356,7 +357,7 @@ class RoleForm(LimitedTextFieldsMixin, forms.ModelForm):
 
     def grants_privileged_permissions(self):
         permissions = self.cleaned_data.get("permissions")
-        return permissions is not None and permissions.filter(privileged_permission_query()).exists()
+        return permissions is not None and permissions.filter(privileged_permission_query(for_assignment=True)).exists()
 
     def save(self):
         with transaction.atomic():

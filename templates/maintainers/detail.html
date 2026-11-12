@@ -16,6 +16,7 @@
                 <dl class="row mb-0">
                     {% for label,value in values.items %}<dt class="col-sm-4">{{ label|capfirst }}</dt><dd class="col-sm-8">{{ value|default:'—'|linebreaksbr }}</dd>{% endfor %}
                     <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><span class="maintainer-status-pill{% if row.is_active %} is-active{% else %} is-inactive{% endif %}">{{ row.status_label }}</span></dd>
+                    {% include "activities/measurement_status.html" %}
                     {% if related_count != None %}<dt class="col-sm-4">Funcionarios asociados</dt><dd class="col-sm-8">{{ related_count }}</dd>{% endif %}
                     {% if type_count != None %}<dt class="col-sm-4">Tipos de actividad asociados</dt><dd class="col-sm-8">{{ type_count }}</dd>{% endif %}
                 </dl>
@@ -25,6 +26,8 @@
             </section>
             <div class="attention-entry-actions">
                 <a class="btn attention-entry-cancel" href="{{ list_url }}">Volver al listado</a>
+                {% if measurement_url %}<a class="btn btn-primary maintainer-new-button" href="{{ measurement_url }}">Configuración de medición</a>{% endif %}
+                {% if row.reopen %}<a class="btn btn-primary maintainer-new-button" href="{{ row.reopen }}" data-modal-form>Reabrir período</a>{% endif %}
                 {% if can_archive and row.can_archive and row.mutable %}
                     <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}" data-swal-require-confirmation="true">
                         {% csrf_token %}<button class="btn attention-entry-submit" type="submit">{{ row.action_label }}</button>

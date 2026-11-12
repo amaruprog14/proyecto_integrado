@@ -7,7 +7,7 @@
     <nav aria-label="Inicio">
         <a class="maintainer-sidebar-link{% if active == 'home' %} is-active{% endif %}" href="{% url 'home' %}"{% if active == 'home' %} aria-current="page"{% endif %}>Inicio</a>
     </nav>
-    {% if perms.accounts.view_delegation or perms.accounts.view_role or perms.auth.view_user or perms.accounts.view_official or perms.accounts.view_position or perms.accounts.view_area or perms.accounts.view_territory or perms.auth.view_group %}
+    {% if perms.accounts.view_delegation or perms.accounts.view_role or perms.auth.view_user or perms.accounts.view_official or perms.accounts.view_position or perms.accounts.view_function or perms.accounts.view_area or perms.accounts.view_territory or perms.auth.view_group %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-cuentas">Cuentas</p>
             <nav aria-labelledby="menu-cuentas">
@@ -16,6 +16,7 @@
                 {% if perms.auth.view_user %}<a class="maintainer-sidebar-link{% if active == 'users' %} is-active{% endif %}" href="{% url 'user_maintainer' %}"{% if active == 'users' %} aria-current="page"{% endif %}>Usuarios</a>{% endif %}
                 {% if perms.accounts.view_official %}<a class="maintainer-sidebar-link{% if active == 'officials' %} is-active{% endif %}" href="{% url 'official_maintainer' %}"{% if active == 'officials' %} aria-current="page"{% endif %}>Funcionarios</a>{% endif %}
                 {% if perms.accounts.view_position %}<a class="maintainer-sidebar-link{% if active == 'positions' %} is-active{% endif %}" href="{% url 'position_maintainer' %}"{% if active == 'positions' %} aria-current="page"{% endif %}>Cargos</a>{% endif %}
+                {% if perms.accounts.view_function %}<a class="maintainer-sidebar-link{% if active == 'functions' %} is-active{% endif %}" href="{% url 'function_maintainer' %}"{% if active == 'functions' %} aria-current="page"{% endif %}>Funciones</a>{% endif %}
                 {% if perms.accounts.view_territory %}<a class="maintainer-sidebar-link{% if active == 'territories' %} is-active{% endif %}" href="{% url 'territory_maintainer' %}">Territorios</a>{% endif %}
                 {% if perms.accounts.view_area %}<a class="maintainer-sidebar-link{% if active == 'areas' %} is-active{% endif %}" href="{% url 'area_maintainer' %}"{% if active == 'areas' %} aria-current="page"{% endif %}>Áreas</a>{% endif %}
                 {% if perms.auth.view_group %}<a class="maintainer-sidebar-link{% if active == 'groups' %} is-active{% endif %}" href="{% url 'group_maintainer' %}"{% if active == 'groups' %} aria-current="page"{% endif %}>Grupos</a>{% endif %}

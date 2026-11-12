@@ -318,6 +318,9 @@ class AttentionTypeDetailView(CatalogDetailView):
     list_url = "attention_type_maintainer"
     update_url = "attention_type_update"
 
+    def get_queryset(self):
+        return super().get_queryset().select_related("activity_item")
+
 
 class AttentionTypeActivateView(CatalogSetActiveView):
     permission_required = "configuration.change_attentiontype"

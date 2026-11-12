@@ -13,7 +13,7 @@
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> <a class="auth-text-link" href="{% url list_url %}">Tipo de Atención</a> <span aria-hidden="true">/</span> {{ record.code }}</p>
                     <h1 id="maintainer-title">{{ record.name }}</h1>
                 </div>
-                {% if can_change %}<a class="btn btn-primary maintainer-new-button" href="{% url update_url record.pk %}">Editar tipo</a>{% endif %}
+                {% if can_change %}<a class="btn btn-primary maintainer-new-button" href="{% url update_url record.pk %}" data-modal-form>Editar tipo</a>{% endif %}
             </header>
 
             <section class="attention-entry-card" aria-label="Datos del tipo de atención">
@@ -23,6 +23,19 @@
                     <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ record.description|default:"—"|linebreaksbr }}</dd>
                     <dt class="col-sm-4">Estado</dt>
                     <dd class="col-sm-8"><span class="maintainer-status-pill{% if record.is_active %} is-active{% else %} is-inactive{% endif %}">{% if record.is_active %}Activo{% else %}Inactivo{% endif %}</span></dd>
+                    <dt class="col-sm-4">Ítem automático</dt>
+                    <dd class="col-sm-8">
+                        {% if record.activity_item %}
+                            {{ record.activity_item }}
+                            {% if record.activity_item.is_active and not record.activity_item.deleted_at %}
+                                <span class="maintainer-status-pill is-active">Vigente</span>
+                            {% else %}
+                                <span class="maintainer-status-pill is-inactive">No vigente</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="maintainer-status-pill is-inactive">Sin asignar</span>
+                        {% endif %}
+                    </dd>
                     <dt class="col-sm-4">Creado</dt><dd class="col-sm-8">{{ record.created_at|date:"d-m-Y H:i" }}</dd>
                     <dt class="col-sm-4">Última actualización</dt><dd class="col-sm-8">{{ record.updated_at|date:"d-m-Y H:i" }}</dd>
                 </dl>

@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from accounts.models import Delegation, Official, ServiceRecipient
 from activities.models import AttentionCase, SocialAttention
 from configuration.admin import PeriodAdmin
-from configuration.models import AttentionType, AuditLog, Period, SubattentionType
+from configuration.models import AttentionType, AuditLog, Item, Period, SubattentionType
 from common.exports import XLSX_CONTENT_TYPE
 
 
@@ -175,6 +175,20 @@ class AttentionCatalogCrudTests(TestCase):
         )
         self.assertContains(subattention_response, attention_type.name)
         self.assertContains(subattention_response, subattention.code)
+
+    def test_attention_type_detail_shows_automatic_item_and_its_availability(self):
+        item = Item.objects.create(item_name="Atención social de prueba")
+        record = AttentionType.objects.create(name="Apoyo social", activity_item=item)
+        url = reverse("attention_type_detail", args=[record.pk])
+        response = self.client.get(url)
+        self.assertContains(response, item.item_name)
+        self.assertContains(response, '<span class="maintainer-status-pill is-active">Vigente</span>', html=True)
+        item.is_active = False
+        item.save(update_fields=["is_active"])
+        self.assertContains(self.client.get(url), '<span class="maintainer-status-pill is-inactive">No vigente</span>', html=True)
+        record.activity_item = None
+        record.save(update_fields=["activity_item"])
+        self.assertContains(self.client.get(url), '<span class="maintainer-status-pill is-inactive">Sin asignar</span>', html=True)
 
     def test_subattention_name_must_be_unique_within_attention_type(self):
         attention_type = AttentionType.objects.create(name="Apoyo social")

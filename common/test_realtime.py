@@ -32,9 +32,16 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
                 item=item, date=timezone.localdate(), record_type=Activity.RecordType.FIELD)
         else:
             seed_test_data()
-        from accounts.models import Territory, Delegation, ServiceRecipient
+        from accounts.models import Function, Position, Territory, Delegation, ServiceRecipient
         from activities.models import ClientRequest
-        from configuration.models import SubattentionType
+        from analytics.models import MeasurementPlan
+        from configuration.models import Period, SubattentionType
+        position = Position.objects.first()
+        function = Function.objects.create(function_name="Función de prueba")
+        function.positions.add(position)
+        period = Period.objects.first()
+        plan = MeasurementPlan.objects.create(period=period, position=position)
+        plan.versions.create(number=1, effective_from=period.start_date)
         delegation = Delegation.objects.get(delegation_name="Sur")
         territory = Territory.objects.create(territory_name="Territorio de prueba", delegation=delegation)
         recipient = ServiceRecipient.objects.create(national_id="12345678-5", full_name="Persona de prueba", territory=territory)
@@ -65,20 +72,24 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
             if key == 'official':
                 obj = model.objects.filter(user=None, deleted_at__isnull=True).first() or obj
             fields = dict(territory='territory_name', activity='record_type', official='full_name', delegation='delegation_name',
-                user='username', role='role_name', area='area_name', position='position_name',
+                user='username', role='role_name', area='area_name', position='position_name', function='function_name',
                 group='name', period='status', item='item_name', attention_type='name', subattention_type='name',
-                staff_request='subject')
+                staff_request='subject', measurement_plan='position')
             field = fields[key]
             old_value = getattr(obj, field)
             new_value = ('Registro mensual' if old_value != 'Registro mensual' else 'Terreno') if key == 'activity' else ('CLOSED' if old_value != 'CLOSED' else 'OPEN') if key == 'period' else f'{old_value} WS'
             if key == 'user':
                 new_value = old_value + '_ws'
+            if key == 'measurement_plan':
+                from accounts.models import Position
+                new_value = Position.objects.create(position_name="Cargo actualizado")
+            url = reverse(ROUTES[key], args=[obj.period_id] if key == 'measurement_plan' else [])
             expected = {}
             visible_http = {}
             for user in users:
                 with self.subTest(module=key, account=user.username, phase='HTTP'):
                     allowed = can_read(user, key)
-                    response = self.clients[user.pk].get(reverse(ROUTES[key]))
+                    response = self.clients[user.pk].get(url)
                     self.assertEqual(response.status_code, 200 if allowed else 403)
                     if allowed:
                         self.assertContains(response, f'data-maintainer-websocket="/ws/maintainers/{key}/"')
@@ -111,8 +122,8 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
                             if not own_context:
                                 self.assertTrue(await socket.receive_nothing(timeout=.05), (key, user.username))
                         if visible_http[user.pk] and key not in ('period', 'activity'):
-                            response = await sync_to_async(self.clients[user.pk].get)(reverse(ROUTES[key]))
-                            self.assertContains(response, new_value)
+                            response = await sync_to_async(self.clients[user.pk].get)(url)
+                            self.assertContains(response, str(new_value))
                 finally:
                     for _, socket, _ in connections:
                         await socket.disconnect()

@@ -17,10 +17,12 @@ Including another URLconf
 from django.urls import path, reverse_lazy
 from django.views.generic import RedirectView
 from .case_views import CaseActionView, CaseDetailView, CaseListView
+from .eligible_items import ActivityEligibleItemsView
 from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
 urlpatterns = []
 urlpatterns += [
+    path("items-elegibles/", ActivityEligibleItemsView.as_view(), name="activity_eligible_items"),
     path('solicitudes/', RedirectView.as_view(
         url=reverse_lazy('activity_maintainer', query={
             'record_source': 'request', 'status': '', 'official': '', 'item': '', 'record_type': '',

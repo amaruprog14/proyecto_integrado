@@ -28,6 +28,7 @@
                 <dt class="col-sm-4">Resultado</dt><dd class="col-sm-8">{{ attention.result|default:"Sin resultado registrado"|linebreaksbr }}</dd>
                 <dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ attention.delegation.code }} · {{ attention.delegation.delegation_name }}</dd>
                 <dt class="col-sm-4">Usuario responsable</dt><dd class="col-sm-8">{{ attention.responsible.full_name }}</dd>
+                {% include "activities/measurement_status.html" %}
                 {% if origin_request %}
                     <dt class="col-sm-4">Solicitud ciudadana de origen</dt>
                     <dd class="col-sm-8"><a class="auth-text-link" href="{% url 'staff_client_request_detail' origin_request.pk %}">{{ origin_request.identifier }}</a></dd>

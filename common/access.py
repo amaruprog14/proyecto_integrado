@@ -89,7 +89,7 @@ class ProtectedViewMixin(PermissionRequiredMixin):
                 from common.list_state import ROUTES
                 messages.error(self.request, "Espera 30 segundos entre exportaciones a Excel.")
                 self.get = lambda *args, **kwargs: redirect(next(name for name, key in ROUTES.items()
-                    if key == module and not name.endswith('_export')))
+                    if key == module and not name.endswith('_export')), **self.request.resolver_match.kwargs)
         return allowed
 
     def handle_no_permission(self):

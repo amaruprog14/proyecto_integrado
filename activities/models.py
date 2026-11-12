@@ -141,6 +141,11 @@ class Activity(AutoCodeMixin, BaseModel):
     official = models.ForeignKey(
         Official, on_delete=models.PROTECT, related_name="activities", verbose_name="Funcionario"
     )
+    registration_position = models.ForeignKey(
+        "accounts.Position", on_delete=models.PROTECT, null=True, editable=False,
+        related_name="+", verbose_name="Cargo al registrar",
+    )
+    registration_position_captured = models.BooleanField(default=False, editable=False)
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="activities", verbose_name="Ítem"
     )
@@ -157,6 +162,13 @@ class Activity(AutoCodeMixin, BaseModel):
 
     def __str__(self):
         return f"Actividad {self.pk} - {self.official}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.registration_position_captured:
+            if self.registration_position_id is None:
+                self.registration_position_id = self.official.position_id
+            self.registration_position_captured = True
+        return super().save(*args, **kwargs)
 
 class SocialAttention(BaseModel):
     MAX_ATTENTIONS_PER_CASE = 3
