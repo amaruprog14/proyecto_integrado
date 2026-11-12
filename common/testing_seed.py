@@ -8,7 +8,7 @@ from django.contrib.auth.models import Group, Permission, User
 from django.utils import timezone
 
 from accounts.models import Area, Delegation, Official, Position, Role, ServiceRecipient, GroupProfile
-from activities.models import Activity, SocialAttention
+from activities.models import Activity, AttentionCase, SocialAttention
 from configuration.models import Item, Period, ActivityType, ServiceType, AttentionType, SubattentionType
 
 from common.demo_data import (
@@ -131,13 +131,13 @@ class _LegacyFixture:
             if SocialAttention.objects.filter(submission_token__in=[token, f"seed-demo-attention-{i+1}"]).exists():
                 continue
             responsible = activities[i % 4].official
-            if not SocialAttention.validate_attention_limit(recipient.pk):
-                continue
+            case = AttentionCase.objects.create(recipient=recipient, delegation=responsible.delegation,
+                                                responsible=responsible, subject=attention_name[:100])
             automatic_activity = Activity.objects.create(official=responsible, item=attention.activity_item,
                 date=today, record_type=Activity.RecordType.ATTENTION,
                 action_description=f"Solicitud de demostración de {attention_name.lower()}.")
             SocialAttention.objects.create(
-                submission_token=token, recipient=recipient, attention_type=attention, subattention_type=subattention,
+                case=case, submission_token=token, recipient=recipient, attention_type=attention, subattention_type=subattention,
                 delegation=responsible.delegation, responsible=responsible, date=today,
                 activity=automatic_activity, description=f"Solicitud de demostración de {attention_name.lower()}.")
 

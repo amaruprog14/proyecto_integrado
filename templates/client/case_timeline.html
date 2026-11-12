@@ -1,0 +1,13 @@
+<ol class="client-history mb-0">
+    {% for entry in entries %}
+        <li class="text-break mb-2">
+            <strong>{{ entry.title }}</strong> · {{ entry.when|date:'d/m/Y H:i' }}
+            {% if entry.actor %} · {{ entry.actor.full_name }}{% endif %}
+            {% if entry.effective_date %}<div>Fecha de la gestión: {{ entry.effective_date|date:'d/m/Y' }}</div>{% endif %}
+            {% if entry.detail %}<div>{{ entry.detail|linebreaksbr }}</div>{% endif %}
+            {% if entry.attention_id %}<a class="auth-text-link" href="{% url 'attention_detail' entry.attention_id %}">{{ entry.attention_code }}</a>{% endif %}
+        </li>
+    {% empty %}
+        <li>Aún no hay movimientos registrados.</li>
+    {% endfor %}
+</ol>

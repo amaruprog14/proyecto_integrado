@@ -1,69 +1,64 @@
 {% extends 'client/base.html' %}
 
-{% block title %}Detalle de solicitud · SGR{% endblock %}
+{% block title %}Seguimiento de {{ tracking.code }} · SGR{% endblock %}
 
 {% block content %}
 <div class="maintainer-layout">
-    <section class="maintainer-content" aria-label="Detalle de solicitud">
+    <section class="maintainer-content" aria-label="Seguimiento del caso">
         <p class="maintainer-breadcrumb">
             Portal del cliente <span aria-hidden="true">/</span>
-            <a class="auth-text-link" href="{% url 'client_requests' %}">Mis solicitudes</a>
+            <a class="auth-text-link" href="{% url 'client_requests' %}">Mis solicitudes y atenciones</a>
             <span aria-hidden="true">/</span> Detalle
         </p>
 
         <div data-client-live>
             <header class="maintainer-heading">
-                <h1>{{ attention_request.subject }}</h1>
+                <h1 class="text-break">{{ tracking.subject }}</h1>
             </header>
 
             <section class="attention-entry-card" aria-labelledby="request-data-title">
-                <h2 class="h5 mb-3" id="request-data-title">Datos de la solicitud</h2>
+                <h2 class="h5 mb-3" id="request-data-title">Seguimiento de {{ tracking.code }}</h2>
                 <dl class="row mb-0">
-                    <dt class="col-sm-4">Folio</dt>
-                    <dd class="col-sm-8">{{ attention_request.identifier }}</dd>
                     <dt class="col-sm-4">Estado</dt>
-                    <dd class="col-sm-8">{% include 'client/status.html' with item=attention_request %}</dd>
+                    <dd class="col-sm-8"><span class="maintainer-status-pill{% if tracking.status_code == 'RESOLVED' %} is-active{% elif tracking.status_code == 'REVIEW' %} client-status-review{% else %} is-inactive{% endif %}">{{ tracking.status }}</span></dd>
                     <dt class="col-sm-4">Fecha de ingreso</dt>
-                    <dd class="col-sm-8">{{ attention_request.created_at|date:'d/m/Y H:i' }}</dd>
+                    <dd class="col-sm-8">{{ tracking.created|date:'d/m/Y H:i' }}</dd>
+                    <dt class="col-sm-4">Último movimiento</dt><dd class="col-sm-8">{{ tracking.last_movement|date:'d/m/Y H:i' }}</dd>
                     <dt class="col-sm-4">Delegación</dt>
-                    <dd class="col-sm-8">{{ attention_request.delegation }}</dd>
+                    <dd class="col-sm-8">{{ tracking.delegation }}</dd>
+                    {% if tracking.next_step %}
+                        <dt class="col-sm-4">Próximo paso</dt><dd class="col-sm-8 text-break">{{ tracking.next_step }} · {{ tracking.next_step_date|date:'d/m/Y' }}</dd>
+                    {% endif %}
+                    {% if attention_request %}
                     <dt class="col-sm-4">Tipo / Sub atención</dt>
                     <dd class="col-sm-8">{{ attention_request.attention_type }} / {{ attention_request.subattention_type }}</dd>
                     <dt class="col-sm-4">Territorio al ingresar</dt>
                     <dd class="col-sm-8">{{ attention_request.territory|default:"Sin registro histórico" }}</dd>
                     <dt class="col-sm-4">Dirección al ingresar</dt>
                     <dd class="col-sm-8">{{ attention_request.address_snapshot|default:"Sin registro histórico" }}</dd>
+                    {% endif %}
                 </dl>
             </section>
 
-            <section class="attention-entry-card mt-3" aria-labelledby="request-description-title">
+            {% if attention_request %}<section class="attention-entry-card mt-3" aria-labelledby="request-description-title">
                 <h2 class="h5 mb-3" id="request-description-title">Detalle de la solicitud</h2>
-                <div>{{ attention_request.description|linebreaksbr }}</div>
-            </section>
+                <div class="text-break">{{ attention_request.description|linebreaksbr }}</div>
+            </section>{% endif %}
 
             <section class="attention-entry-card mt-3" aria-labelledby="request-response-title">
                 <h2 class="h5 mb-3" id="request-response-title">Respuesta del municipio</h2>
-                <div>{{ attention_request.response|default:'Aún no hay una respuesta publicada.'|linebreaksbr }}</div>
+                <div class="text-break">{{ tracking.response|default:'Aún no hay una respuesta publicada.'|linebreaksbr }}</div>
             </section>
 
             <section class="attention-entry-card mt-3" aria-labelledby="request-history-title">
                 <h2 class="h5 mb-3" id="request-history-title">Historial de atención</h2>
-                <ol class="client-history mb-0">
-                    {% for event in attention_request.events.all %}
-                        <li>
-                            <strong>{{ event.get_status_display }}</strong> · {{ event.created_at|date:'d/m/Y H:i' }}
-                            {% if event.response %}<div>{{ event.response|linebreaksbr }}</div>{% endif %}
-                        </li>
-                    {% empty %}
-                        <li>Aún no hay movimientos registrados.</li>
-                    {% endfor %}
-                </ol>
+                {% include 'client/case_timeline.html' with entries=public_timeline %}
             </section>
         </div>
 
         <p class="small text-body-secondary mt-3 mb-0" data-client-live-status role="status"></p>
         <div class="attention-entry-actions">
-            <a class="btn attention-entry-cancel" href="{% url 'client_requests' %}">Volver a mis solicitudes</a>
+            <a class="btn attention-entry-cancel" href="{% url 'client_requests' %}">Volver a mis solicitudes y atenciones</a>
         </div>
     </section>
 </div>

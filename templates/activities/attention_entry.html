@@ -8,7 +8,7 @@
         <header class="attention-entry-heading">
             <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Atenciones</p>
             <h1 id="attention-entry-title">Ingreso de atención</h1>
-            <p>Registra una atención con una persona solicitante y catálogos vigentes.</p>
+            {% if target_case %}<p>Agregar gestión a {{ target_case.identifier }} · {{ target_case.subject }}</p>{% endif %}
         </header>
 
         {% if last_attention %}
@@ -22,10 +22,20 @@
                     <a class="auth-text-link" href="{% url 'attention_detail' last_attention.pk %}">Consultar la atención registrada</a>
                     <span aria-hidden="true">·</span>
                 {% endif %}
-                <span>El formulario está listo para registrar una nueva atención.</span>
+                {% if last_case %}<a class="auth-text-link" href="{% url 'attention_case_detail' last_case.pk %}">Ver seguimiento de {{ last_case.identifier }}</a>{% endif %}
             </div>
         {% endif %}
 
+        {% if case_unavailable or folio_unavailable %}
+            <div class="attention-entry-card" role="status">
+                {% if target_case.is_closed %}
+                    <p>El caso está cerrado.</p>
+                {% else %}
+                    <p>El caso o folio no está disponible para registrar una gestión en la delegación activa. Si corresponde a otra delegación autorizada, selecciónala en la cabecera.</p>
+                {% endif %}
+                <a class="btn attention-entry-cancel" href="{% if target_case %}{% url 'attention_case_detail' target_case.pk %}{% else %}{% url 'attention_entry' %}{% endif %}">Volver</a>
+            </div>
+        {% else %}
         <form class="attention-entry-card" id="attention-entry-form" method="post">
             {% csrf_token %}
             {{ form.submission_token }}
@@ -36,13 +46,13 @@
             {% endif %}
 
             <div class="attention-entry-grid">
-                <div class="attention-entry-field attention-entry-field-full">
+                {% if form.origin %}<div class="attention-entry-field attention-entry-field-full">
                     <label for="{{ form.origin.id_for_label }}">{{ form.origin.label }}</label>
                     {{ form.origin }}
                     {% for error in form.origin.errors %}
                         <div class="invalid-feedback d-block">{{ error }}</div>
                     {% endfor %}
-                </div>
+                </div>{% endif %}
                 {% if form.client_request %}
                     <div class="attention-entry-field attention-entry-field-full" id="attention-request-fields" data-url="{% url 'attention_request_lookup' %}"{% if form.client_request.errors %} data-invalid="true"{% endif %}>
                         <label for="{{ form.client_request.id_for_label }}">{{ form.client_request.label }}</label>
@@ -53,6 +63,9 @@
                         <p class="attention-entry-hint" id="attention-request-status" role="status"></p>
                     </div>
                 {% endif %}
+                {% if form.case_subject %}<div class="attention-entry-field-full" id="attention-case-subject">
+                    {% include 'activities/attention_field.html' with field=form.case_subject %}
+                </div>{% endif %}
                 <div class="attention-entry-field">
                     <label for="{{ form.recipient_national_id.id_for_label }}">
                         {{ form.recipient_national_id.label }} <span aria-hidden="true">*</span>
@@ -123,6 +136,18 @@
                         <div class="invalid-feedback d-block">{{ error }}</div>
                     {% endfor %}
                 </div>
+                {% include 'activities/attention_field.html' with field=form.effective_date %}
+                {% include 'activities/attention_field.html' with field=form.result full_width=True %}
+                {% if form.invite_to_portal %}
+                    <fieldset class="attention-entry-field-full" id="attention-portal-invitation">
+                        <legend class="h6">Acceso al portal (opcional)</legend>
+                        {% include 'activities/attention_field.html' with field=form.invite_to_portal %}
+                        <div id="attention-invitation-fields" class="attention-entry-grid">
+                            {% include 'activities/attention_field.html' with field=form.invitation_email %}
+                            {% include 'activities/attention_field.html' with field=form.identity_verified %}
+                        </div>
+                    </fieldset>
+                {% endif %}
             </div>
 
             <div class="attention-entry-context" aria-label="Responsable y fecha de registro">
@@ -130,11 +155,11 @@
                     Responsable:
                     <strong>{% if user.official %}{{ user.official.full_name }}{% else %}{{ user.get_full_name|default:user.username }}{% endif %}</strong>
                 </span>
-                <span>Fecha y hora: <strong>Se asignan desde el servidor al guardar</strong></span>
+                <span>Fecha y hora de registro: <strong>Se asignan al guardar</strong></span>
             </div>
 
             <div class="attention-entry-actions">
-                <a class="btn attention-entry-cancel" href="{% url 'activity_maintainer' %}">Cancelar</a>
+                <a class="btn attention-entry-cancel" href="{% if target_case %}{% url 'attention_case_detail' target_case.pk %}{% elif perms.activities.view_activity %}{% url 'activity_maintainer' %}{% else %}{% url 'home' %}{% endif %}">Cancelar</a>
                 <button class="btn btn-primary attention-entry-submit" type="submit" data-loading-text="Guardando…">
                     Guardar atención
                 </button>
@@ -144,6 +169,7 @@
                 Al guardar, se registran el solicitante, la delegación autorizada, el funcionario responsable y la fecha y hora del servidor.
             </p>
         </form>
+        {% endif %}
         <noscript>
             <p class="attention-entry-note">JavaScript desactivado: puedes enviar el formulario; la asociación de catálogos también se valida en el servidor.</p>
         </noscript>
@@ -151,6 +177,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="{% static 'js/attention-entry.js' %}?v=selector" defer></script>
+    <script src="{% static 'js/attention-entry.js' %}?v=case-follow-up" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

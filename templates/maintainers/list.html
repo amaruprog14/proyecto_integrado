@@ -14,7 +14,13 @@
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> {{ maintainer_title }}</p>
                     <h1 id="maintainer-title">{{ maintainer_title }}</h1>
                 </div>
-                {% if can_add %}
+                {% if key == 'activity' %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if can_add %}<a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>+ Nueva actividad</a>{% endif %}
+                        {% if perms.activities.add_socialattention %}<a class="btn btn-primary" href="{% url 'attention_entry' %}">Registrar atención</a>{% endif %}
+                        {% if perms.activities.view_socialattention %}<a class="btn attention-entry-cancel" href="{% url 'attention_cases' %}">Casos sociales</a>{% endif %}
+                    </div>
+                {% elif can_add %}
                     <a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>+ Nuevo registro</a>
                 {% endif %}
             </header>
@@ -30,7 +36,7 @@
                     <select class="form-select maintainer-status-filter" id="maintainer-status" name="status" data-swal-autosubmit aria-label="Filtrar por estado">
                         <option value="">Filtrar estado</option>
                         {% for value, label in statuses %}
-                            <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}{% if key == 'activity' %}{% if value == 'ACTIVE' or value == 'INACTIVE' %} data-record-source="activity"{% if request.GET.record_source == 'request' %} disabled{% endif %}{% else %} data-record-source="request"{% if request.GET.record_source == 'activity' %} disabled{% endif %}{% endif %}{% endif %}>{{ label }}</option>
+                            <option value="{{ value }}"{% if selected_status == value %} selected{% endif %}{% if key == 'activity' and value != 'RESOLVED' %}{% if value in activity_status_values %} data-record-source="activity"{% if request.GET.record_source == 'request' %} disabled{% endif %}{% else %} data-record-source="request"{% if request.GET.record_source == 'activity' %} disabled{% endif %}{% endif %}{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>

@@ -7,7 +7,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Case, F, Q, Value, When
+from django.db.models.functions import Coalesce
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse, reverse_lazy
@@ -18,14 +19,17 @@ from django.views.generic import FormView, TemplateView, View
 from accounts.forms import OwnOfficialProfileForm, profile_snapshot
 from accounts.models import Delegation, Role, ServiceRecipient, Territory
 from common.pagination import ClampedPaginationMixin
-from common.access import ProtectedViewMixin
+from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
 from common.list_state import ordered, positive
 from common.scopes import delegation_ids, permission_scope
 from common.text import clean_description_text, describe_changes, normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 from configuration.services import AuditoriaService
-from .models import ClientRequest, ClientRequestEvent
+from .case_views import render_case
+from .cases import case_timeline, change_request_status, record_case_event, scoped_cases
+from .invitations import activate_portal
+from .models import AttentionCase, ClientRequest, ClientRequestEvent
 
 
 class ClientAccessMixin(LoginRequiredMixin):
@@ -46,6 +50,12 @@ class ClientAccessMixin(LoginRequiredMixin):
     def requests(self):
         return ClientRequest.objects.filter(recipient=self.recipient, deleted_at__isnull=True).select_related(
             "delegation", "attention_type", "subattention_type")
+
+    def cases(self):
+        return AttentionCase.objects.filter(recipient=self.recipient, deleted_at__isnull=True).filter(
+            Q(client_request__isnull=True) | Q(client_request__recipient=self.recipient,
+                client_request__deleted_at__isnull=True, client_request__delegation_id=F("delegation_id")),
+        ).select_related("client_request", "delegation")
 
 
 class ClientRequestForm(forms.ModelForm):
@@ -88,25 +98,40 @@ class ClientListView(ClampedPaginationMixin, ClientAccessMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        qs = self.requests()
+        qs = self.cases()
         query = normalize_spaces(self.request.GET.get("q"))[:200]
         status = self.request.GET.get("status", "")
         if query:
-            from django.db.models import Q
             match = Q(subject__icontains=query)
-            if query.upper().startswith("SOL-") and query[4:].isdigit():
-                match |= Q(pk=int(query[4:]))
+            prefix, _, number = query.upper().partition("-")
+            identifier = positive(number, 0)
+            if prefix == "SOL" and identifier:
+                match |= Q(client_request_id=identifier)
+            if prefix == "CAS" and identifier:
+                match |= Q(pk=identifier, client_request__isnull=True)
             qs = qs.filter(match)
-        if status in ClientRequest.Status.values:
-            qs = qs.filter(status=status)
+        if status:
+            qs = qs.filter(Q(client_request__status=status) | Q(client_request__isnull=True, direct_status=status))
+        source = self.request.GET.get("record_source", "")
+        if source:
+            qs = qs.filter(client_request__isnull=source == "presential")
+        sort = self.request.GET.get("sort")
+        field = {"subject": "subject", "delegation": "delegation__delegation_name"}.get(sort, "created_at")
+        prefix = "" if self.request.GET.get("direction") == "asc" else "-"
+        if sort == "code":
+            qs = qs.annotate(code_source=Case(When(client_request__isnull=True, then=Value(0)), default=Value(1)),
+                             code_number=Coalesce("client_request_id", "pk"))
+            qs = qs.order_by(f"{prefix}code_source", f"{prefix}code_number", "-pk")
         else:
-            status = ""
-        page = self.clamp_page(qs)
+            qs = qs.order_by(f"{prefix}{field}", "-pk")
+        page = self.clamp_page(qs, already_ordered=True)
         from django.http import QueryDict
         params = QueryDict(mutable=True)
         params.update({key: value for key, value in self.request.GET.items() if key != "page"})
-        context.update(page_obj=page, query=query, selected_status=status,
-                       statuses=ClientRequest.Status.choices, querystring=params.urlencode())
+        context.update(page_obj=page, query=query, selected_status=status, selected_source=source,
+                       statuses=[("RECEIVED", "Recibida"), ("REVIEW", "En revisión / En curso"),
+                                 ("RESOLVED", "Resuelta / Cerrada"), ("RECORDED", "Gestión registrada")],
+                       querystring=params.urlencode())
         return context
 
 
@@ -115,8 +140,31 @@ class ClientDetailView(ClientAccessMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["attention_request"] = get_object_or_404(self.requests(), pk=self.kwargs["pk"])
-        return context
+        origin = get_object_or_404(self.requests(), pk=self.kwargs["pk"])
+        case = get_object_or_404(self.cases(), client_request=origin)
+        return {**context, "attention_request": origin, **public_case_context(case)}
+
+
+def public_case_context(case):
+    timeline = case_timeline(case, public=True)
+    return {
+        "tracking": {"code": case.identifier, "subject": case.subject, "delegation": case.delegation,
+                     "status": case.get_status_display(), "status_code": case.status,
+                     "created": case.created_at, "last_movement": timeline[0]["when"] if timeline else case.created_at,
+                     "next_step": case.public_next_step,
+                     "next_step_date": case.next_step_date if case.public_next_step else None,
+                     "response": case.response},
+        "public_timeline": timeline,
+    }
+
+
+class ClientPresentialCaseView(ClientAccessMixin, TemplateView):
+    template_name = "client/detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        case = get_object_or_404(self.cases(), pk=self.kwargs["pk"], client_request__isnull=True)
+        return {**context, **public_case_context(case)}
 
 
 class ClientCreateView(ClientAccessMixin, FormView):
@@ -317,20 +365,22 @@ class StaffRequestDetailMixin:
             "request_list_url": reverse("activity_maintainer" if self.request.GET.get("desde") == "actividades"
                 and user.has_perm("activities.view_activity") else "staff_client_requests"),
             "linked_attentions": scoped_attentions(user, "activities.view_socialattention")
-                .filter(client_request=item).order_by("-registered_at") if can_view else (),
+                .filter(case__client_request=item).order_by("-registered_at") if can_view else (),
             "can_review_request": staff_requests(user, "activities.change_socialattention")
                 .filter(pk=item.pk).exists() if user.has_perm("activities.change_socialattention") else False,
             "can_register_attention": can_view and user.has_perm("activities.add_socialattention"),
         }
 
 
-class StaffRequestDetailView(StaffRequestDetailMixin, ProtectedViewMixin, TemplateView):
+class StaffRequestDetailView(ProtectedViewMixin, View):
     permission_required = "activities.view_socialattention"
-    template_name = "client/staff_review.html"
 
-    def get_context_data(self, **kwargs):
-        item = get_object_or_404(staff_requests(self.request.user, self.permission_required), pk=self.kwargs["pk"])
-        return {**super().get_context_data(**kwargs), **self.request_context(item)}
+    def get(self, request, pk):
+        case = get_scoped_object_or_404(request, scoped_cases(request.user), client_request_id=pk)
+        list_name = "staff_client_requests"
+        if request.GET.get("desde") == "actividades" and request.user.has_perm("activities.view_activity"):
+            list_name = "activity_maintainer"
+        return render_case(request, case, request_list_url=reverse(list_name))
 
 
 class StaffRequestReviewView(StaffRequestDetailMixin, ProtectedViewMixin, FormView):
@@ -349,15 +399,28 @@ class StaffRequestReviewView(StaffRequestDetailMixin, ProtectedViewMixin, FormVi
 
     def form_valid(self, form):
         with transaction.atomic():
-            item = get_object_or_404(staff_requests(self.request.user, self.permission_required)
-                .select_related(None).select_for_update(), pk=self.kwargs["pk"])
-            if item.status != form.cleaned_data["status"] or item.response != form.cleaned_data["response"]:
-                previous = item.status
-                item.status, item.response = form.cleaned_data["status"], form.cleaned_data["response"]
-                item.save(update_fields=["status", "response", "updated_at"])
-                ClientRequestEvent.objects.create(request=item, status=item.status, response=item.response)
-                AuditoriaService.register_change(getattr(self.request.user, "official", None),
-                    "Respuesta a solicitud ciudadana", item, previous_value=previous, new_value=item.status)
+            allowed = scoped_cases(self.request.user, self.permission_required).values("pk")
+            case = get_scoped_object_or_404(self.request, AttentionCase.objects.select_for_update().filter(pk__in=allowed),
+                                            client_request_id=self.kwargs["pk"])
+            status, response = form.cleaned_data["status"], form.cleaned_data["response"]
+            actor = getattr(self.request.user, "official", None)
+            if actor is None:
+                return self.handle_no_permission()
+            if case.is_closed:
+                form.add_error(None, "El caso está cerrado.")
+                return self.form_invalid(form)
+            if status == ClientRequest.Status.RESOLVED and case.next_step:
+                form.add_error(None, "Completa o cancela el próximo paso antes de cerrar el caso.")
+                return self.form_invalid(form)
+            if status == ClientRequest.Status.RECEIVED and case.status != status:
+                form.add_error("status", "Una solicitud en revisión no puede volver a Recibida.")
+                return self.form_invalid(form)
+            if case.status != status or case.response != response:
+                if status == ClientRequest.Status.REVIEW and case.responsible_id is None:
+                    case.responsible = actor
+                change_request_status(case, status, actor, response)
+                record_case_event(case, actor, "Respuesta a solicitud ciudadana", case.identifier)
+                case.save(update_fields=["responsible", "updated_at"])
         messages.success(self.request, "Registro guardado correctamente.")
         return redirect(self.success_url)
 
@@ -380,6 +443,9 @@ urlpatterns = [
     path("", ClientListView.as_view(), name="client_requests"),
     path("nueva/", ClientCreateView.as_view(), name="client_request_create"),
     path("<int:pk>/", ClientDetailView.as_view(), name="client_request_detail"),
+    path("atenciones/<int:pk>/", ClientPresentialCaseView.as_view(), name="client_presential_case"),
+    path("activar/", activate_portal, name="portal_invitation_activate"),
+    path("activar/<str:token>/", activate_portal, name="portal_invitation_token"),
     path("perfil/", ClientProfileView.as_view(), name="client_profile"),
     path("perfil/foto/", ClientPhotoView.as_view(), name="client_profile_photo"),
     path("gestion/", StaffRequestListView.as_view(), name="staff_client_requests"),

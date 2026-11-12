@@ -20,10 +20,12 @@
             <dl class="row mb-0">
                 <dt class="col-sm-4">Identificador</dt><dd class="col-sm-8">{{ attention.identifier }}</dd>
                 <dt class="col-sm-4">Fecha y hora de registro</dt><dd class="col-sm-8">{{ attention.registered_at|date:"d-m-Y H:i" }}</dd>
+                <dt class="col-sm-4">Fecha de la gestión</dt><dd class="col-sm-8">{{ attention.date|date:"d-m-Y" }}</dd>
                 <dt class="col-sm-4">Solicitante</dt><dd class="col-sm-8">{{ attention.recipient.full_name }} · {{ attention.recipient.national_id }}</dd>
                 <dt class="col-sm-4">Tipo de Atención</dt><dd class="col-sm-8">{{ attention.attention_type.code }} · {{ attention.attention_type.name }}</dd>
                 <dt class="col-sm-4">Sub Atención</dt><dd class="col-sm-8">{{ attention.subattention_type.code }} · {{ attention.subattention_type.name }}</dd>
                 <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ attention.description|default:"—"|linebreaksbr }}</dd>
+                <dt class="col-sm-4">Resultado</dt><dd class="col-sm-8">{{ attention.result|default:"Sin resultado registrado"|linebreaksbr }}</dd>
                 <dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ attention.delegation.code }} · {{ attention.delegation.delegation_name }}</dd>
                 <dt class="col-sm-4">Usuario responsable</dt><dd class="col-sm-8">{{ attention.responsible.full_name }}</dd>
                 {% if origin_request %}
@@ -35,7 +37,9 @@
 
         <div class="attention-entry-actions">
             <a class="btn attention-entry-cancel" href="{% url 'home' %}">Volver al inicio</a>
-            {% if perms.activities.add_socialattention %}
+            {% if attention_case %}
+                <a class="btn btn-primary" href="{% url 'attention_case_detail' attention_case.pk %}">Ver seguimiento de {{ attention_case.identifier }}</a>
+            {% elif perms.activities.add_socialattention %}
                 <a class="btn btn-primary attention-entry-submit" href="{% url 'attention_entry' %}">Registrar otra atención</a>
             {% endif %}
         </div>

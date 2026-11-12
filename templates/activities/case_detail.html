@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}{{ case.identifier }} · Casos sociales{% endblock %}
+{% block sidebar %}{% include 'includes/maintainer_sidebar.html' with active=active_menu %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="case-title">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'attention_cases' %}">Casos sociales</a> / {{ case.identifier }}</p>
+        <h1 class="text-break" id="case-title">{{ case.subject }}</h1>
+        <p>{{ case.recipient.full_name }} · {{ case.delegation }}</p>
+    </header>
+    <section class="attention-entry-card" aria-labelledby="case-summary">
+        <h2 class="h5" id="case-summary">Seguimiento de {{ case.identifier }}</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{% include 'client/status.html' with item=case %}</dd>
+            <dt class="col-sm-4">Responsable actual</dt><dd class="col-sm-8">{{ case.responsible.full_name|default:'Sin asignar' }}</dd>
+            <dt class="col-sm-4">Última actualización</dt><dd class="col-sm-8">{{ case.updated_at|date:'d/m/Y H:i' }}</dd>
+            <dt class="col-sm-4">Próximo paso</dt><dd class="col-sm-8 text-break">{{ case.next_step|default:'Sin próximo paso registrado' }}{% if case.next_step_date %} · {{ case.next_step_date|date:'d/m/Y' }}{% endif %}</dd>
+            {% if case.client_request_id %}<dt class="col-sm-4">Solicitud original</dt><dd class="col-sm-8 text-break">{{ case.client_request.description|linebreaksbr }}</dd>{% endif %}
+            {% if case.response %}<dt class="col-sm-4">Respuesta publicada</dt><dd class="col-sm-8 text-break">{{ case.response|linebreaksbr }}</dd>{% endif %}
+        </dl>
+        <div class="attention-entry-actions">
+            {% if request_list_url %}<a class="btn attention-entry-cancel" href="{{ request_list_url }}">Volver al listado</a>{% endif %}
+            {% if needs_delegation_switch %}
+                <form method="post" action="{% url 'active_delegation_select' %}" class="mb-0">
+                    {% csrf_token %}<input type="hidden" name="delegation_id" value="{{ case.delegation_id }}">
+                    <input type="hidden" name="next" value="{% url 'attention_entry' %}?caso={{ case.pk }}">
+                    <button class="btn btn-primary" type="submit">Cambiar a {{ case.delegation.delegation_name }} y agregar gestión</button>
+                </form>
+            {% elif can_register %}
+                <a class="btn btn-primary" href="{% url 'attention_entry' %}?caso={{ case.pk }}">Agregar gestión</a>
+            {% elif at_limit and not case.is_closed %}
+                <span class="attention-entry-hint">El caso ya tiene tres gestiones registradas.</span>
+            {% endif %}
+            {% if can_manage and not case.responsible_id %}
+                <form method="post" action="{% url 'attention_case_action' case.pk 'tomar' %}" class="mb-0">
+                    {% csrf_token %}<button class="btn attention-entry-cancel" type="submit">Tomar caso</button>
+                </form>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="attention-entry-card mt-3" aria-labelledby="case-timeline">
+        <h2 class="h5" id="case-timeline">Historial del caso</h2>
+        {% include 'client/case_timeline.html' with entries=timeline %}
+    </section>
+
+    {% if can_manage %}
+        <section class="attention-entry-card mt-3" aria-labelledby="case-actions">
+            <h2 class="h5" id="case-actions">Actualizar seguimiento</h2>
+            {% url 'attention_case_action' case.pk 'asignar' as action_url %}
+            {% include 'activities/case_form.html' with action_url=action_url action_form=assignment_form label='Guardar responsable' %}
+            {% url 'attention_case_action' case.pk 'proximo-paso' as action_url %}
+            {% include 'activities/case_form.html' with action_url=action_url action_form=next_step_form label='Guardar próximo paso' %}
+            {% if case.next_step %}
+                <div class="attention-entry-actions">
+                    <form method="post" action="{% url 'attention_case_action' case.pk 'completar-paso' %}">{% csrf_token %}<button class="btn attention-entry-cancel" type="submit">Completar paso</button></form>
+                    <form method="post" action="{% url 'attention_case_action' case.pk 'cancelar-paso' %}">{% csrf_token %}<button class="btn attention-entry-cancel" type="submit">Cancelar paso</button></form>
+                </div>
+            {% endif %}
+            {% url 'attention_case_action' case.pk 'cerrar' as action_url %}
+            {% if case.client_request_id %}
+                {% include 'activities/case_form.html' with action_url=action_url action_form=close_form label='Cerrar y responder' %}
+            {% else %}
+                {% include 'activities/case_form.html' with action_url=action_url action_form=close_form label='Cerrar caso' %}
+            {% endif %}
+        </section>
+    {% endif %}
+    {% if can_invite %}
+        <section class="attention-entry-card mt-3" aria-labelledby="case-invitation">
+            <h2 class="h5" id="case-invitation">Invitación al portal</h2>
+            {% url 'attention_case_action' case.pk 'invitar' as action_url %}
+            {% if invitation %}
+                {% include 'activities/case_form.html' with action_url=action_url action_form=invitation_form label='Reenviar invitación' %}
+            {% else %}
+                {% include 'activities/case_form.html' with action_url=action_url action_form=invitation_form label='Enviar invitación' %}
+            {% endif %}
+        </section>
+    {% elif not case.client_request_id and case.recipient.user_id %}
+        <p class="attention-entry-hint mt-3">La ficha ya está vinculada a una cuenta del portal.</p>
+    {% endif %}
+</section>
+{% endblock %}

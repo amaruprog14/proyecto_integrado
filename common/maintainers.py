@@ -20,7 +20,7 @@ from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodFor
 from configuration.models import Item, Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
-from activities.models import Activity, ClientRequest
+from activities.models import Activity, AttentionCase, ClientRequest
 from activities.listing import export_objects, filtered_requests, listing_objects, ordered_records, request_row
 
 CATALOGS = {
@@ -47,7 +47,8 @@ def snapshot(obj):
 
 
 def activity_queryset(user, permission, include_archived=False):
-    qs = Activity.objects.select_related("official", "item", "social_attentions__delegation")
+    qs = Activity.objects.select_related("official", "item", "social_attentions__delegation",
+                                         "social_attentions__case__client_request")
     if not include_archived:
         qs = qs.filter(deleted_at__isnull=True)
     scope = permission_scope(user, permission)
@@ -68,7 +69,12 @@ def state(obj):
     if isinstance(obj, Period):
         return obj.status, obj.get_status_display()
     if isinstance(obj, Activity):
-        return ("INACTIVE", "Archivada") if obj.deleted_at else ("ACTIVE", "Vigente")
+        status = Activity.ListingStatus.ACTIVE
+        if obj.deleted_at:
+            status = Activity.ListingStatus.INACTIVE
+        elif (attention := getattr(obj, "social_attentions", None)) and attention.case.is_closed:
+            status = Activity.ListingStatus.RESOLVED
+        return status.value, status.label
     active = getattr(getattr(obj, "sgr_profile", None), "is_active", False) if isinstance(obj, Group) else obj.is_active
     return ("ACTIVE", "Vigente") if active else ("INACTIVE", "No vigente")
 
@@ -152,16 +158,24 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         status = self.request.GET.get("status")
         if self.key == "period" and status in ("OPEN", "CLOSED"):
             qs = qs.filter(status=status)
-        elif status in ("ACTIVE", "INACTIVE"):
-            if self.key == "activity":
-                qs = qs.filter(deleted_at__isnull=status == "ACTIVE")
-            elif self.key == "group":
+        elif status in ("ACTIVE", "INACTIVE") and self.key != "activity":
+            if self.key == "group":
                 qs = qs.filter(sgr_profile__is_active=status == "ACTIVE")
             else:
                 qs = qs.filter(is_active=status == "ACTIVE")
         if self.key == "activity":
-            if self.request.GET["record_source"] == "request" or status in ClientRequest.Status.values:
+            if self.request.GET["record_source"] == "request" or status in (ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW):
                 return qs.none()
+            closed_case = Q(social_attentions__case__client_request__status=ClientRequest.Status.RESOLVED) | Q(
+                social_attentions__case__client_request__isnull=True,
+                social_attentions__case__direct_status=AttentionCase.DirectStatus.RESOLVED,
+            )
+            if status == Activity.ListingStatus.ACTIVE:
+                qs = qs.exclude(closed_case)
+            elif status == Activity.ListingStatus.RESOLVED:
+                qs = qs.filter(closed_case)
+            elif status == Activity.ListingStatus.INACTIVE:
+                qs = qs.filter(deleted_at__isnull=False)
             for param in ("official", "item"):
                 value = self.request.GET.get(param, "")
                 if value.isdigit():
@@ -215,7 +229,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         else:
             confirm_message = f"El registro {obj} {'quedará no vigente' if code == 'ACTIVE' else 'volverá a estar vigente'}. Las relaciones existentes y el historial se conservarán."
         return dict(cells=fields + [label], display_cells=display_fields, status_code=code,
-            status_label=label, is_active=code in ("ACTIVE", "OPEN"), confirm_message=confirm_message, detail=self.url("detail", obj.pk),
+            status_label=label, is_active=code in ("ACTIVE", "OPEN", "RESOLVED"), confirm_message=confirm_message, detail=self.url("detail", obj.pk),
             edit=self.url("update", obj.pk), action=self.url("close" if self.key == "period" else "deactivate" if code == "ACTIVE" else "activate", obj.pk),
             action_label=("Archivar" if code == "ACTIVE" else "Restaurar") if self.key == "activity"
                          else "Cerrar" if self.key == "period" else "Desactivar" if code == "ACTIVE" else "Activar",
@@ -257,7 +271,14 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                     context["type_count"] = obj.activity_types.filter(deleted_at__isnull=True).count()
             if self.key == "activity" and hasattr(obj, "social_attentions"):
                 attention = obj.social_attentions
-                context["attention_url"] = reverse("attention_detail", args=[attention.pk])
+                from activities.cases import scoped_cases
+                from activities.views import scoped_attentions
+
+                if request.user.has_perm("activities.view_socialattention"):
+                    if scoped_attentions(request.user).filter(pk=attention.pk).exists():
+                        context["attention_url"] = reverse("attention_detail", args=[attention.pk])
+                    if scoped_cases(request.user).filter(pk=attention.case_id).exists():
+                        context["case_url"] = reverse("attention_case_detail", args=[attention.case_id])
                 if attention.client_request_id and request.user.has_perm("activities.view_socialattention"):
                     from activities.client_portal import staff_requests
 
@@ -272,7 +293,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             if not request.user.has_perm("activities.archive_activity"):
                 raise PermissionDenied("No tienes autorización para consultar actividades archivadas.")
             if self.operation == "export":
-                messages.info(request, "El Excel solo incluye actividades vigentes. Selecciona Vigente para exportar.")
+                messages.info(request, "Selecciona otro estado para exportar. Las actividades archivadas se consultan en el historial.")
                 return redirect(self.url("list"))
         if self.key == "activity" and self.operation == "list":
             activities = self.queryset()
@@ -307,12 +328,16 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             total=page.paginator.count, querystring=params.urlencode(), query=request.GET.get("q", ""), selected_status=request.GET.get("status", ""),
             page_size=size, page_sizes=self.page_size_options,
             record_types=Activity.RecordType.values,
-            statuses=(("OPEN", "Abierto"), ("CLOSED", "Cerrado")) if self.key == "period" else (("ACTIVE", "Vigente"), ("INACTIVE", "Archivada" if self.key == "activity" else "No vigente")))
-        if self.key == "activity" and not context["can_archive"]:
-            context["statuses"] = (("ACTIVE", "Vigente"),)
-        if self.key == "activity" and request.user.has_perm("activities.view_socialattention"):
-            context["can_list_requests"] = True
-            context["statuses"] = (*context["statuses"], *ClientRequest.Status.choices)
+            statuses=(("OPEN", "Abierto"), ("CLOSED", "Cerrado")) if self.key == "period" else (("ACTIVE", "Vigente"), ("INACTIVE", "No vigente")))
+        if self.key == "activity":
+            context["activity_status_values"] = Activity.ListingStatus.values
+            context["statuses"] = tuple((value, label) for value, label in Activity.ListingStatus.choices
+                                        if value != Activity.ListingStatus.INACTIVE or context["can_archive"])
+            if request.user.has_perm("activities.view_socialattention"):
+                context["can_list_requests"] = True
+                request_statuses = ((value, label) for value, label in ClientRequest.Status.choices
+                                    if value not in Activity.ListingStatus.values)
+                context["statuses"] = (*context["statuses"], *request_statuses)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
             "activity": "activities/activity_list.html"}[self.key]

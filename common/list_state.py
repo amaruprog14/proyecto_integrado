@@ -81,11 +81,15 @@ def positive(value, default=1):
 def normalize(params, module):
     statuses = ('RECEIVED', 'REVIEW', 'RESOLVED') if module in REQUEST_SORTS else ('ACTIVE', 'INACTIVE', 'SUSPENDED') if module == 'official' else ('1', '0') if module in ('attention_type', 'subattention_type') else ('OPEN', 'CLOSED') if module == 'period' else ('ACTIVE', 'INACTIVE')
     if module == 'activity':
-        from activities.models import ClientRequest
-        statuses += tuple(ClientRequest.Status.values)
+        from activities.models import Activity, ClientRequest
+        statuses = (*Activity.ListingStatus.values, ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW)
+    if module == 'client_request':
+        statuses += ('RECORDED',)
     state = dict(q=normalize_spaces(params.get('q'))[:200], status=params.get('status', ''),
         page=positive(params.get('page')), page_size=positive(params.get('page_size'), DEFAULT_SIZE),
         sort=params.get('sort', 'date' if module == 'activity' else 'created'), direction=params.get('direction', 'desc'))
+    if module == 'activity' and state['status'] == 'CASE_CLOSED':
+        state['status'] = Activity.ListingStatus.RESOLVED
     if state['status'] not in statuses:
         state['status'] = ''
     if state['page_size'] not in PAGE_SIZES:
@@ -94,8 +98,10 @@ def normalize(params, module):
         state['sort'], state['direction'] = 'created', 'desc'
     if state['direction'] not in ('asc', 'desc'):
         state['direction'] = 'desc'
+    if module == 'client_request':
+        source = params.get('record_source', '')
+        state['record_source'] = source if source in ('online', 'presential') else ''
     if module == 'activity':
-        from activities.models import Activity
         source = params.get('record_source', '')
         state['record_source'] = source if source in ('activity', 'request') else ''
         for key in ('official', 'item'):
@@ -104,9 +110,9 @@ def normalize(params, module):
         state['record_type'] = value if value in Activity.RecordType.values else ''
         if state['record_source'] == 'request':
             state.update(official='', item='', record_type='')
-            if state['status'] in ('ACTIVE', 'INACTIVE'):
+            if state['status'] in (Activity.ListingStatus.ACTIVE, Activity.ListingStatus.INACTIVE):
                 state['status'] = ''
-        if state['record_source'] == 'activity' and state['status'] in ClientRequest.Status.values:
+        if state['record_source'] == 'activity' and state['status'] in (ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW):
             state['status'] = ''
         for key in ('date_from', 'date_to'):
             try:
@@ -143,8 +149,10 @@ def prepare(request, module):
     state = normalize(combined, module)
     if module == 'activity' and not request.user.has_perm('activities.view_socialattention'):
         from activities.models import ClientRequest
-        if state['record_source'] == 'request' or state['status'] in ClientRequest.Status.values:
-            state.update(record_source='', status='', page=1)
+        if state['record_source'] == 'request':
+            state.update(record_source='', page=1)
+        if state['status'] in (ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW):
+            state.update(status='', page=1)
     if saved and any(state[k] != previous[k] for k in state if k != 'page'):
         state['page'] = 1
     request._list_state, request._list_state_key, request._list_module = state, key, module

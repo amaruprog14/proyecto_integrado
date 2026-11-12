@@ -1,0 +1,10 @@
+<form method="post" action="{{ action_url }}" class="mt-3 border-top pt-3">
+    {% csrf_token %}
+    {% if action_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ action_form.non_field_errors }}</div>{% endif %}
+    <div class="attention-entry-grid">
+        {% for field in action_form.visible_fields %}
+            {% include 'activities/attention_field.html' with field=field %}
+        {% endfor %}
+    </div>
+    <div class="attention-entry-actions"><button class="btn btn-primary" type="submit">{{ label }}</button></div>
+</form>

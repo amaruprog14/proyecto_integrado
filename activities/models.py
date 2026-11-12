@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, router, transaction
 from django.utils import timezone
 
 from accounts.models import Delegation, Official, ServiceRecipient
@@ -31,6 +31,16 @@ class ClientRequest(BaseModel):
     def identifier(self):
         return f"SOL-{self.pk:06d}"
 
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            return super().save(*args, **kwargs)
+        using = kwargs.get("using") or router.db_for_write(type(self), instance=self)
+        with transaction.atomic(using=using):
+            super().save(*args, **kwargs)
+            AttentionCase.objects.using(self._state.db).get_or_create(client_request=self, defaults={
+                "recipient_id": self.recipient_id, "delegation_id": self.delegation_id, "subject": self.subject,
+            })
+
     class Meta:
         ordering = ["-created_at", "-pk"]
         verbose_name = "Solicitud ciudadana"
@@ -41,13 +51,85 @@ class ClientRequestEvent(models.Model):
     status = models.CharField(max_length=16, choices=ClientRequest.Status.choices)
     response = models.TextField(blank=True, max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
+    actor = models.ForeignKey(Official, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-pk"]
 
 
+class AttentionCase(BaseModel):
+    class DirectStatus(models.TextChoices):
+        RECORDED = "RECORDED", "Gestión registrada"
+        REVIEW = "REVIEW", "En curso"
+        RESOLVED = "RESOLVED", "Cerrado"
+
+    client_request = models.OneToOneField(ClientRequest, on_delete=models.PROTECT, null=True,
+        blank=True, related_name="attention_case")
+    recipient = models.ForeignKey(ServiceRecipient, on_delete=models.PROTECT, related_name="attention_cases")
+    delegation = models.ForeignKey(Delegation, on_delete=models.PROTECT, related_name="attention_cases")
+    responsible = models.ForeignKey(Official, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="assigned_attention_cases")
+    subject = models.CharField(max_length=100)
+    direct_status = models.CharField(max_length=16, choices=DirectStatus.choices, default=DirectStatus.REVIEW)
+    next_step = models.CharField(max_length=200, blank=True)
+    next_step_date = models.DateField(null=True, blank=True)
+    public_next_step = models.CharField(max_length=200, blank=True)
+    public_response = models.TextField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-pk"]
+        indexes = [models.Index(fields=["delegation", "updated_at"], name="case_delegation_updated_idx")]
+
+    def __str__(self):
+        return f"{self.identifier} · {self.subject}"
+
+    @property
+    def identifier(self):
+        return self.client_request.identifier if self.client_request_id else f"CAS-{self.pk:06d}"
+
+    @property
+    def status(self):
+        return self.client_request.status if self.client_request_id else self.direct_status
+
+    def get_status_display(self):
+        return self.client_request.get_status_display() if self.client_request_id else self.get_direct_status_display()
+
+    @property
+    def is_closed(self):
+        return self.status == self.DirectStatus.RESOLVED
+
+    @property
+    def response(self):
+        return self.client_request.response if self.client_request_id else self.public_response
+
+
+class AttentionCaseEvent(models.Model):
+    case = models.ForeignKey(AttentionCase, on_delete=models.PROTECT, related_name="events")
+    actor = models.ForeignKey(Official, on_delete=models.PROTECT)
+    title = models.CharField(max_length=100)
+    detail = models.TextField(max_length=500, blank=True)
+    public_text = models.TextField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+
+class PortalInvitation(models.Model):
+    recipient = models.OneToOneField(ServiceRecipient, on_delete=models.PROTECT, related_name="portal_invitation")
+    email = models.EmailField(unique=True)
+    token_digest = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+
 class Activity(AutoCodeMixin, BaseModel):
     code_prefix = "ACT"
+
+    class ListingStatus(models.TextChoices):
+        ACTIVE = "ACTIVE", "Vigente"
+        RESOLVED = "RESOLVED", "Resuelta"
+        INACTIVE = "INACTIVE", "Archivada"
 
     class RecordType(models.TextChoices):
         MONTHLY = "Registro mensual", "Registro mensual"
@@ -77,17 +159,9 @@ class Activity(AutoCodeMixin, BaseModel):
         return f"Actividad {self.pk} - {self.official}"
 
 class SocialAttention(BaseModel):
-    """
-    Tabla operativa: atención social. Una persona usuaria puede tener hasta
-    MAX_ATTENTIONS_PER_RECIPIENT gestiones relacionadas (RN-012).
-    """
+    MAX_ATTENTIONS_PER_CASE = 3
 
-    MAX_ATTENTIONS_PER_RECIPIENT = 3
-
-    client_request = models.ForeignKey(
-        ClientRequest, on_delete=models.PROTECT, null=True, blank=True,
-        related_name="social_attentions", verbose_name="Solicitud ciudadana de origen",
-    )
+    case = models.ForeignKey(AttentionCase, on_delete=models.PROTECT, related_name="attentions")
     activity = models.OneToOneField(
         Activity,
         on_delete=models.PROTECT,
@@ -115,6 +189,7 @@ class SocialAttention(BaseModel):
         verbose_name="Sub atención",
     )
     description = models.TextField(blank=True, verbose_name="Descripción")
+    result = models.CharField(max_length=300, blank=True, verbose_name="Resultado de la gestión")
     delegation = models.ForeignKey(
         Delegation,
         on_delete=models.PROTECT,
@@ -148,13 +223,13 @@ class SocialAttention(BaseModel):
     def __str__(self):
         return f"Atención {self.pk} - {self.recipient}"
 
-    @classmethod
-    def validate_attention_limit(cls, recipient_id, exclude_pk=None):
-        """True si la persona usuaria aún puede registrar otra gestión."""
-        qs = cls.objects.filter(recipient_id=recipient_id, deleted_at__isnull=True)
-        if exclude_pk:
-            qs = qs.exclude(pk=exclude_pk)
-        return qs.count() < cls.MAX_ATTENTIONS_PER_RECIPIENT
+    @property
+    def client_request(self):
+        return self.case.client_request
+
+    @property
+    def client_request_id(self):
+        return self.case.client_request_id
 
     @property
     def identifier(self):
@@ -165,10 +240,13 @@ class SocialAttention(BaseModel):
         super().clean()
         errors = {}
 
-        if self.recipient_id and not self.validate_attention_limit(self.recipient_id, self.pk):
-            errors["recipient"] = (
-                f"La persona usuaria ya tiene {self.MAX_ATTENTIONS_PER_RECIPIENT} gestiones registradas."
-            )
+        if self.case_id:
+            if self.case.is_closed and self._state.adding:
+                errors["case"] = "El caso está cerrado."
+            if (self.case.recipient_id, self.case.delegation_id) != (self.recipient_id, self.delegation_id):
+                errors["case"] = "La gestión debe corresponder a la persona y delegación del caso."
+            if self.case.attentions.exclude(pk=self.pk).count() >= self.MAX_ATTENTIONS_PER_CASE:
+                errors["case"] = f"El caso ya tiene {self.MAX_ATTENTIONS_PER_CASE} gestiones registradas."
 
         if self.attention_type_id and self.subattention_type_id:
             if self.subattention_type.attention_type_id != self.attention_type_id:
@@ -181,12 +259,6 @@ class SocialAttention(BaseModel):
         if self.delegation_id and self.responsible_id:
             if not self.responsible.get_authorized_delegations().filter(pk=self.delegation_id).exists():
                 errors["delegation"] = "El responsable no tiene autorizada esta delegación."
-
-        if self.client_request_id and (
-            self.client_request.recipient_id != self.recipient_id
-            or self.client_request.delegation_id != self.delegation_id
-        ):
-            errors["client_request"] = "La solicitud debe corresponder al mismo solicitante y delegación."
 
         if errors:
             raise ValidationError(errors)

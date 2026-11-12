@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.urls import path, reverse_lazy
 from django.views.generic import RedirectView
+from .case_views import CaseActionView, CaseDetailView, CaseListView
 from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
 urlpatterns = []
@@ -28,6 +29,9 @@ urlpatterns += [
     path('atenciones/nueva/', AttentionEntryView.as_view(), name='attention_entry'),
     path('atenciones/buscar-solicitudes/', AttentionRequestLookupView.as_view(), name='attention_request_lookup'),
     path('atenciones/<int:pk>/', AttentionDetailView.as_view(), name='attention_detail'),
+    path('casos/', CaseListView.as_view(), name='attention_cases'),
+    path('casos/<int:pk>/', CaseDetailView.as_view(), name='attention_case_detail'),
+    path('casos/<int:pk>/<slug:action>/', CaseActionView.as_view(), name='attention_case_action'),
 ]
 
 from common.maintainers import maintainer_urls

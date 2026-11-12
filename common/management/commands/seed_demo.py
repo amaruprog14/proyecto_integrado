@@ -13,7 +13,7 @@ from accounts.models import (
     Area, Delegation, Function, GroupProfile, Official, Position, Role,
     ServiceRecipient, Territory,
 )
-from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
+from activities.models import Activity, AttentionCase, ClientRequest, ClientRequestEvent, SocialAttention
 from configuration.models import AttentionType, Item, Period, PeriodMutex, SubattentionType
 from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 from common.sgr_seed_data import (
@@ -278,12 +278,16 @@ class Command(BaseCommand):
                 attention, subattention = pairs[recipient_index % len(pairs)]
                 token = f"sgr26-att-{recipient_index+1:04d}"
                 existing = SocialAttention.objects.filter(submission_token=token).first()
-                if not existing and not SocialAttention.validate_attention_limit(recipient.pk):
-                    raise CommandError("Una persona simulada ya alcanzó el límite de tres atenciones.")
+                if existing:
+                    case = existing.case
+                else:
+                    case = AttentionCase.objects.create(recipient=recipient, delegation=official.delegation,
+                        responsible=official, subject=attention.name[:100])
                 entry = self.ensure(SocialAttention, submission_token=token, defaults={
-                    "activity": activity, "recipient": recipient, "attention_type": attention,
+                    "case": case, "activity": activity, "recipient": recipient, "attention_type": attention,
                     "subattention_type": subattention, "delegation": official.delegation,
                     "responsible": official, "date": activity.date, "description": activity.action_description,
+                    "result": "Gestión de demostración realizada.",
                 })
                 if entry.activity_id != activity.pk or entry.recipient_id != recipient.pk:
                     raise CommandError(f"Token de atención ocupado: {token}.")

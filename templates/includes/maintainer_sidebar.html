@@ -27,10 +27,11 @@
             <p class="maintainer-sidebar-title" id="menu-operacion">Operación</p>
             <nav aria-labelledby="menu-operacion">
                 {% if perms.activities.view_socialattention %}
-                    <a class="maintainer-sidebar-link{% if active == 'staff_client_requests' or active == 'staff_client_request_review' %} is-active{% endif %}" href="{% url 'staff_client_requests' %}"{% if active == 'staff_client_requests' or active == 'staff_client_request_review' %} aria-current="page"{% endif %}>Solicitudes ciudadanas</a>
+                    <a class="maintainer-sidebar-link{% if active == 'staff_client_requests' or active == 'staff_client_request_review' or active == 'staff_client_request_detail' %} is-active{% endif %}" href="{% url 'staff_client_requests' %}"{% if active == 'staff_client_requests' or active == 'staff_client_request_review' or active == 'staff_client_request_detail' %} aria-current="page"{% endif %}>Solicitudes ciudadanas</a>
                 {% endif %}
                 {% if perms.activities.add_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_entry' %} is-active{% endif %}" href="{% url 'attention_entry' %}"{% if active == 'attention_entry' %} aria-current="page"{% endif %}>Ingreso de atención</a>{% endif %}
                 {% if perms.activities.view_activity %}<a class="maintainer-sidebar-link{% if active == 'activities' %} is-active{% endif %}" href="{% url 'activity_maintainer' %}"{% if active == 'activities' %} aria-current="page"{% endif %}>Actividades</a>{% endif %}
+                {% if perms.activities.view_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_cases' %} is-active{% endif %}" href="{% url 'attention_cases' %}"{% if active == 'attention_cases' %} aria-current="page"{% endif %}>Casos sociales</a>{% endif %}
             </nav>
         </div>
     {% endif %}

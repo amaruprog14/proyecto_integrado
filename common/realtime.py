@@ -12,7 +12,7 @@ from django.db.models.signals import pre_save, post_save, pre_delete, post_delet
 from django.dispatch import receiver
 
 from accounts.models import Official, Delegation, Role, Area, Position, GroupProfile, Territory, ServiceRecipient
-from activities.models import Activity, ClientRequest, SocialAttention
+from activities.models import Activity, AttentionCase, ClientRequest, SocialAttention
 from configuration.models import Item, Period, AttentionType, SubattentionType, ServiceType
 from common.scopes import current_permission
 
@@ -88,7 +88,7 @@ def queryset(key, user):
             scope = permission_scope(user, permission(key))
             return qs if scope == Role.Scope.ALL else qs.filter(delegation_id__in=delegation_ids(user)) if scope == Role.Scope.DELEGATION else qs.none()
         if key == 'activity':
-            # Los lectores solo reciben avisos de vigentes; los administradores
+            # Los lectores reciben avisos de actividades sin archivar; los administradores
             # también pueden refrescar el historial dentro de su alcance de archivado.
             from django.db.models import Q
             history = activity_queryset(user, 'activities.archive_activity', include_archived=True)
@@ -133,6 +133,10 @@ def affected(instance):
         rows.update(('group', pk) for pk in instance.groups.values_list('pk', flat=True))
     if isinstance(instance, SocialAttention) and instance.activity_id:
         rows.add(('activity', instance.activity_id))
+    if isinstance(instance, AttentionCase) and not instance.client_request_id:
+        rows.update(('activity', pk) for pk in Activity.objects.filter(
+            social_attentions__case=instance,
+        ).values_list('pk', flat=True))
     if isinstance(instance, GroupProfile):
         rows.add(('group', instance.group_id))
     related = {
@@ -144,6 +148,7 @@ def affected(instance):
         Area: (('official', Official, 'area_id'),),
         Position: (('official', Official, 'position_id'),),
         Item: (('activity', Activity, 'item_id'),),
+        ClientRequest: (('activity', Activity, 'social_attentions__case__client_request_id'),),
         AttentionType: (('subattention_type', SubattentionType, 'attention_type_id'),),
         ServiceType: (('attention_type', AttentionType, 'service_type_id'),),
         get_user_model(): (('official', Official, 'user_id'),),
@@ -153,7 +158,7 @@ def affected(instance):
     return rows
 
 
-WATCHED = tuple(MODELS.values()) + (SocialAttention, GroupProfile, ServiceType, ServiceRecipient)
+WATCHED = tuple(MODELS.values()) + (AttentionCase, SocialAttention, GroupProfile, ServiceType, ServiceRecipient)
 
 
 def snapshot(instance):
