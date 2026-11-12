@@ -104,7 +104,7 @@ class ClientPortalTests(TestCase):
         other = self.create_request(self.people[1])
         self.assertEqual(self.client.get(reverse("client_request_detail", args=[other.pk])).status_code, 404)
         response = self.client.get(reverse("client_requests"), {"recipient": self.people[1].pk})
-        self.assertEqual(list(response.context["page_obj"]), [own])
+        self.assertEqual(list(response.context["page_obj"]), [own.attention_case])
         self.assertContains(response, 'action-icon--view')
         self.assertEqual(self.client.post(reverse("staff_client_request_review", args=[own.pk]),
             {"status": "RESOLVED", "response": "No autorizado"}).status_code, 403)

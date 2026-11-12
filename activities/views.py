@@ -1,4 +1,5 @@
 import uuid
+from functools import cached_property
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -11,15 +12,17 @@ from django.views.generic import DetailView, FormView, TemplateView, View
 
 from accounts.delegation_context import get_active_delegation
 from accounts.models import Delegation, ServiceRecipient
-from common.access import ProtectedViewMixin, ScopedObjectMixin
+from common.access import ProtectedViewMixin, ScopedObjectMixin, get_scoped_object_or_404
 from common.list_state import positive
 from common.text import normalize_spaces
 from configuration.models import AttentionType, SubattentionType
 from configuration.services import AuditoriaService
 
 from .client_portal import staff_requests
+from .cases import ADD_ATTENTION, assign_case, scoped_cases
 from .forms import SocialAttentionForm, attention_delegations
-from .models import SocialAttention, Activity
+from .invitations import invite_to_portal
+from .models import AttentionCase, ClientRequest, SocialAttention, Activity
 from configuration.period_services import lock_open_period, lock_period_registry
 from configuration.models import Item
 
@@ -32,7 +35,7 @@ def scoped_attentions(user, permission=None):
     registró. El superusuario conserva el alcance total; sin funcionario no hay alcance.
     """
     queryset = SocialAttention.objects.filter(deleted_at__isnull=True).select_related(
-        "recipient", "attention_type", "subattention_type", "delegation", "responsible"
+        "recipient", "attention_type", "subattention_type", "delegation", "responsible", "case__client_request"
     )
     from common.scopes import permission_scope, current_permission, delegation_ids
     from accounts.models import Role
@@ -41,7 +44,7 @@ def scoped_attentions(user, permission=None):
         return queryset
     official = getattr(user, "official", None)
     if scope == Role.Scope.OWN:
-        return queryset.filter(responsible=official)
+        return queryset.filter(Q(responsible=official) | Q(case__client_request__isnull=True, case__responsible=official))
     if scope == Role.Scope.DELEGATION:
         return queryset.filter(Q(delegation_id__in=delegation_ids(user)) | Q(responsible=official)).distinct()
     return queryset.none()
@@ -55,7 +58,12 @@ def registered_attention(token, official):
 
 
 def requests_for_attention(user, delegations):
-    return staff_requests(user, "activities.view_socialattention").filter(delegation__in=delegations)
+    appendable = scoped_cases(user, ADD_ATTENTION).exclude(client_request_id=None).values("client_request_id")
+    return staff_requests(user, "activities.view_socialattention").filter(
+        delegation__in=delegations, pk__in=appendable,
+    ).exclude(
+        status=ClientRequest.Status.RESOLVED,
+    )
 
 
 def attention_request_folio(queryset, folio):
@@ -90,11 +98,19 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
     template_name = 'activities/attention_entry.html'
     form_class = SocialAttentionForm
 
+    @cached_property
+    def target_case(self):
+        if "caso" not in self.request.GET:
+            return None
+        return get_scoped_object_or_404(self.request, scoped_cases(self.request.user),
+                                        pk=positive(self.request.GET.get("caso"), 0))
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["official"] = getattr(self.request.user, "official", None)
         kwargs["active_delegation"] = get_active_delegation(self.request)
         kwargs["can_link_request"] = self.request.user.has_perm("activities.view_socialattention")
+        kwargs["case"] = self.target_case
         return kwargs
 
     def get_initial(self):
@@ -133,12 +149,23 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
             placeholder = "Selecciona una solicitud" if choices else "No hay solicitudes disponibles"
             form.fields["client_request"].widget.choices = [("", placeholder), *choices]
         context["registered_at"] = timezone.localtime()
+        context["target_case"] = self.target_case
+        if self.target_case:
+            context["case_unavailable"] = self.target_case.is_closed or not self.can_append(form, self.target_case)
+        elif self.request.GET.get("folio") and not form.is_bound and not form.initial.get("client_request"):
+            context["folio_unavailable"] = True
         if self.request.method == "GET":
             # Tras guardar se vuelve a un formulario limpio que muestra la atención registrada.
             last_pk = self.request.session.pop(LAST_ATTENTION_SESSION_KEY, None)
             if last_pk is not None:
                 context["last_attention"] = scoped_attentions(self.request.user).filter(pk=last_pk).first()
+                if context["last_attention"]:
+                    context["last_case"] = scoped_cases(self.request.user).filter(pk=context["last_attention"].case_id).first()
         return context
+
+    def can_append(self, form, case):
+        return (form.fields["delegation"].queryset.filter(pk=case.delegation_id).exists()
+                and scoped_cases(self.request.user, ADD_ATTENTION).filter(pk=case.pk).exists())
 
     def already_registered(self, attention):
         """Doble envío del mismo formulario: no se crea otra atención y se informa la existente."""
@@ -147,6 +174,11 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
             self.request,
             f"La atención {attention.identifier} ya estaba registrada; el envío repetido no creó un duplicado.",
         )
+        return self.success_destination(attention)
+
+    def success_destination(self, attention):
+        if self.target_case:
+            return redirect("attention_case_detail", pk=attention.case_id)
         return redirect("attention_entry")
 
     def form_valid(self, form):
@@ -157,8 +189,25 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
         try:
             with transaction.atomic():
                 lock_period_registry()
-                lock_open_period(timezone.localdate())
-                recipient = form.get_or_create_recipient()
+                effective_date = form.cleaned_data["effective_date"]
+                lock_open_period(effective_date)
+                request_id = form.cleaned_data.get("client_request")
+                case = self.target_case
+                if request_id:
+                    origin = requests_for_attention(self.request.user, form.fields["delegation"].queryset).filter(pk=request_id).first()
+                    if origin is None or (
+                        origin.recipient.national_id.casefold() != form.cleaned_data["recipient_national_id"].casefold()
+                        or origin.delegation_id != form.cleaned_data["delegation"].pk
+                    ):
+                        raise ValidationError({"client_request": "No hay una solicitud disponible con ese folio para este solicitante y delegación."})
+                    case = origin.attention_case
+                if case:
+                    case = AttentionCase.objects.select_for_update().get(pk=case.pk)
+                    if case.is_closed:
+                        raise ValidationError("El caso está cerrado.")
+                    if not self.can_append(form, case):
+                        raise ValidationError({"delegation": "Tu perfil y delegación activa deben permitir registrar en este caso."})
+                recipient = case.recipient if case else form.get_or_create_recipient()
                 recipient = ServiceRecipient.objects.select_for_update().get(pk=recipient.pk)
                 if (
                     recipient.status != ServiceRecipient.Status.ACTIVE
@@ -205,30 +254,23 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                     raise ValidationError(
                         {"delegation": "La delegación ya no está autorizada para tu perfil."}
                     ) from error
-                client_request = None
-                if request_id := form.cleaned_data.get("client_request"):
-                    client_request = staff_requests(
-                        self.request.user, "activities.view_socialattention"
-                    ).select_related(None).select_for_update().filter(
-                        pk=request_id, recipient=recipient, delegation=delegation,
-                    ).first()
-                    if client_request is None:
-                        raise ValidationError({
-                            "client_request": "No hay una solicitud disponible con ese folio para este solicitante y delegación."
-                        })
+                if case is None:
+                    case = AttentionCase.objects.create(recipient=recipient, delegation=delegation,
+                        responsible=form.official, subject=normalize_spaces(form.cleaned_data.get("case_subject")) or attention_type.name[:100])
                 attention = SocialAttention(
-                    client_request=client_request,
+                    case=case,
                     recipient=recipient,
                     attention_type=attention_type,
                     subattention_type=subattention_type,
                     description=form.cleaned_data["description"],
+                    result=form.cleaned_data["result"],
+                    date=effective_date,
                     delegation=delegation,
                     responsible=form.official,
                     submission_token=token,
                 )
                 # La unicidad del token la resuelve la base (IntegrityError), también entre envíos simultáneos.
                 attention.full_clean(exclude=["submission_token"])
-                lock_open_period(attention.date)
                 try:
                     item = Item.objects.select_for_update().get(pk=attention_type.activity_item_id,
                         is_active=True, deleted_at__isnull=True)
@@ -238,6 +280,8 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                     record_type=Activity.RecordType.ATTENTION, action_description=attention.description)
                 attention.activity = activity
                 attention.save()
+                assign_case(case, form.official)
+                case.save(update_fields=["responsible", "direct_status", "updated_at"])
                 AuditoriaService.register_change(official=form.official, action="Creación de actividad automática",
                     instance=activity, new_value=f"Atención: {attention.identifier}; Ítem: {item}",
                     origin_ip=self.request.META.get("REMOTE_ADDR") or None)
@@ -250,8 +294,7 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                         f"Solicitante ID interno: {recipient.pk}; "
                         f"Tipo: {attention.attention_type}; "
                         f"Sub Atención: {attention.subattention_type}; "
-                        f"Delegación: {attention.delegation}"
-                        + (f"; Solicitud: {client_request.identifier}" if client_request else "")
+                        f"Delegación: {attention.delegation}; Caso: {case.identifier}"
                     ),
                     origin_ip=self.request.META.get("REMOTE_ADDR") or None,
                 )
@@ -279,7 +322,12 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
             self.request,
             f"La atención {attention.identifier} se registró correctamente.",
         )
-        return redirect("attention_entry")
+        if form.cleaned_data.get("invite_to_portal"):
+            try:
+                invite_to_portal(self.request, recipient.pk, form.cleaned_data["invitation_email"])
+            except ValidationError as error:
+                messages.warning(self.request, " ".join(error.messages))
+        return self.success_destination(attention)
 
     def form_invalid(self, form):
         messages.error(
@@ -301,6 +349,8 @@ class AttentionDetailView(ScopedObjectMixin, ProtectedViewMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if scoped_cases(self.request.user).filter(pk=self.object.case_id).exists():
+            context["attention_case"] = self.object.case
         if self.object.client_request_id:
             context["origin_request"] = staff_requests(
                 self.request.user, self.permission_required,

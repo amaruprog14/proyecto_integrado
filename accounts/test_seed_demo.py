@@ -64,7 +64,7 @@ class SeedDemoTests(TestCase):
             entry.full_clean()
             self.assertEqual(entry.responsible_id, entry.activity.official_id)
             self.assertEqual(entry.delegation_id, entry.recipient.delegation_id)
-        self.assertFalse(SocialAttention.objects.values("recipient").annotate(n=Count("pk")).filter(n__gt=3).exists())
+        self.assertFalse(SocialAttention.objects.values("case").annotate(n=Count("pk")).filter(n__gt=3).exists())
         self.assertFalse(ClientRequest.objects.exclude(delegation_id=F("territory__delegation_id")).exists())
         self.assertFalse(Activity.objects.filter(date__lt="2026-07-01").exists())
         self.assertFalse(Activity.objects.filter(date__gt="2026-10-31").exists())
@@ -133,7 +133,7 @@ class SeedDemoTests(TestCase):
         own = a.service_recipient.requests.first()
         foreign = b.service_recipient.requests.first()
         self.client.force_login(a)
-        response = self.client.get(reverse("client_requests"), {"page_size": 30})
+        response = self.client.get(reverse("client_requests"), {"page_size": 30, "record_source": "online"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].paginator.count, 50)
         self.assertTrue(all(row.recipient_id == a.service_recipient.pk for row in response.context["page_obj"]))
@@ -181,7 +181,8 @@ class SeedDemoTests(TestCase):
         subtype = SubattentionType.objects.first()
         data = {"recipient_national_id": recipient.national_id, "recipient_full_name": recipient.full_name,
                 "delegation": recipient.delegation_id, "attention_type": subtype.attention_type_id,
-                "subattention_type": subtype.pk, "description": "Prueba de relación de catálogos"}
+                "subattention_type": subtype.pk, "description": "Prueba de relación de catálogos",
+                "result": "Orientación de prueba"}
         form = SocialAttentionForm(data, official=admin.official)
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.fields["attention_type"].queryset.count(), 2)

@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from accounts.models import Delegation, Official, ServiceRecipient
 from accounts.delegation_context import ACTIVE_DELEGATION_SESSION_KEY
-from activities.models import SocialAttention
+from activities.models import AttentionCase, SocialAttention
 from configuration.models import AttentionType, AuditLog, Item, SubattentionType
 
 
@@ -17,6 +17,7 @@ class SocialAttentionRulesTests(TestCase):
             full_name="Ana", national_id="1-9", email="ana@example.test", delegation=self.d1
         )
         self.recipient = ServiceRecipient.objects.create(full_name="Persona P001", national_id="9-9")
+        self.case = AttentionCase.objects.create(recipient=self.recipient, delegation=self.d1, subject="Consulta")
         self.social = AttentionType.objects.create(name="Social")
         self.other = AttentionType.objects.create(name="Otro")
         self.orientation = SubattentionType.objects.create(attention_type=self.social, name="Orientación")
@@ -24,6 +25,7 @@ class SocialAttentionRulesTests(TestCase):
 
     def build(self, **overrides):
         data = dict(
+            case=self.case,
             recipient=self.recipient,
             attention_type=self.social,
             subattention_type=self.orientation,
@@ -58,12 +60,12 @@ class SocialAttentionRulesTests(TestCase):
             self.build(delegation=self.d2).full_clean()
         self.assertIn("delegation", ctx.exception.message_dict)
 
-    def test_limit_of_three_attentions_per_recipient(self):
-        for _ in range(SocialAttention.MAX_ATTENTIONS_PER_RECIPIENT):
+    def test_limit_of_three_attentions_per_case(self):
+        for _ in range(SocialAttention.MAX_ATTENTIONS_PER_CASE):
             self.build().save()
         with self.assertRaises(ValidationError) as ctx:
             self.build().full_clean()
-        self.assertIn("recipient", ctx.exception.message_dict)
+        self.assertIn("case", ctx.exception.message_dict)
 
 
 class CatalogCodesTests(TestCase):
@@ -120,6 +122,7 @@ class SocialAttentionEntryTests(TestCase):
             "attention_type": self.attention_type.pk,
             "subattention_type": self.subattention_type.pk,
             "description": "Solicitud ingresada por ventanilla.",
+            "result": "Orientación entregada.",
         }
         data.update(overrides)
         return data
@@ -280,13 +283,15 @@ class SocialAttentionEntryTests(TestCase):
         self.assertFalse(ServiceRecipient.objects.exists())
         self.assertFalse(SocialAttention.objects.exists())
 
-    def test_post_enforces_maximum_of_three_attentions_for_recipient(self):
+    def test_post_enforces_maximum_of_three_attentions_for_case(self):
         recipient = ServiceRecipient.objects.create(
             full_name="Persona con atenciones",
             national_id="12345678-5",
         )
-        for _ in range(SocialAttention.MAX_ATTENTIONS_PER_RECIPIENT):
+        case = AttentionCase.objects.create(recipient=recipient, delegation=self.delegation, subject="Consulta")
+        for _ in range(SocialAttention.MAX_ATTENTIONS_PER_CASE):
             SocialAttention.objects.create(
+                case=case,
                 recipient=recipient,
                 attention_type=self.attention_type,
                 subattention_type=self.subattention_type,
@@ -296,13 +301,16 @@ class SocialAttentionEntryTests(TestCase):
             )
 
         response = self.client.post(
-            reverse("attention_entry"),
+            f"{reverse('attention_entry')}?caso={case.pk}",
             self.payload(recipient_full_name=""),
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "ya tiene 3 gestiones registradas")
         self.assertEqual(SocialAttention.objects.filter(recipient=recipient).count(), 3)
+        self.assertRedirects(self.client.post(reverse("attention_entry"), self.payload(recipient_full_name="")),
+                             reverse("attention_entry"))
+        self.assertEqual(SocialAttention.objects.filter(recipient=recipient).count(), 4)
 
     def test_opening_form_does_not_create_recipient_or_attention(self):
         response = self.client.get(reverse("attention_entry"))

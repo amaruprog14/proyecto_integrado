@@ -9,7 +9,7 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from accounts.models import Delegation, Official, ServiceRecipient
-from activities.models import SocialAttention
+from activities.models import AttentionCase, SocialAttention
 from configuration.admin import PeriodAdmin
 from configuration.models import AttentionType, AuditLog, Period, SubattentionType
 from common.exports import XLSX_CONTENT_TYPE
@@ -238,6 +238,7 @@ class AttentionCatalogCrudTests(TestCase):
             full_name="Persona de prueba", national_id="RUT-RECIP-HISTORY"
         )
         SocialAttention.objects.create(
+            case=AttentionCase.objects.create(recipient=recipient, delegation=delegation, subject="Prueba"),
             recipient=recipient,
             attention_type=original_type,
             subattention_type=subattention,

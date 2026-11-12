@@ -1,6 +1,7 @@
 import re
 
 from django import forms
+from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from accounts.forms import clean_person_name
@@ -95,6 +96,18 @@ class SocialAttentionForm(forms.Form):
         queryset=SubattentionType.objects.none(),
         widget=SubattentionSelect(attrs={"class": "form-select"}),
     )
+    case_subject = forms.CharField(label="Asunto del caso presencial (visible en el portal)", max_length=100, required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}))
+    effective_date = forms.DateField(label="Fecha de la gestión", initial=timezone.localdate, required=False,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"class": "form-control", "type": "date"}))
+    result = forms.CharField(label="Resultado de la gestión", max_length=300,
+        widget=forms.TextInput(attrs={"class": "form-control"}))
+    invite_to_portal = forms.BooleanField(label="La persona desea recibir una invitación al portal", required=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}))
+    invitation_email = forms.EmailField(label="Correo para la invitación", max_length=191, required=False,
+        widget=forms.EmailInput(attrs={"class": "form-control", "autocomplete": "email"}))
+    identity_verified = forms.BooleanField(label="Verifiqué la identidad presencialmente", required=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}))
     # Token de un solo uso que emite la vista al abrir el formulario (ver SocialAttention).
     submission_token = forms.CharField(required=False, max_length=32, widget=forms.HiddenInput)
     # Sin max_length en el campo: Django contaría cada salto "\r\n" como 2 caracteres y
@@ -111,17 +124,29 @@ class SocialAttentionForm(forms.Form):
         ),
     )
 
-    def __init__(self, *args, official=None, active_delegation=None, can_link_request=False, **kwargs):
+    def __init__(self, *args, official=None, active_delegation=None, can_link_request=False, case=None, **kwargs):
         super().__init__(*args, **kwargs)
         if not can_link_request:
             self.fields.pop("client_request")
             self.fields["origin"].choices = ((self.DIRECT, "Atención directa"),)
         configure_text_widgets(self)
         self.official = official
+        self.case = case
         self.recipient_record = None
 
         delegations = attention_delegations(official, active_delegation)
         self.fields["delegation"].queryset = delegations
+        if case:
+            self.fields.pop("origin")
+            self.fields.pop("client_request", None)
+            self.fields.pop("case_subject")
+            self.initial.update(recipient_national_id=case.recipient.national_id,
+                recipient_full_name=case.recipient.full_name, delegation=case.delegation_id)
+            for name in ("recipient_national_id", "recipient_full_name", "delegation"):
+                self.fields[name].disabled = True
+            if case.client_request_id or case.recipient.user_id:
+                for name in ("invite_to_portal", "invitation_email", "identity_verified"):
+                    self.fields.pop(name)
         if official is not None and official.is_enabled:
             if active_delegation is not None and delegations.filter(
                 pk=active_delegation.pk
@@ -152,6 +177,8 @@ class SocialAttentionForm(forms.Form):
         return token if re.fullmatch(r"[0-9a-f]{32}", token) else ""
 
     def clean_recipient_national_id(self):
+        if self.case:
+            return self.case.recipient.national_id
         return normalize_chilean_rut(self.cleaned_data["recipient_national_id"])
 
     def clean_description(self):
@@ -160,6 +187,18 @@ class SocialAttentionForm(forms.Form):
         if text_length(raw) > DESCRIPTION_MAX_LENGTH:
             raise ValidationError(f"La descripción no puede superar los {DESCRIPTION_MAX_LENGTH} caracteres.")
         return clean_description_text(value, DESCRIPTION_MAX_LENGTH)
+
+    def clean_effective_date(self):
+        date = self.cleaned_data["effective_date"] or timezone.localdate()
+        if date > timezone.localdate():
+            raise ValidationError("La fecha de la gestión no puede estar en el futuro.")
+        return date
+
+    def clean_result(self):
+        value = clean_description_text(self.cleaned_data["result"], 300)
+        if not value:
+            raise ValidationError("Ingresa el resultado de la gestión.")
+        return value
 
     def clean(self):
         cleaned_data = super().clean()
@@ -183,7 +222,7 @@ class SocialAttentionForm(forms.Form):
                         "recipient_national_id",
                         "La persona asociada a este RUT está inactiva.",
                     )
-                elif full_name and normalize_spaces(recipient.full_name).casefold() != full_name.casefold():
+                elif full_name and normalize_spaces(recipient.full_name).casefold() != normalize_spaces(full_name).casefold():
                     self.add_error(
                         "recipient_full_name",
                         "El RUT ya está asociado a otro nombre. Verifica los datos de la persona.",
@@ -230,6 +269,14 @@ class SocialAttentionForm(forms.Form):
                 self.add_error("client_request", "Ingresa un folio válido.")
             else:
                 cleaned_data["client_request"] = request_id
+
+        if cleaned_data.get("invite_to_portal"):
+            if origin == self.LINKED:
+                self.add_error("invite_to_portal", "La solicitud ya pertenece a una cuenta del portal.")
+            if not cleaned_data.get("invitation_email") and "invitation_email" not in self.errors:
+                self.add_error("invitation_email", "Ingresa el correo de la persona.")
+            if not cleaned_data.get("identity_verified"):
+                self.add_error("identity_verified", "Confirma que verificaste su identidad presencialmente.")
 
         return cleaned_data
 

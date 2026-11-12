@@ -60,11 +60,7 @@
                         <td>{% include "client/status.html" %}</td>
                         <td class="maintainer-actions delegation-actions">
                             <div class="delegation-action-group">
-                                {% if not perms.activities.change_socialattention %}
-                                    <a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'staff_client_request_detail' item.pk %}" aria-label="Ver solicitud de origen {{ item.identifier }}" data-tooltip="Ver solicitud de origen">{% include "includes/action_icon.html" with action="Ver" %}</a>
-                                {% else %}
-                                    <a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'staff_client_request_review' item.pk %}" aria-label="Ver {{ item.identifier }}" data-tooltip="Ver y responder">{% include "includes/action_icon.html" with action="Ver" %}</a>
-                                {% endif %}
+                                <a class="delegation-action delegation-action-view action-icon action-icon--view" href="{% url 'staff_client_request_detail' item.pk %}" aria-label="Ver {{ item.identifier }}" data-tooltip="Ver seguimiento">{% include "includes/action_icon.html" with action="Ver" %}</a>
                             </div>
                         </td>
                     </tr>

@@ -95,6 +95,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Conexión a MySQL | motor MySQL |
 | `SEED_DEMO_PASSWORD` | Clave de las cuentas ficticias. Requerida por `seed_demo` y al crear `adminEvalA` con `prepare_evaluation_admin` | — |
 | `EMAIL_BACKEND`, `DEFAULT_FROM_EMAIL`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` | Envío del enlace de recuperación | correo impreso en la consola |
+| `PORTAL_INVITATION_TIMEOUT_HOURS` | Vigencia de la invitación opcional al portal desde atención presencial | `24` |
 | `PASSWORD_RESET_TIMEOUT` | Vigencia del enlace de recuperación, en segundos | `3600` |
 | `PASSWORD_RESET_RESEND_WAIT_SECONDS` | Espera mínima entre dos enlaces a la misma cuenta | `45` |
 | `PASSWORD_RESET_MIN_RESPONSE_SECONDS` | Tiempo mínimo de respuesta de la solicitud | `1` |
@@ -306,12 +307,26 @@ permiso en el Administrador de la semilla anterior si el resto de sus permisos c
 exactamente; no amplía roles personalizados ni cambia su alcance.
 
 Actividades permite crear y editar registros manuales mediante modal, consultar su detalle,
-buscar, filtrar, ordenar y exportar el conjunto vigente completo. Editor y lectores no pueden
+buscar, filtrar, ordenar y exportar las actividades sin archivar. Editor y lectores no pueden
 archivar ni restaurar. El permiso `activities.archive_activity` habilita al administrador para
 archivar, consultar el filtro «Archivada» y restaurar dentro de su ámbito. Las archivadas no
 aparecen en el listado habitual ni se exportan; intentar exportar desde el historial muestra
 un aviso para volver a Vigente. Las actividades de períodos cerrados y las vinculadas a una
 atención social permanecen de solo consulta, conservando su origen e historial.
+Al cerrar un caso, sus actividades se muestran con el estado «Resuelta» en el listado,
+el detalle y el Excel. En el listado, el filtro «Resuelta» se aplica a las actividades y solicitudes
+según el origen seleccionado.
+
+Desde Actividades, **Registrar atención** abre una gestión y **Casos sociales** permite continuar el
+seguimiento. El caso reúne hasta tres gestiones, el responsable, el próximo paso y el historial.
+Para una solicitud en línea, **Cerrar y responder** cierra el caso y publica la respuesta en el portal.
+**Mis solicitudes y atenciones** muestra el historial publicado de los casos propios, incluido el presencial.
+La ficha se reutiliza por RUT. Si la persona acepta una invitación presencial, activa su cuenta mediante
+el enlace enviado por el mismo servicio de correo del SGR. Sin ubicación vigente, puede consultar el
+seguimiento y completar su ubicación con un administrador antes de enviar una solicitud en línea.
+
+Ejecutar `python manage.py migrate` al actualizar para agrupar las gestiones históricas vinculadas a un
+folio y asignar un caso individual a cada gestión presencial anterior.
 
 La migración `activities.0008_activity_archive_permission` registra este permiso; después de
 `python manage.py migrate`, habilitar «Actividades: Archivar» en el rol administrador pertinente.
@@ -494,7 +509,7 @@ La exportación usa el permiso de consulta.
 | Roles | `accounts.view_role` | `accounts.add_role` | `accounts.change_role` |
 | Usuarios | `auth.view_user` | `auth.add_user` | `auth.change_user` |
 | Funcionarios | `accounts.view_official` | `accounts.add_official` | `accounts.change_official` para editar; `accounts.archive_official` para archivar |
-| Actividades | `activities.view_activity` (Excel de vigentes) | `activities.add_activity` | `activities.change_activity` para editar; `activities.archive_activity` para archivar, consultar historial y restaurar |
+| Actividades | `activities.view_activity` (Excel de actividades sin archivar) | `activities.add_activity` | `activities.change_activity` para editar; `activities.archive_activity` para archivar, consultar historial y restaurar |
 | Ítems y metas | `configuration.view_item` | `configuration.add_item` | `configuration.change_item` |
 | Tipo de Atención | `configuration.view_attentiontype` | `configuration.add_attentiontype` | `configuration.change_attentiontype` |
 | Sub Atención | `configuration.view_subattentiontype` | `configuration.add_subattentiontype` | `configuration.change_subattentiontype` |

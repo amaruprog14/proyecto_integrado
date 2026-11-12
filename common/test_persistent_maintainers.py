@@ -77,7 +77,8 @@ class PersistentMaintainerTests(TestCase):
         attention_type = AttentionType.objects.create(name="Social", activity_item=self.item)
         sub = SubattentionType.objects.create(name="Orientación", attention_type=attention_type)
         return dict(recipient_national_id="11.111.111-1", recipient_full_name="Persona", delegation=self.delegation.pk,
-            attention_type=attention_type.pk, subattention_type=sub.pk, description="Atención presencial", submission_token="a"*32)
+            attention_type=attention_type.pk, subattention_type=sub.pk, description="Atención presencial",
+            result="Orientación entregada.", submission_token="a"*32)
 
     def test_automatic_activity_once_and_linked_protection(self):
         payload = self.attention_payload()

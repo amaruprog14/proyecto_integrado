@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Activar acceso al portal · SGR{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="invitation-title">
+    <div class="attention-entry-card">
+        <h1 id="invitation-title">Activar acceso al portal</h1>
+        {% if form %}
+            <p>Define tu contraseña para consultar tus solicitudes y atenciones.</p>
+            <form method="post">
+                {% csrf_token %}
+                {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+                <div class="attention-entry-grid">
+                    {% for field in form.visible_fields %}
+                        {% include 'activities/attention_field.html' with field=field %}
+                    {% endfor %}
+                </div>
+                <div class="attention-entry-actions"><button class="btn btn-primary" type="submit">Activar cuenta</button></div>
+            </form>
+        {% else %}
+            <p>La invitación ya no está disponible. Si todavía necesitas activar tu cuenta, solicita un nuevo enlace en tu delegación.</p>
+            <a class="btn btn-primary" href="{% url 'login' %}">Ir al inicio de sesión</a>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

@@ -7,7 +7,7 @@ from django.utils.dateparse import parse_date
 from common.list_state import sort_spec
 
 from .client_portal import search_staff_requests, staff_requests
-from .models import ClientRequest
+from .models import Activity, ClientRequest
 
 
 REQUEST_RECORD_TYPE = "Solicitud ciudadana"
@@ -19,7 +19,9 @@ def filtered_requests(user, params):
     if not user.has_perm(REQUEST_VIEW_PERMISSION) or params["record_source"] == "activity":
         return requests.none()
     status = params["status"]
-    if status in ("ACTIVE", "INACTIVE") or any(params[key] for key in ("official", "item", "record_type")):
+    if status in (Activity.ListingStatus.ACTIVE, Activity.ListingStatus.INACTIVE) or any(
+        params[key] for key in ("official", "item", "record_type")
+    ):
         return requests.none()
     if status in ClientRequest.Status.values:
         requests = requests.filter(status=status)

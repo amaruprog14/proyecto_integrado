@@ -45,12 +45,39 @@ document.addEventListener("DOMContentLoaded", () => {
     const origin = form.querySelector("#id_origin");
     const folio = form.querySelector("#id_client_request");
     const requestFields = form.querySelector("#attention-request-fields");
+    const invite = form.querySelector("#id_invite_to_portal");
+    const invitation = form.querySelector("#attention-portal-invitation");
+    const invitationFields = form.querySelector("#attention-invitation-fields");
+    const subject = form.querySelector("#attention-case-subject");
+    const updateInvitation = () => {
+        if (!invitation) return;
+        const direct = origin?.value !== "linked";
+        invitation.hidden = !direct;
+        invitation.disabled = !direct;
+        invitationFields.hidden = !invite.checked;
+        invitationFields.querySelectorAll("input").forEach((field) => {
+            field.disabled = !invite.checked;
+        });
+    };
+    invite?.addEventListener("change", updateInvitation);
+    updateInvitation();
     if (!origin || !folio || !requestFields) return;
 
     const status = requestFields.querySelector("#attention-request-status");
     const rut = form.elements.recipient_national_id;
     const name = form.elements.recipient_full_name;
+    const delegation = form.elements.delegation;
+    const originalDelegation = delegation.value;
     let controller;
+    let filledFromRequest = origin.value === "linked" && Boolean(folio.value && rut.value);
+
+    const lockRequestData = (locked) => {
+        rut.readOnly = locked;
+        name.readOnly = locked;
+        delegation.disabled = locked;
+    };
+    form.addEventListener("submit", () => { delegation.disabled = false; });
+    lockRequestData(filledFromRequest);
 
     const updateOrigin = (showErrors = false) => {
         const linked = origin.value === "linked";
@@ -58,10 +85,14 @@ document.addEventListener("DOMContentLoaded", () => {
         requestFields.hidden = !showFolio;
         folio.disabled = !showFolio;
         folio.required = linked;
+        if (subject) subject.hidden = linked;
+        updateInvitation();
     };
 
     folio.addEventListener("change", async () => {
         controller?.abort();
+        filledFromRequest = false;
+        lockRequestData(false);
         rut.value = "";
         name.value = "";
         status.textContent = "";
@@ -79,7 +110,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (request.signal.aborted) return;
             rut.value = item.rut;
             name.value = item.name;
-            form.elements.delegation.value = String(item.delegation_id);
+            delegation.value = String(item.delegation_id);
+            filledFromRequest = true;
+            lockRequestData(true);
             status.textContent = "Datos del solicitante cargados.";
         } catch {
             if (!request.signal.aborted) {
@@ -91,7 +124,16 @@ document.addEventListener("DOMContentLoaded", () => {
     origin.addEventListener("change", () => {
         controller?.abort();
         status.textContent = "";
-        if (origin.value === "direct") folio.value = "";
+        if (origin.value === "direct") {
+            folio.value = "";
+            lockRequestData(false);
+            if (filledFromRequest) {
+                rut.value = "";
+                name.value = "";
+                delegation.value = originalDelegation;
+            }
+            filledFromRequest = false;
+        }
         updateOrigin();
     });
     updateOrigin(true);

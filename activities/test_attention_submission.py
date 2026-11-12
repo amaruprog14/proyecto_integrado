@@ -13,7 +13,7 @@ from django.urls import reverse
 
 from accounts.models import Delegation, Official, ServiceRecipient
 from activities import views as activity_views
-from activities.models import Activity, ClientRequest, SocialAttention
+from activities.models import Activity, AttentionCase, ClientRequest, SocialAttention
 from configuration.models import AttentionType, AuditLog, SubattentionType
 
 User = get_user_model()
@@ -58,6 +58,7 @@ class AttentionSubmissionTests(TestCase):
             "attention_type": self.attention_type.pk,
             "subattention_type": self.subattention_type.pk,
             "description": "Consulta presencial.",
+            "result": "Orientación entregada.",
             "submission_token": TOKEN,
         }
         data.update(overrides)
@@ -146,7 +147,7 @@ class AttentionSubmissionTests(TestCase):
         attention = SocialAttention.objects.get()
         self.assertEqual(attention.client_request, origin)
         self.assertEqual(attention.activity.record_type, Activity.RecordType.ATTENTION)
-        self.assertEqual(ClientRequest.objects.get().status, ClientRequest.Status.RECEIVED)
+        self.assertEqual(ClientRequest.objects.get().status, ClientRequest.Status.REVIEW)
         origin_url = reverse("staff_client_request_detail", args=[origin.pk])
         self.assertContains(self.client.get(origin_url), attention.identifier)
         self.assertContains(self.client.get(reverse("activity_detail", args=[attention.activity_id])), origin_url)
@@ -225,9 +226,11 @@ class AttentionDetailTests(TestCase):
             "subattention_type": subattention_type,
             "description": "Detalle de la gestión.",
         }
-        cls.own_attention = SocialAttention.objects.create(delegation=cls.own, responsible=cls.official, **common)
+        own_case = AttentionCase.objects.create(recipient=recipient, delegation=cls.own, subject="Orientación")
+        foreign_case = AttentionCase.objects.create(recipient=recipient, delegation=cls.foreign, subject="Orientación")
+        cls.own_attention = SocialAttention.objects.create(case=own_case, delegation=cls.own, responsible=cls.official, **common)
         cls.foreign_attention = SocialAttention.objects.create(
-            delegation=cls.foreign, responsible=foreign_official, **common
+            case=foreign_case, delegation=cls.foreign, responsible=foreign_official, **common
         )
 
     def setUp(self):

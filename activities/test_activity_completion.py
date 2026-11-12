@@ -17,7 +17,7 @@ from openpyxl import load_workbook
 
 from accounts.models import Role, ServiceRecipient
 from accounts.test_official_completion import OfficialFixture
-from activities.models import Activity, SocialAttention
+from activities.models import Activity, AttentionCase, SocialAttention
 from common.maintainer_forms import ActivityForm
 from configuration.models import Item, Period, AttentionType, SubattentionType, AuditLog
 from config.asgi import application
@@ -227,7 +227,8 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
         kind=AttentionType.objects.create(name='Social', activity_item=self.item)
         sub=SubattentionType.objects.create(name='Orientación', attention_type=kind)
         recipient=ServiceRecipient.objects.create(full_name='Persona ficticia', national_id='12345678-5')
-        SocialAttention.objects.create(activity=self.activity, recipient=recipient, attention_type=kind,
+        case = AttentionCase.objects.create(recipient=recipient, delegation=self.a, subject='Orientación')
+        SocialAttention.objects.create(case=case, activity=self.activity, recipient=recipient, attention_type=kind,
             subattention_type=sub, delegation=self.a, responsible=self.target, date=self.today)
         self.assertEqual(self.mutate('deactivate').status_code, 302)
         self.activity.refresh_from_db()
