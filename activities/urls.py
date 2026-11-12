@@ -14,13 +14,19 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.urls import path
-
-from .views import AttentionDetailView, AttentionEntryView
+from django.urls import path, reverse_lazy
+from django.views.generic import RedirectView
+from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
 urlpatterns = []
 urlpatterns += [
+    path('solicitudes/', RedirectView.as_view(
+        url=reverse_lazy('activity_maintainer', query={
+            'record_source': 'request', 'status': '', 'official': '', 'item': '', 'record_type': '',
+        }),
+    ), name='activity_requests'),
     path('atenciones/nueva/', AttentionEntryView.as_view(), name='attention_entry'),
+    path('atenciones/buscar-solicitudes/', AttentionRequestLookupView.as_view(), name='attention_request_lookup'),
     path('atenciones/<int:pk>/', AttentionDetailView.as_view(), name='attention_detail'),
 ]
 

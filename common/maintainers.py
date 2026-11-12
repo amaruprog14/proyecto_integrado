@@ -20,7 +20,8 @@ from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodFor
 from configuration.models import Item, Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
-from activities.models import Activity
+from activities.models import Activity, ClientRequest
+from activities.listing import export_objects, filtered_requests, listing_objects, ordered_records, request_row
 
 CATALOGS = {
     "territory": (Territory, TerritoryForm, "Territorios", "territories", ("code", "territory_name", "delegation__delegation_name", "description")),
@@ -128,7 +129,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         form_title = f"Editar {entity}" if self.operation == "update" else f"{'Nueva' if feminine else 'Nuevo'} {entity}"
         notes = {
             "period": "Los períodos cerrados conservan su historial y no se pueden editar ni reabrir.",
-            "activity": "El listado y Excel habituales muestran actividades vigentes. El historial y la restauración requieren permiso administrativo. Las actividades vinculadas a atenciones y las de períodos cerrados son de consulta.",
+            "activity": "El listado y el Excel incluyen registros autorizados según los filtros. Las solicitudes ciudadanas se gestionan desde su folio. El historial de actividades archivadas requiere permiso administrativo.",
             "group": "Los grupos se desactivan y reactivan, conservando sus miembros y permisos.",
         }
         return dict(maintainer_title=self.spec[2], maintainer_kind=self.spec[3],
@@ -159,6 +160,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             else:
                 qs = qs.filter(is_active=status == "ACTIVE")
         if self.key == "activity":
+            if self.request.GET["record_source"] == "request" or status in ClientRequest.Status.values:
+                return qs.none()
             for param in ("official", "item"):
                 value = self.request.GET.get(param, "")
                 if value.isdigit():
@@ -176,6 +179,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         return qs.order_by("pk")
 
     def row(self, obj):
+        if isinstance(obj, ClientRequest):
+            return request_row(obj)
         from datetime import date
         fields = []
         display_fields = []
@@ -251,7 +256,14 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 if self.key == "area":
                     context["type_count"] = obj.activity_types.filter(deleted_at__isnull=True).count()
             if self.key == "activity" and hasattr(obj, "social_attentions"):
-                context["attention_url"] = reverse("attention_detail", args=[obj.social_attentions.pk])
+                attention = obj.social_attentions
+                context["attention_url"] = reverse("attention_detail", args=[attention.pk])
+                if attention.client_request_id and request.user.has_perm("activities.view_socialattention"):
+                    from activities.client_portal import staff_requests
+
+                    context["origin_request"] = staff_requests(
+                        request.user, "activities.view_socialattention",
+                    ).filter(pk=attention.client_request_id).first()
             return render(request, "maintainers/detail.html", context)
         if self.operation != "list" and self.operation != "export":
             return HttpResponse(status=405)
@@ -273,13 +285,21 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 # La opción desapareció. Limpiar el filtro antes de paginar y guardar la sesión.
                 list_state.update(official="", page=1)
                 request.GET = query_params(list_state)
-        qs = ordered(self.filtered(), self.key, request.GET)
+        qs = self.filtered()
+        if self.key == "activity":
+            requests = filtered_requests(request.user, list_state)
+            records = ordered_records(qs, requests, list_state)
+        else:
+            records = ordered(qs, self.key, request.GET)
         headers = [str(self.spec[0]._meta.get_field(f.split("__")[0]).verbose_name) for f in self.spec[4]] + ["Estado"]
         if self.key == "group":
             headers = ["Nombre", "Alcance", "Miembros", "Permisos", "Estado"]
         if self.operation == "export":
-            return xlsx_response(self.key, headers, (self.row(obj)["cells"] for obj in qs), sheet_title=self.spec[2])
-        page = self.clamp_page(qs)
+            objects = export_objects(records, qs, requests) if self.key == "activity" else records
+            return xlsx_response(self.key, headers, (self.row(obj)["cells"] for obj in objects), sheet_title=self.spec[2])
+        page = self.clamp_page(records, already_ordered=True)
+        if self.key == "activity":
+            page.object_list = listing_objects(page.object_list, qs, requests)
         size = page.paginator.per_page
         params = request.GET.copy()
         params.pop("page", None)
@@ -290,6 +310,9 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             statuses=(("OPEN", "Abierto"), ("CLOSED", "Cerrado")) if self.key == "period" else (("ACTIVE", "Vigente"), ("INACTIVE", "Archivada" if self.key == "activity" else "No vigente")))
         if self.key == "activity" and not context["can_archive"]:
             context["statuses"] = (("ACTIVE", "Vigente"),)
+        if self.key == "activity" and request.user.has_perm("activities.view_socialattention"):
+            context["can_list_requests"] = True
+            context["statuses"] = (*context["statuses"], *ClientRequest.Status.choices)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
             "activity": "activities/activity_list.html"}[self.key]

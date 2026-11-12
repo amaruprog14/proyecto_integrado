@@ -271,16 +271,19 @@ class StaffRequestQueryMixin:
         status = self.request.GET.get("status")
         if status in ClientRequest.Status.values:
             queryset = queryset.filter(status=status)
-        query = self.request.GET.get("q")
-        if query:
-            match = (Q(recipient__full_name__icontains=query) | Q(subject__icontains=query)
-                     | Q(delegation__delegation_name__icontains=query))
-            if query.upper().startswith("SOL-") and query[4:].isascii() and query[4:].isdigit():
-                folio = positive(query[4:], 0)
-                if folio:
-                    match |= Q(pk=folio)
-            queryset = queryset.filter(match)
+        return search_staff_requests(queryset, self.request.GET.get("q"))
+
+
+def search_staff_requests(queryset, query):
+    if not query:
         return queryset
+    match = (Q(recipient__full_name__icontains=query) | Q(subject__icontains=query)
+             | Q(delegation__delegation_name__icontains=query))
+    if query.upper().startswith("SOL-") and query[4:].isascii() and query[4:].isdigit():
+        folio = positive(query[4:], 0)
+        if folio:
+            match |= Q(pk=folio)
+    return queryset.filter(match)
 
 
 class StaffRequestListView(StaffRequestQueryMixin, ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
@@ -303,7 +306,34 @@ class StaffRequestExportView(StaffRequestQueryMixin, ProtectedViewMixin, View):
                              rows, sheet_title="Solicitudes ciudadanas")
 
 
-class StaffRequestReviewView(ProtectedViewMixin, FormView):
+class StaffRequestDetailMixin:
+    def request_context(self, item):
+        from .views import scoped_attentions
+
+        user = self.request.user
+        can_view = user.has_perm("activities.view_socialattention")
+        return {
+            "citizen_request": item,
+            "request_list_url": reverse("activity_maintainer" if self.request.GET.get("desde") == "actividades"
+                and user.has_perm("activities.view_activity") else "staff_client_requests"),
+            "linked_attentions": scoped_attentions(user, "activities.view_socialattention")
+                .filter(client_request=item).order_by("-registered_at") if can_view else (),
+            "can_review_request": staff_requests(user, "activities.change_socialattention")
+                .filter(pk=item.pk).exists() if user.has_perm("activities.change_socialattention") else False,
+            "can_register_attention": can_view and user.has_perm("activities.add_socialattention"),
+        }
+
+
+class StaffRequestDetailView(StaffRequestDetailMixin, ProtectedViewMixin, TemplateView):
+    permission_required = "activities.view_socialattention"
+    template_name = "client/staff_review.html"
+
+    def get_context_data(self, **kwargs):
+        item = get_object_or_404(staff_requests(self.request.user, self.permission_required), pk=self.kwargs["pk"])
+        return {**super().get_context_data(**kwargs), **self.request_context(item)}
+
+
+class StaffRequestReviewView(StaffRequestDetailMixin, ProtectedViewMixin, FormView):
     permission_required = "activities.change_socialattention"
     template_name = "client/staff_review.html"
     form_class = RequestReviewForm
@@ -313,9 +343,14 @@ class StaffRequestReviewView(ProtectedViewMixin, FormView):
         item = get_object_or_404(staff_requests(self.request.user, self.permission_required), pk=self.kwargs["pk"])
         return {**super().get_form_kwargs(), "instance": item}
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        return {**context, **self.request_context(context["form"].instance)}
+
     def form_valid(self, form):
         with transaction.atomic():
-            item = get_object_or_404(staff_requests(self.request.user, self.permission_required).select_for_update(), pk=self.kwargs["pk"])
+            item = get_object_or_404(staff_requests(self.request.user, self.permission_required)
+                .select_related(None).select_for_update(), pk=self.kwargs["pk"])
             if item.status != form.cleaned_data["status"] or item.response != form.cleaned_data["response"]:
                 previous = item.status
                 item.status, item.response = form.cleaned_data["status"], form.cleaned_data["response"]
@@ -349,5 +384,6 @@ urlpatterns = [
     path("perfil/foto/", ClientPhotoView.as_view(), name="client_profile_photo"),
     path("gestion/", StaffRequestListView.as_view(), name="staff_client_requests"),
     path("gestion/exportar/", StaffRequestExportView.as_view(), name="staff_client_requests_export"),
+    path("gestion/<int:pk>/detalle/", StaffRequestDetailView.as_view(), name="staff_client_request_detail"),
     path("gestion/<int:pk>/", StaffRequestReviewView.as_view(), name="staff_client_request_review"),
 ]

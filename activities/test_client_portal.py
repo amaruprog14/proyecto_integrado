@@ -1,16 +1,18 @@
 from common.testing_seed import seed_test_data
 import uuid
+from datetime import timedelta
 from io import BytesIO
 
 from django.contrib.auth.models import User, Permission
 from django.core.cache import cache
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import load_workbook
 
 from accounts.models import ServiceRecipient, Delegation, Official, Role, Territory
 from configuration.models import AttentionType, SubattentionType
-from .models import ClientRequest, ClientRequestEvent
+from .models import Activity, ClientRequest, ClientRequestEvent
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
@@ -57,6 +59,45 @@ class ClientPortalTests(TestCase):
         self.assertEqual(ClientRequest.objects.count(), 1)
         self.assertEqual(ClientRequestEvent.objects.count(), 1)
         self.assertContains(self.client.get(reverse("client_requests")), "Recibida")
+
+    def test_new_request_appears_in_activity_list_without_creating_an_activity(self):
+        previous_count = Activity.objects.count()
+        self.client.post(reverse("client_request_create"), self.payload())
+        origin = ClientRequest.objects.get()
+        listing = reverse("activity_maintainer")
+        self.assertEqual(self.client.get(listing).status_code, 403)
+
+        self.client.force_login(User.objects.get(username="admin_demo"))
+        response = self.client.get(listing, {"q": origin.identifier})
+        self.assertContains(response, origin.identifier)
+        self.assertContains(response, "Tipo de registro")
+        self.assertContains(response, 'data-maintainer-websocket="/ws/maintainers/activity/"')
+        self.assertEqual(Activity.objects.count(), previous_count)
+
+    def test_activity_list_orders_both_sources_before_pagination_and_export(self):
+        cache.clear()
+        origin = self.create_request()
+        origin.subject = "MIX Consulta ciudadana"
+        origin.save(update_fields=["subject"])
+        template = Activity.objects.first()
+        today = timezone.localdate(origin.created_at)
+        activities = [Activity.objects.create(
+            code=f"MIX-{offset}", date=today + timedelta(days=offset), official=template.official,
+            item=template.item, record_type=Activity.RecordType.FIELD,
+        ) for offset in (3, 2, 1, -1, -2)]
+        self.client.force_login(User.objects.get(username="admin_demo"))
+        listing = reverse("activity_maintainer")
+        page = self.client.get(listing, {"q": "MIX", "page_size": 5})
+        self.assertEqual(list(page.context["page_obj"]), [*activities[:3], origin, activities[3]])
+        self.assertEqual(list(self.client.get(listing, {"page": 2}).context["page_obj"]), [activities[4]])
+        result = self.client.get(reverse("activity_export"))
+        codes = [row[0] for row in list(load_workbook(BytesIO(result.content)).active.values)[1:]]
+        self.assertEqual(codes, [*(obj.code for obj in activities[:3]), origin.identifier,
+                                 *(obj.code for obj in activities[3:])])
+        self.assertEqual(list(self.client.get(listing, {"record_source": "request"}).context["page_obj"]), [origin])
+        self.assertEqual(list(self.client.get(listing, {"record_source": "activity"}).context["page_obj"]), activities[:5])
+        same_day = self.client.get(listing, {"record_source": "", "date_from": today, "date_to": today})
+        self.assertEqual(list(same_day.context["page_obj"]), [origin])
 
     def test_direct_url_and_filters_never_expose_another_client(self):
         own = self.create_request()
@@ -138,6 +179,7 @@ class ClientPortalTests(TestCase):
         self.assertContains(response,
             f'<a class="maintainer-sidebar-link" href="{listing}">Solicitudes ciudadanas</a>',
             html=True, count=1)
+        self.assertContains(self.client.get(activities, {"q": item.identifier}), item.identifier)
 
         self.assertEqual(self.client.post(url, {"status": "RESOLVED", "response": ""}).status_code, 200)
         self.assertEqual(self.client.post(url, {"status": "RESOLVED", "response": "Tu consulta fue atendida."}).status_code, 302)
@@ -151,6 +193,12 @@ class ClientPortalTests(TestCase):
         item.save()
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.post(url, {"status": "REVIEW", "response": "Ajena"}).status_code, 404)
+        self.assertEqual(list(self.client.get(activities, {"q": item.identifier}).context["page_obj"]), [])
+        role.permissions.remove(Permission.objects.get(content_type__app_label="activities",
+                                                      codename="view_socialattention"))
+        item.delegation = self.delegation
+        item.save(update_fields=["delegation"])
+        self.assertEqual(list(self.client.get(activities, {"q": item.identifier}).context["page_obj"]), [])
 
     def test_staff_list_and_export_share_scope_search_status_and_order(self):
         cache.clear()

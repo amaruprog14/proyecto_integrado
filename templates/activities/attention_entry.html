@@ -36,6 +36,23 @@
             {% endif %}
 
             <div class="attention-entry-grid">
+                <div class="attention-entry-field attention-entry-field-full">
+                    <label for="{{ form.origin.id_for_label }}">{{ form.origin.label }}</label>
+                    {{ form.origin }}
+                    {% for error in form.origin.errors %}
+                        <div class="invalid-feedback d-block">{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% if form.client_request %}
+                    <div class="attention-entry-field attention-entry-field-full" id="attention-request-fields" data-url="{% url 'attention_request_lookup' %}"{% if form.client_request.errors %} data-invalid="true"{% endif %}>
+                        <label for="{{ form.client_request.id_for_label }}">{{ form.client_request.label }}</label>
+                        {{ form.client_request }}
+                        {% for error in form.client_request.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                        <p class="attention-entry-hint" id="attention-request-status" role="status"></p>
+                    </div>
+                {% endif %}
                 <div class="attention-entry-field">
                     <label for="{{ form.recipient_national_id.id_for_label }}">
                         {{ form.recipient_national_id.label }} <span aria-hidden="true">*</span>
@@ -55,7 +72,7 @@
                         {{ form.recipient_full_name.label }}
                     </label>
                     {{ form.recipient_full_name }}
-                    <p class="attention-entry-hint">Solo se registra el nombre cuando el identificador aún no existe.</p>
+                    <p class="attention-entry-hint">Al vincular una solicitud, se muestra el nombre que ya está registrado.</p>
                     {% for error in form.recipient_full_name.errors %}
                         <div class="invalid-feedback d-block">{{ error }}</div>
                     {% endfor %}
@@ -134,6 +151,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="{% static 'js/attention-entry.js' %}" defer></script>
+    <script src="{% static 'js/attention-entry.js' %}?v=selector" defer></script>
     <script src="{% static 'js/maintainer-states.js' %}" defer></script>
 {% endblock %}

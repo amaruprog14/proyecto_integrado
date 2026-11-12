@@ -24,9 +24,9 @@ class ClampedPaginationMixin:
         size = positive(self.request.GET.get('page_size'), DEFAULT_SIZE)
         return size if size in PAGE_SIZES else DEFAULT_SIZE
 
-    def clamp_page(self, queryset):
+    def clamp_page(self, queryset, *, already_ordered=False):
         state = self.prepare_list_state()
-        if state is not None:
+        if state is not None and not already_ordered:
             queryset = ordered(queryset, self.request._list_module, state)
         paginator = Paginator(queryset, self.get_paginate_by(queryset))
         page = paginator.page(min(positive(self.request.GET.get('page')), paginator.num_pages))

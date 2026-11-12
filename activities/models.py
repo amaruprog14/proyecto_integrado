@@ -84,6 +84,10 @@ class SocialAttention(BaseModel):
 
     MAX_ATTENTIONS_PER_RECIPIENT = 3
 
+    client_request = models.ForeignKey(
+        ClientRequest, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="social_attentions", verbose_name="Solicitud ciudadana de origen",
+    )
     activity = models.OneToOneField(
         Activity,
         on_delete=models.PROTECT,
@@ -177,6 +181,12 @@ class SocialAttention(BaseModel):
         if self.delegation_id and self.responsible_id:
             if not self.responsible.get_authorized_delegations().filter(pk=self.delegation_id).exists():
                 errors["delegation"] = "El responsable no tiene autorizada esta delegación."
+
+        if self.client_request_id and (
+            self.client_request.recipient_id != self.recipient_id
+            or self.client_request.delegation_id != self.delegation_id
+        ):
+            errors["client_request"] = "La solicitud debe corresponder al mismo solicitante y delegación."
 
         if errors:
             raise ValidationError(errors)

@@ -22,7 +22,20 @@ class MaintainerListConsumer(AsyncJsonWebsocketConsumer):
             return False
         if not can_read(user, self.module):
             return False
-        return user.pk
+        modules = [self.module]
+        if self.module == 'activity' and can_read(user, 'staff_request'):
+            modules.append('staff_request')
+        return user.pk, modules
+
+    async def update_subscriptions(self, modules):
+        for module in self.joined.keys() - set(modules):
+            unsubscribe(self.user_id, module)
+            await self.channel_layer.group_discard(self.joined.pop(module), self.channel_name)
+        for module in set(modules) - self.joined.keys():
+            group = group_name(self.user_id, module)
+            await self.channel_layer.group_add(group, self.channel_name)
+            subscribe(self.user_id, module)
+            self.joined[module] = group
 
     async def connect(self):
         from common.realtime import MODELS
@@ -30,30 +43,29 @@ class MaintainerListConsumer(AsyncJsonWebsocketConsumer):
         if self.module not in MODELS:
             await self.close(code=4404)
             return
-        self.user_id = await self.authorized()
-        self.joined = False
-        if not self.user_id:
+        authorization = await self.authorized()
+        self.joined = {}
+        if not authorization:
             await self.close(code=4403)
             return
-        self.group = group_name(self.user_id, self.module)
-        await self.channel_layer.group_add(self.group, self.channel_name)
-        subscribe(self.user_id, self.module)
-        self.joined = True
+        self.user_id, modules = authorization
+        await self.update_subscriptions(modules)
         await self.accept()
 
     async def disconnect(self, code):
-        if getattr(self, 'joined', False):
-            unsubscribe(self.user_id, self.module)
-            await self.channel_layer.group_discard(self.group, self.channel_name)
+        if getattr(self, 'joined', None):
+            await self.update_subscriptions(())
 
     async def receive_json(self, content, **kwargs):
         # La conexión solo recibe avisos: no acepta suscripciones del navegador.
         await self.close(code=4400)
 
     async def maintainer_changed(self, event):
-        if await self.authorized() != self.user_id:
+        authorization = await self.authorized()
+        if not authorization or authorization[0] != self.user_id:
             await self.close(code=4403)
             return
+        await self.update_subscriptions(authorization[1])
         await self.send_json({'type': 'activities.changed' if self.module == 'activity' else 'maintainer.changed'})
 
     activities_changed = maintainer_changed

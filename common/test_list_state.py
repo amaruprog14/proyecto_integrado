@@ -29,7 +29,7 @@ class ListStateTests(TestCase):
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.context['page_obj'].paginator.per_page, 15)
-                self.assertEqual(response.context['selected_sort'], 'created')
+                self.assertEqual(response.context['selected_sort'], 'date' if module == 'activity' else 'created')
                 for size in (5, 15, 30):
                     self.assertContains(response, f'<option value="{size}"')
                 self.assertContains(response, 'name="sort"')
