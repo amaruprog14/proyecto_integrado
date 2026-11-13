@@ -13,6 +13,7 @@
             </header>
             <form class="attention-entry-card" method="post" aria-label="{{ form_title }}" data-loading>
                 {% csrf_token %}
+                {% if form_description %}<p class="attention-entry-hint">{{ form_description }}</p>{% endif %}
                 {% if form.non_field_errors %}
                     <div class="invalid-feedback d-block mb-3" role="alert">{% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}</div>
                 {% endif %}
@@ -24,11 +25,11 @@
                                 {% if form.privileged_locked %}<p class="attention-entry-hint">Los permisos privilegiados requieren el permiso para editar roles.</p>{% endif %}
                                 {% include "includes/permission_checkboxes.html" %}
                             </fieldset>
-                        {% elif field.name == 'members' %}
+                        {% elif field.name == 'members' or field.name == 'positions' %}
                             <fieldset class="attention-entry-field attention-entry-field-full" data-member-picker>
-                                <legend class="form-label">Miembros</legend>
-                                <label for="group-member-search">Buscar por nombre o usuario</label>
-                                <input class="form-control" id="group-member-search" type="search" data-member-search autocomplete="off">
+                                <legend class="form-label">{{ field.label }}</legend>
+                                <label for="{% if field.name == 'positions' %}function-position-search{% else %}group-member-search{% endif %}">{% if field.name == 'positions' %}Buscar cargo{% else %}Buscar por nombre o usuario{% endif %}</label>
+                                <input class="form-control" id="{% if field.name == 'positions' %}function-position-search{% else %}group-member-search{% endif %}" type="search" data-member-search autocomplete="off">
                                 <div class="group-member-options">
                                     {% for checkbox in field %}
                                         <div class="form-check" data-member-option>
@@ -36,13 +37,13 @@
                                             <label class="form-check-label" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
                                         </div>
                                     {% empty %}
-                                        <p class="text-muted">No hay funcionarios disponibles.</p>
+                                        <p class="text-muted">{% if field.name == 'positions' %}No hay cargos disponibles.{% else %}No hay funcionarios disponibles.{% endif %}</p>
                                     {% endfor %}
                                 </div>
                                 {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                             </fieldset>
                         {% else %}
-                        <div class="attention-entry-field{% if field.name == 'description' or field.name == 'action_description' or field.name == 'permissions' or field.name == 'members' %} attention-entry-field-full{% endif %}">
+                        <div class="attention-entry-field{% if field.name == 'description' or field.name == 'action_description' or field.name == 'permissions' or field.name == 'members' or field.name == 'positions' or field.name == 'reason' %} attention-entry-field-full{% endif %}">
                             <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
                             {{ field }}
                             {% if field.help_text %}<p class="attention-entry-hint">{{ field.help_text }}</p>{% endif %}
@@ -60,9 +61,9 @@
                 </div>
                 <div class="attention-entry-actions">
                     <a class="btn attention-entry-cancel" href="{{ list_url }}">Cancelar</a>
-                    <button class="btn btn-primary attention-entry-submit" type="submit" data-loading-text="Guardando…">Guardar {{ entity_label }}</button>
+                    <button class="btn btn-primary attention-entry-submit" type="submit" data-loading-text="Guardando…">{% if submit_label %}{{ submit_label }}{% else %}Guardar {{ entity_label }}{% endif %}</button>
                 </div>
-                <p class="attention-entry-note">Los campos marcados con * son obligatorios.</p>
+                {% if form.fields %}<p class="attention-entry-note">Los campos marcados con * son obligatorios.</p>{% endif %}
             </form>
         </section>
     </div>

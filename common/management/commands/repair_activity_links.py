@@ -15,13 +15,19 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with connection.cursor() as cursor:
             columns = {column.name for column in connection.introspection.get_table_description(cursor, "activities_activity")}
-        if "code" in columns:
+        if "registration_position_id" in columns:
             from activities.models import Activity, SocialAttention
         else:
-            state = MigrationExecutor(connection).loader.project_state([
-                ("accounts", "0007_shorten_delegation_fields"),
-                ("configuration", "0003_attentiontype_code_attentiontype_description_and_more"),
-                ("activities", "0004_socialattention_submission_token")])
+            loader = MigrationExecutor(connection).loader
+            if "code" in columns:
+                targets = [max(key for key in loader.applied_migrations if key[0] == "activities")]
+            else:
+                targets = [
+                    ("accounts", "0007_shorten_delegation_fields"),
+                    ("configuration", "0003_attentiontype_code_attentiontype_description_and_more"),
+                    ("activities", "0004_socialattention_submission_token"),
+                ]
+            state = loader.project_state(targets)
             Activity = state.apps.get_model("activities", "Activity")
             SocialAttention = state.apps.get_model("activities", "SocialAttention")
         with transaction.atomic():

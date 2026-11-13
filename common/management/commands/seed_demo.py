@@ -1,6 +1,7 @@
 """Semilla idempotente del caso SGR, con personas y operaciones ficticias."""
 from collections import Counter
 from datetime import date, timedelta
+from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
 from django.contrib.auth.models import Group, Permission, User
@@ -14,7 +15,10 @@ from accounts.models import (
     ServiceRecipient, Territory,
 )
 from activities.models import Activity, AttentionCase, ClientRequest, ClientRequestEvent, SocialAttention
+from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN, create_revision, publish_version
+from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan
 from configuration.models import AttentionType, Item, Period, PeriodMutex, SubattentionType
+from configuration.services import AuditoriaService
 from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 from common.sgr_seed_data import (
     ATTENTION_CATALOG, GEOGRAPHY, POSITIONS, POSITION_ITEMS, fictional_name,
@@ -22,6 +26,10 @@ from common.sgr_seed_data import (
 
 MARKER = "[SGR seed v1]"
 CONSULTATION_GROUP = "Consulta SGR"
+MEASUREMENT_PLAN_PERMISSIONS = (VIEW_PLAN, ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN)
+DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
+DEMO_REVISION_DATE = date(2026, 10, 15)
+DEMO_ADJUSTED_OFFICIAL_INDEX = 8
 
 
 def get_permissions(names):
@@ -40,6 +48,7 @@ def get_administrator_permissions():
     return Permission.objects.filter(
         Q(content_type__app_label__in=["accounts", "activities", "configuration"])
         | Q(content_type__app_label="auth", content_type__model__in=["user", "group"])
+        | Q(pk__in=get_permissions(MEASUREMENT_PLAN_PERMISSIONS))
     ).exclude(codename__startswith="delete_").exclude(
         codename__in=["add_auditlog", "change_auditlog"]
     )
@@ -113,14 +122,13 @@ class Command(BaseCommand):
         if (Role, role.pk) in self.new_objects:
             role.permissions.set(expected)
         elif set(role.permissions.values_list("pk", flat=True)) != expected:
-            archive_permissions = set(get_permissions([
+            upgrade_permissions = set(get_permissions([
                 "accounts.archive_official", "activities.archive_activity",
+                *MEASUREMENT_PLAN_PERMISSIONS,
             ]).values_list("pk", flat=True))
             current = set(role.permissions.values_list("pk", flat=True))
             if (name == "Administrador" and scope == Role.Scope.ALL
-                    and current < expected and expected - current <= archive_permissions):
-                # Solo completar los nuevos permisos de archivado en el
-                # Administrador anterior; conservar los demás roles y alcances.
+                    and current < expected and expected - current <= upgrade_permissions):
                 role.permissions.add(*(expected - current))
             else:
                 raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
@@ -136,6 +144,53 @@ class Command(BaseCommand):
             if separator and last_name:
                 user.first_name, user.last_name = first_name, last_name
                 user.save(update_fields=["first_name", "last_name"])
+
+    def publish_demo_version(self, version):
+        publish_version(version)
+        AuditoriaService.register_change(
+            official=None, action="Publicación de plan de medición", instance=version,
+            new_value=f"{MARKER} {version.plan.position} · Versión {version.number} · Vigente desde {version.effective_from:%d-%m-%Y}",
+        )
+        self.created["PublishedMeasurementVersion"] += 1
+
+    def load_measurement_plans(self, period, positions, functions, items, demo_official):
+        configured_positions = set(period.measurement_plans.values_list("position_id", flat=True))
+        for name, position in positions.items():
+            if position.pk in configured_positions:
+                self.created["PreservedMeasurementPlan"] += 1
+                continue
+
+            plan = MeasurementPlan.objects.create(period=period, position=position)
+            version = plan.versions.create(number=1, effective_from=period.start_date)
+            item_names = POSITION_ITEMS[name]
+            basis_points, remainder = divmod(10000, len(item_names))
+            lines = {}
+            for index, item_name in enumerate(item_names):
+                percentage = item_name == "Soluciones de ingresos al tubo"
+                weight = Decimal(basis_points + (1 if index < remainder else 0)) / 100
+                lines[item_name] = MeasurementItem.objects.create(
+                    version=version, function=functions[name], item=items[item_name],
+                    goal_type=MeasurementItem.GoalType.PERCENTAGE if percentage else MeasurementItem.GoalType.QUANTITY,
+                    goal=80 if percentage else 12,
+                    weight=weight,
+                )
+
+            if name == "Gestor social" and demo_official.position_id == position.pk:
+                attention = lines["Atención social a usuario presencial"]
+                visit = lines["Visita terreno"]
+                MeasurementAdjustment.objects.create(
+                    line=attention, official=demo_official, goal=24, weight=attention.weight + 5,
+                )
+                MeasurementAdjustment.objects.create(
+                    line=visit, official=demo_official, weight=visit.weight - 5,
+                )
+
+            self.publish_demo_version(version)
+            if name == "Gestor social" and period.start_date == DEMO_PERIODS[1][0]:
+                revision = create_revision(plan, DEMO_REVISION_DATE)
+                revision.items.filter(item=items["Visita terreno"]).update(goal=18)
+                self.publish_demo_version(revision)
+            self.created["MeasurementPlan"] += 1
 
     def load(self, password):
         delegations, territories = [], []
@@ -226,10 +281,11 @@ class Command(BaseCommand):
         for username in ("readerA", "readerB"):
             group.user_set.add(users[username])
 
-        for start, end in ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31))):
+        for start, end in DEMO_PERIODS:
             period = self.ensure(Period, start_date=start, end_date=end)
             if period.status != Period.Status.OPEN:
                 raise CommandError("Un período de la semilla está cerrado. No se insertan registros en él.")
+            self.load_measurement_plans(period, positions, functions, items, officials[DEMO_ADJUSTED_OFFICIAL_INDEX])
         pairs = []
         for name, subnames in ATTENTION_CATALOG.items():
             attention = self.ensure(AttentionType, name=name, service_type=None, defaults={
@@ -318,5 +374,10 @@ class Command(BaseCommand):
         for model, ids in self.used.items():
             self.stdout.write(f"{model.__name__}: {len(ids)} de semilla; {self.created[model.__name__]} nuevos; {model.objects.count()} totales en BD")
         self.stdout.write(f"Negocio: {total} (sin auth, catálogos, historial ni sesiones). Usuarios nuevos: {self.created['User']}.")
+        self.stdout.write(
+            f"Planes de medición nuevos: {self.created['MeasurementPlan']}. "
+            f"Versiones publicadas: {self.created['PublishedMeasurementVersion']}. "
+            f"Planes existentes conservados: {self.created['PreservedMeasurementPlan']}."
+        )
         self.stdout.write(f"Contraseñas de cuentas de semilla restablecidas: {self.created['PasswordsReset']}.")
         self.stdout.write("Cuentas: adminEvalA, editorA, readerA, readerB, clientA, clientB; adicional global: adminA.")

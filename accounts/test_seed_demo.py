@@ -1,5 +1,8 @@
 """Semilla pública: volúmenes, integridad, repetibilidad y aislamiento de evaluación."""
+from datetime import date
 from io import StringIO
+from unittest.mock import patch
+from uuid import uuid4
 
 from django.contrib.auth.models import Group, User
 from django.core.management import call_command
@@ -10,14 +13,17 @@ from django.urls import reverse
 
 from accounts.models import Area, Delegation, Function, GroupProfile, Official, Position, Role, ServiceRecipient, Territory
 from activities.models import Activity, ClientRequest, ClientRequestEvent, SocialAttention
-from configuration.models import AttentionType, Item, Period, SubattentionType
+from analytics.measurement import create_revision, eligible_items, version_for
+from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan, MeasurementVersion
+from configuration.models import AttentionType, AuditLog, Item, Period, SubattentionType
 from common.demo_data import demo_rut
 from common.sgr_seed_data import GEOGRAPHY, POSITIONS
 from common.testing_seed import TEST_SEED_PASSWORD
 
 PASSWORD = TEST_SEED_PASSWORD
 MODELS = (User, Group, GroupProfile, Area, Delegation, Function, Official, Position, Role, ServiceRecipient, Territory,
-          Activity, ClientRequest, ClientRequestEvent, SocialAttention, AttentionType, Item, Period, SubattentionType)
+          Activity, ClientRequest, ClientRequestEvent, SocialAttention, AttentionType, Item, Period, SubattentionType,
+          MeasurementPlan, MeasurementVersion, MeasurementItem, MeasurementAdjustment)
 
 
 def seed(**kwargs):
@@ -49,6 +55,59 @@ class SeedDemoTests(TestCase):
         self.assertEqual(SubattentionType.objects.count(), 7)
         self.assertIn("Negocio: 2000", self.output)
         self.assertNotIn(PASSWORD, self.output)
+
+    def test_measurement_plans_are_published_and_apply_by_date_and_position(self):
+        self.assertEqual(MeasurementPlan.objects.count(), 14)
+        versions = MeasurementVersion.objects.all()
+        self.assertEqual(versions.count(), 15)
+        self.assertFalse(versions.filter(published_at__isnull=True).exists())
+        for version in versions.prefetch_related("items"):
+            self.assertEqual(sum(line.weight for line in version.items.all()), 100)
+        self.assertEqual(AuditLog.objects.filter(action="Publicación de plan de medición").count(), 15)
+        official = Official.objects.get(national_id=demo_rut(70000008))
+        before = version_for(official.position_id, date(2026, 10, 14))
+        after = version_for(official.position_id, date(2026, 10, 15))
+        self.assertEqual((before.number, after.number), (1, 2))
+        self.assertEqual(before.items.get(item__item_name="Visita terreno").goal, 12)
+        self.assertEqual(after.items.get(item__item_name="Visita terreno").goal, 18)
+        percentage = after.items.get(item__item_name="Soluciones de ingresos al tubo")
+        self.assertEqual((percentage.goal_type, percentage.goal), (MeasurementItem.GoalType.PERCENTAGE, 80))
+        self.assertEqual(after.items.get(item__item_name="Atención social a usuario presencial")
+                         .adjustments.get(official=official).goal, 24)
+        admin = User.objects.get(username="adminA")
+        self.assertFalse(eligible_items(admin.official.position_id, date(2026, 11, 12))
+                         .filter(item_name="Atención social a usuario presencial").exists())
+
+    def test_seed_allows_attention_outside_measurement_for_global_administrator(self):
+        admin = User.objects.get(username="adminA")
+        self.client.force_login(admin)
+        recipient = ServiceRecipient.objects.filter(territory__delegation=admin.official.delegation).first()
+        kind = AttentionType.objects.get(name="Informes sociales")
+        token = uuid4().hex
+        with patch("activities.forms.timezone.localdate", return_value=date(2026, 11, 12)):
+            response = self.client.post(reverse("attention_entry"), {
+                "recipient_national_id": recipient.national_id, "recipient_full_name": recipient.full_name,
+                "delegation": admin.official.delegation_id, "attention_type": kind.pk,
+                "subattention_type": kind.subattention_types.first().pk, "effective_date": "2026-10-15",
+                "description": "Atención de prueba", "result": "Orientación entregada",
+                "case_subject": "Seguimiento ficticio", "submission_token": token,
+            })
+        self.assertEqual(response.status_code, 302)
+        attention = SocialAttention.objects.get(submission_token=token)
+        self.assertContains(self.client.get(reverse("attention_detail", args=[attention.pk])), "Fuera de medición")
+
+    def test_reseed_completes_missing_plans_and_preserves_existing_versions(self):
+        missing = MeasurementPlan.objects.get(period__start_date="2026-10-01", position__position_name="Delegado")
+        missing.versions.all().delete()
+        missing.delete()
+        plan = MeasurementPlan.objects.get(period__start_date="2026-10-01", position__position_name="Gestor social")
+        draft = create_revision(plan, date(2026, 11, 1))
+        draft.items.filter(item__item_name="Visita terreno").update(goal=32)
+        output = seed()
+        self.assertIn("Planes de medición nuevos: 1. Versiones publicadas: 1. Planes existentes conservados: 13.", output)
+        draft.refresh_from_db()
+        self.assertFalse(draft.is_published)
+        self.assertEqual(draft.items.get(item__item_name="Visita terreno").goal, 32)
 
     def test_source_catalogs_and_all_personal_data_are_synthetic(self):
         for name, names in GEOGRAPHY.items():
@@ -111,6 +170,10 @@ class SeedDemoTests(TestCase):
         self.assertTrue(admin.has_perm("accounts.change_official"))
         self.assertTrue(admin.has_perm("accounts.archive_official"))
         self.assertTrue(admin.has_perm("activities.archive_activity"))
+        self.client.force_login(admin)
+        period = Period.objects.first()
+        self.assertContains(self.client.get(reverse("period_detail", args=[period.pk])), "Configuración de medición")
+        self.assertEqual(self.client.get(reverse("measurement_plan_list", args=[period.pk])).status_code, 200)
         editor = User.objects.get(username="editorA")
         self.assertFalse(editor.has_perm("accounts.archive_official"))
         self.assertFalse(editor.has_perm("activities.archive_activity"))
@@ -214,12 +277,20 @@ class SeedDemoTests(TestCase):
                                    "email": profile.email, "phone": profile.phone}, instance=profile)
                 self.assertTrue(form.is_valid(), form.errors)
 
-    def test_reseed_upgrades_only_the_previous_administrator_archival_permission(self):
-        permission = Role.objects.get(role_name="Administrador").permissions.get(codename="archive_official")
-        Role.objects.get(role_name="Administrador").permissions.remove(permission)
+    def test_reseed_upgrades_only_the_previous_administrator_permissions(self):
+        role = Role.objects.get(role_name="Administrador")
+        missing = ("view_measurementplan", "add_measurementplan", "change_measurementplan", "publish_measurementplan")
+        role.permissions.remove(*role.permissions.filter(codename__in=("archive_official", *missing)))
         seed()
-        self.assertTrue(User.objects.get(username="adminA").has_perm("accounts.archive_official"))
-        self.assertFalse(User.objects.get(username="editorA").has_perm("accounts.archive_official"))
+        admin = User.objects.get(username="adminA")
+        editor = User.objects.get(username="editorA")
+        self.assertTrue(admin.has_perm("accounts.archive_official"))
+        self.assertFalse(editor.has_perm("accounts.archive_official"))
+        for codename in missing:
+            with self.subTest(permission=codename):
+                self.assertTrue(admin.has_perm(f"analytics.{codename}"))
+                self.assertFalse(editor.has_perm(f"analytics.{codename}"))
+                self.assertFalse(User.objects.get(username="adminEvalA").has_perm(f"analytics.{codename}"))
 
     def test_reseed_completes_legacy_names_but_preserves_edited_names(self):
         legacy = User.objects.get(username="editorA")

@@ -23,6 +23,7 @@ from .cases import ADD_ATTENTION, assign_case, scoped_cases
 from .forms import SocialAttentionForm, attention_delegations
 from .invitations import invite_to_portal
 from .models import AttentionCase, ClientRequest, SocialAttention, Activity
+from analytics.measurement import activity_measurement
 from configuration.period_services import lock_open_period, lock_period_registry
 from configuration.models import Item
 
@@ -351,6 +352,8 @@ class AttentionDetailView(ScopedObjectMixin, ProtectedViewMixin, DetailView):
         context = super().get_context_data(**kwargs)
         if scoped_cases(self.request.user).filter(pk=self.object.case_id).exists():
             context["attention_case"] = self.object.case
+        if self.object.activity_id:
+            context["measurement"] = activity_measurement(self.object.activity)
         if self.object.client_request_id:
             context["origin_request"] = staff_requests(
                 self.request.user, self.permission_required,

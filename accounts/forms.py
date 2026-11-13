@@ -39,11 +39,22 @@ PRIVILEGED_ROLE_PERMISSIONS = frozenset(
         "activities.archive_activity",
     }
 )
+MEASUREMENT_ADMIN_PERMISSIONS = frozenset(
+    {
+        "analytics.add_measurementplan",
+        "analytics.change_measurementplan",
+        "analytics.publish_measurementplan",
+        "configuration.reopen_period",
+    }
+)
 
 
-def privileged_permission_query():
+def privileged_permission_query(*, for_assignment=False):
     query = Q()
-    for permission in PRIVILEGED_ROLE_PERMISSIONS:
+    permissions = PRIVILEGED_ROLE_PERMISSIONS
+    if for_assignment:
+        permissions |= MEASUREMENT_ADMIN_PERMISSIONS
+    for permission in permissions:
         app_label, codename = permission.split(".", 1)
         query |= Q(content_type__app_label=app_label, codename=codename)
     return query
@@ -239,7 +250,7 @@ class RoleAssignmentMixin:
         locked_ids = set()
         for role in roles:
             permissions = {f"{p.content_type.app_label}.{p.codename}" for p in role.permissions.all()}
-            if (role.scope == Role.Scope.ALL or permissions & PRIVILEGED_ROLE_PERMISSIONS
+            if (role.scope == Role.Scope.ALL or permissions & (PRIVILEGED_ROLE_PERMISSIONS | MEASUREMENT_ADMIN_PERMISSIONS)
                     or not permissions <= actor_permissions):
                 locked_ids.add(role.pk)
                 continue

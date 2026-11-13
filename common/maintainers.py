@@ -7,16 +7,18 @@ from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from django.urls import path, reverse
+from django.utils.functional import cached_property
 from django.views import View
 from common.pagination import ClampedPaginationMixin
 from common.list_state import ordered, query_params
-from accounts.models import Position, Area, GroupProfile, Official, Role, Territory
+from accounts.models import Function, Position, Area, GroupProfile, Official, Role, Territory
+from analytics.measurement import VIEW_PLAN, activity_measurement
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
 from common.modal_forms import add_form_success, is_modal_request
 from common.text import normalize_spaces, describe_changes
 from common.scopes import permission_scope, delegation_ids
-from common.maintainer_forms import PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
+from common.maintainer_forms import FunctionForm, PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
 from configuration.models import Item, Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
@@ -26,6 +28,7 @@ from activities.listing import export_objects, filtered_requests, listing_object
 CATALOGS = {
     "territory": (Territory, TerritoryForm, "Territorios", "territories", ("code", "territory_name", "delegation__delegation_name", "description")),
     "position": (Position, PositionForm, "Cargos", "positions", ("position_name", "description")),
+    "function": (Function, FunctionForm, "Funciones", "functions", ("function_name", "description")),
     "area": (Area, AreaForm, "Áreas", "areas", ("area_name",)),
     "group": (Group, GroupForm, "Grupos", "groups", ("name",)),
     "period": (Period, PeriodForm, "Períodos", "periods", ("start_date", "end_date")),
@@ -35,7 +38,10 @@ CATALOGS = {
 
 def snapshot(obj):
     data = {str(f.verbose_name): str(getattr(obj, f.name)) for f in obj._meta.fields
-            if f.name not in ("created_at", "updated_at")}
+            if f.name not in ("created_at", "updated_at", "first_closed_at",
+                              "registration_position", "registration_position_captured")}
+    if isinstance(obj, Function):
+        data["Cargos"] = ", ".join(obj.positions.values_list("position_name", flat=True))
     if isinstance(obj, Group):
         profile = getattr(obj, "sgr_profile", None)
         data.update(Permisos=", ".join(obj.permissions.order_by("pk").values_list("codename", flat=True)),
@@ -47,7 +53,7 @@ def snapshot(obj):
 
 
 def activity_queryset(user, permission, include_archived=False):
-    qs = Activity.objects.select_related("official", "item", "social_attentions__delegation",
+    qs = Activity.objects.select_related("official__position", "registration_position", "item", "social_attentions__delegation",
                                          "social_attentions__case__client_request")
     if not include_archived:
         qs = qs.filter(deleted_at__isnull=True)
@@ -129,12 +135,12 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
     def context(self):
         permission = self.get_permission_required()[0].split(".")[0]
         model = self.spec[0]._meta.model_name
-        entities = {"territory": "territorio", "position": "cargo", "area": "área", "group": "grupo", "period": "período", "activity": "actividad"}
+        entities = {"territory": "territorio", "position": "cargo", "function": "función", "area": "área", "group": "grupo", "period": "período", "activity": "actividad"}
         entity = entities[self.key]
-        feminine = self.key in ("area", "activity")
+        feminine = self.key in ("area", "activity", "function")
         form_title = f"Editar {entity}" if self.operation == "update" else f"{'Nueva' if feminine else 'Nuevo'} {entity}"
         notes = {
-            "period": "Los períodos cerrados conservan su historial y no se pueden editar ni reabrir.",
+            "period": "Los períodos cerrados conservan su historial. La reapertura requiere autorización y un motivo.",
             "activity": "El listado y el Excel incluyen registros autorizados según los filtros. Las solicitudes ciudadanas se gestionan desde su folio. El historial de actividades archivadas requiere permiso administrativo.",
             "group": "Los grupos se desactivan y reactivan, conservando sus miembros y permisos.",
         }
@@ -221,7 +227,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             can_archive_row = mutable and activity_queryset(
                 self.request.user, "activities.archive_activity", include_archived=True).filter(pk=obj.pk).exists()
         if self.key == "period":
-            confirm_message = f"El período {obj} quedará cerrado. No podrás editarlo, reabrirlo ni modificar las actividades de sus fechas."
+            confirm_message = f"El período {obj} quedará cerrado. Para volver a registrar actividades se necesitará una reapertura autorizada."
         elif self.key == "activity":
             confirm_message = f"La actividad {obj.code} {'se archivará' if code == 'ACTIVE' else 'volverá a estar vigente'}; se conservará su historial."
         elif self.key == "group":
@@ -233,7 +239,17 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             edit=self.url("update", obj.pk), action=self.url("close" if self.key == "period" else "deactivate" if code == "ACTIVE" else "activate", obj.pk),
             action_label=("Archivar" if code == "ACTIVE" else "Restaurar") if self.key == "activity"
                          else "Cerrar" if self.key == "period" else "Desactivar" if code == "ACTIVE" else "Activar",
-            mutable=mutable, editable=editable, can_archive=can_archive_row)
+            mutable=mutable, editable=editable, can_archive=can_archive_row,
+            reopen=self.period_reopen_url(obj))
+
+    def period_reopen_url(self, obj):
+        if isinstance(obj, Period) and obj.status == Period.Status.CLOSED and self.can_reopen_period:
+            return reverse("period_reopen", args=[obj.pk])
+        return ""
+
+    @cached_property
+    def can_reopen_period(self):
+        return permission_scope(self.request.user, "configuration.reopen_period") == Role.Scope.ALL
 
     def get(self, request, pk=None):
         context = self.context()
@@ -269,6 +285,14 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 context["related_count"] = obj.officials.filter(deleted_at__isnull=True).count()
                 if self.key == "area":
                     context["type_count"] = obj.activity_types.filter(deleted_at__isnull=True).count()
+                if self.key == "position":
+                    context["values"]["Funciones vigentes"] = ", ".join(obj.functions.filter(
+                        is_active=True, deleted_at__isnull=True,
+                    ).values_list("function_name", flat=True))
+            if self.key == "period" and permission_scope(request.user, VIEW_PLAN) == Role.Scope.ALL:
+                context["measurement_url"] = reverse("measurement_plan_list", args=[obj.pk])
+            if self.key == "activity":
+                context["measurement"] = activity_measurement(obj)
             if self.key == "activity" and hasattr(obj, "social_attentions"):
                 attention = obj.social_attentions
                 from activities.cases import scoped_cases
@@ -340,6 +364,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 context["statuses"] = (*context["statuses"], *request_statuses)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
+            "function": "maintainers/list.html",
             "activity": "activities/activity_list.html"}[self.key]
         context.update(self.list_pagination_context())
         response = render(request, template, context)

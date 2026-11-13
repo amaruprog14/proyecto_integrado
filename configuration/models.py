@@ -40,11 +40,13 @@ class Period(BaseModel):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.OPEN, verbose_name="Estado"
     )
+    first_closed_at = models.DateTimeField(null=True, editable=False)
 
     class Meta:
         verbose_name = "Período"
         verbose_name_plural = "Períodos"
         ordering = ["-start_date"]
+        permissions = [("reopen_period", "Puede reabrir períodos")]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F("start_date")),
@@ -76,7 +78,9 @@ class Period(BaseModel):
 
     def close_period(self):
         self.status = self.Status.CLOSED
-        self.save(update_fields=["status", "updated_at"])
+        if self.first_closed_at is None:
+            self.first_closed_at = timezone.now()
+        self.save(update_fields=["status", "first_closed_at", "updated_at"])
 
 class ActivityType(BaseModel):
     """Tabla maestra: tipo de actividad, definido por área."""

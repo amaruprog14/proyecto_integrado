@@ -15,9 +15,12 @@ SORTS = {
     'attention_type': ('created_at', {'name': ('Nombre', 'name'), 'code': ('Código', 'code')}),
     'subattention_type': ('created_at', {'name': ('Nombre', 'name'), 'code': ('Código', 'code')}),
     'position': ('created_at', {'name': ('Nombre', 'position_name'), 'description': ('Descripción', 'description')}),
+    'function': ('created_at', {'name': ('Nombre', 'function_name'), 'description': ('Descripción', 'description')}),
     'area': ('created_at', {'name': ('Nombre', 'area_name'), 'status': ('Estado', 'is_active')}),
     'group': ('sgr_profile__created_at', {'name': ('Nombre', 'name'), 'scope': ('Alcance', 'sgr_profile__scope')}),
     'period': ('created_at', {'start': ('Inicio', 'start_date'), 'end': ('Término', 'end_date')}),
+    'measurement_plan': ('created_at', {'position': ('Cargo', 'position__position_name'),
+                                       'version': ('Última versión', 'version_number')}),
     'activity': ('created_at', {'code': ('Código', 'code'), 'date': ('Fecha de actividad', 'date')}),
 }
 SORTS['territory'] = ('created_at', {'code': ('Código', 'code'), 'name': ('Nombre', 'territory_name'), 'delegation': ('Delegación', 'delegation__delegation_name'), 'description': ('Descripción', 'description')})
@@ -40,9 +43,10 @@ HEADER_KEYS = {
     'item': ['code', 'name', 'description'],
     'attention_type': ['code', 'name', 'description'],
     'subattention_type': ['code', 'name', 'parent'],
-    'position': ['name', 'description'], 'area': ['name'],
+    'position': ['name', 'description'], 'function': ['name', 'description'], 'area': ['name'],
     'group': ['name', 'scope', 'members', 'permissions'],
     'period': ['start', 'end'],
+    'measurement_plan': ['position', 'version'],
     'activity': ['code', 'official', 'item', 'date', 'record_type'],
     'territory': ['code', 'name', 'delegation', 'description'],
     'client_request': ['code', 'subject', 'created'],
@@ -60,9 +64,10 @@ def sort_spec(module):
 ROUTES = {'official_maintainer': 'official', 'delegation_list': 'delegation', 'user_maintainer': 'user',
     'role_list': 'role', 'item_maintainer': 'item', 'attention_type_maintainer': 'attention_type',
     'subattention_type_maintainer': 'subattention_type',
-    **{k + '_maintainer': k for k in ('position', 'area', 'group', 'period', 'activity', 'territory')},
+    **{k + '_maintainer': k for k in ('position', 'function', 'area', 'group', 'period', 'activity', 'territory')},
     'client_requests': 'client_request', 'staff_client_requests': 'staff_request',
     'staff_client_requests_export': 'staff_request',
+    'measurement_plan_list': 'measurement_plan',
     **{k + '_export': k for k in SORTS}}
 
 
@@ -85,6 +90,8 @@ def normalize(params, module):
         statuses = (*Activity.ListingStatus.values, ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW)
     if module == 'client_request':
         statuses += ('RECORDED',)
+    if module == 'measurement_plan':
+        statuses = ('DRAFT', 'PUBLISHED')
     state = dict(q=normalize_spaces(params.get('q'))[:200], status=params.get('status', ''),
         page=positive(params.get('page')), page_size=positive(params.get('page_size'), DEFAULT_SIZE),
         sort=params.get('sort', 'date' if module == 'activity' else 'created'), direction=params.get('direction', 'desc'))
@@ -137,6 +144,8 @@ def prepare(request, module):
     from accounts.delegation_context import get_active_delegation
     delegation = get_active_delegation(request)
     key = f'list_state:v1:{request.user.pk}:{module}:{delegation.pk if delegation else "all"}'
+    if module == 'measurement_plan':
+        key += f':{request.resolver_match.kwargs["period_id"]}'
     saved = request.session.get(key)
     previous = normalize(saved if isinstance(saved, dict) else {}, module)
     if (module == 'activity' and previous['status'] == 'INACTIVE' and 'status' not in request.GET

@@ -3,6 +3,9 @@
     {% if can_change and row.editable %}
         <a class="auth-text-link action-icon action-icon--edit" href="{{ row.edit }}" data-modal-form aria-label="Editar" data-tooltip="Editar" title="Editar">{% include "includes/action_icon.html" with action="Editar" %}</a>
     {% endif %}
+    {% if row.reopen %}
+        <a class="auth-text-link action-icon action-icon--activate" href="{{ row.reopen }}" data-modal-form aria-label="Reabrir" data-tooltip="Reabrir" title="Reabrir">{% include "includes/action_icon.html" with action="Reabrir" %}</a>
+    {% endif %}
     {% if can_archive and row.can_archive and row.mutable %}
         <form class="d-inline" method="post" action="{{ row.action }}" data-swal-confirm="{{ row.confirm_message }}" data-swal-title="{{ row.action_label }} {{ entity_label }}" data-swal-icon="{% if row.is_active %}warning{% else %}question{% endif %}" data-swal-confirm-text="Sí, {{ row.action_label|lower }}" data-swal-require-confirmation="true">
             {% csrf_token %}

@@ -2,12 +2,105 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 
-from accounts.models import Official, Position
+from accounts.models import Function, Official, Position
 from common.mixins import BaseModel
 from configuration.models import Item, Period
+
+
+class MeasurementPlan(BaseModel):
+    period = models.ForeignKey(Period, on_delete=models.PROTECT, related_name="measurement_plans")
+    position = models.ForeignKey(Position, on_delete=models.PROTECT, verbose_name="Cargo")
+
+    class Meta:
+        verbose_name = "Plan de medición"
+        verbose_name_plural = "Planes de medición"
+        constraints = [models.UniqueConstraint(fields=["period", "position"], name="measurement_plan_period_position")]
+        permissions = [("publish_measurementplan", "Puede publicar planes de medición")]
+
+    def __str__(self):
+        return str(self.position)
+
+
+class MeasurementVersion(BaseModel):
+    plan = models.ForeignKey(MeasurementPlan, on_delete=models.PROTECT, related_name="versions")
+    number = models.PositiveIntegerField(verbose_name="Versión")
+    effective_from = models.DateField(verbose_name="Vigente desde")
+    published_at = models.DateTimeField(null=True, editable=False)
+    max_computable = models.DecimalField(
+        max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope computable (%)",
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    amber_threshold = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("60"), verbose_name="Umbral naranjo (%)",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    green_threshold = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("100"), verbose_name="Umbral verde (%)",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    collective_threshold = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("80"), verbose_name="Umbral colectivo (%)",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+
+    class Meta:
+        ordering = ["-number"]
+        constraints = [models.UniqueConstraint(fields=["plan", "number"], name="measurement_plan_version_number")]
+        indexes = [models.Index(fields=["plan", "effective_from"], name="measurement_effective_idx")]
+
+    @property
+    def is_published(self):
+        return self.published_at is not None
+
+
+class MeasurementItem(models.Model):
+    class GoalType(models.TextChoices):
+        QUANTITY = "QUANTITY", "Cantidad"
+        PERCENTAGE = "PERCENTAGE", "Porcentaje"
+
+    version = models.ForeignKey(MeasurementVersion, on_delete=models.CASCADE, related_name="items")
+    function = models.ForeignKey(Function, on_delete=models.PROTECT, verbose_name="Función")
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, verbose_name="Ítem")
+    goal_type = models.CharField(max_length=10, choices=GoalType.choices, verbose_name="Tipo de meta")
+    goal = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Meta",
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    weight = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Ponderador (%)",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+
+    class Meta:
+        ordering = ["item__item_name", "pk"]
+        constraints = [models.UniqueConstraint(fields=["version", "item"], name="measurement_version_unique_item")]
+
+
+class MeasurementAdjustment(models.Model):
+    line = models.ForeignKey(MeasurementItem, on_delete=models.CASCADE, related_name="adjustments")
+    official = models.ForeignKey(Official, on_delete=models.PROTECT, verbose_name="Funcionario")
+    goal = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Meta individual",
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    weight = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Ponderador individual (%)",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+
+    class Meta:
+        ordering = ["official__full_name", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["line", "official"], name="measurement_item_unique_official"),
+            models.CheckConstraint(
+                condition=models.Q(goal__isnull=False) | models.Q(weight__isnull=False),
+                name="measurement_adjustment_has_value",
+            ),
+        ]
 
 
 class GoalThreshold(BaseModel):

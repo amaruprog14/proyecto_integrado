@@ -1,0 +1,18 @@
+{% if measurement %}
+    {% if measurement.position %}
+        <dt class="col-sm-4">Cargo de medición</dt>
+        <dd class="col-sm-8">{{ measurement.position }}{% if measurement.inferred %} (inferido){% endif %}</dd>
+    {% endif %}
+    <dt class="col-sm-4">Medición</dt>
+    <dd class="col-sm-8">
+        {% if measurement.excluded %}Fuera de medición
+        {% elif measurement.version %}Versión {{ measurement.version.number }} · Vigente desde {{ measurement.version.effective_from|date:"d-m-Y" }}
+        {% else %}Sin configuración publicada{% endif %}
+    </dd>
+    {% if request.user.is_superuser or request.user.official.pk == measurement.official_id %}
+        {% if measurement.goal != None %}
+            <dt class="col-sm-4">Meta aplicable</dt><dd class="col-sm-8">{{ measurement.goal }}{% if measurement.percentage %} %{% endif %}</dd>
+            <dt class="col-sm-4">Ponderador aplicable</dt><dd class="col-sm-8">{{ measurement.weight }} %</dd>
+        {% endif %}
+    {% endif %}
+{% endif %}

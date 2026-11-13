@@ -318,7 +318,8 @@ class CaseMigrationTests(TransactionTestCase):
             finally:
                 attention_model.objects.filter(pk=linked.pk).update(recipient=recipient)
         finally:
-            MigrationExecutor(connection).migrate(new)
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())
 
         cases = AttentionCase.objects.filter(recipient_id=recipient.pk)
         self.assertEqual(cases.count(), 3)

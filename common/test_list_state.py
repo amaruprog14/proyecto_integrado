@@ -6,6 +6,7 @@ from django.utils import timezone
 from accounts.models import Delegation
 from common.list_state import ROUTES, SORTS
 from common.pagination import ClampedPaginationMixin
+from configuration.models import Period
 
 
 class ListStateTests(TestCase):
@@ -13,18 +14,23 @@ class ListStateTests(TestCase):
     def setUpTestData(cls):
         seed_test_data()
         cls.admin = User.objects.get(username='admin_demo')
+        cls.period = Period.objects.order_by('start_date').first()
         for index in range(66):
             Delegation.objects.create(delegation_name=f'Paginable {index:03d}', address='Calle 1', commune='La Serena')
 
     def setUp(self):
         self.client.force_login(self.admin)
 
+    def list_route(self, route, module):
+        kwargs = {'period_id': self.period.pk} if module == 'measurement_plan' else {}
+        return reverse(route, kwargs=kwargs)
+
     def test_every_list_inherits_mixin_and_offers_allowed_sizes_and_sort(self):
         for route, module in ROUTES.items():
             if route.endswith('_export') or module not in SORTS:
                 continue
             with self.subTest(module=module):
-                url = reverse(route)
+                url = self.list_route(route, module)
                 self.assertTrue(issubclass(resolve(url).func.view_class, ClampedPaginationMixin))
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 200)
@@ -130,7 +136,7 @@ class ListStateTests(TestCase):
         for module in SORTS:
             with self.subTest(module=module):
                 cache.clear()
-                url = reverse(module + '_export')
+                url = self.list_route(module + '_export', module)
                 with patch('django.core.cache.cache.add', wraps=cache.add) as acquire:
                     self.assertEqual(self.client.get(url).status_code, 200)
                     acquire.assert_called_with(f'{module}-export:{self.admin.pk}', True, timeout=30)

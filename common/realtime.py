@@ -11,20 +11,22 @@ from django.db import transaction
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete, m2m_changed
 from django.dispatch import receiver
 
-from accounts.models import Official, Delegation, Role, Area, Position, GroupProfile, Territory, ServiceRecipient
+from accounts.models import Official, Delegation, Role, Area, Function, Position, GroupProfile, Territory, ServiceRecipient
 from activities.models import Activity, AttentionCase, ClientRequest, SocialAttention
+from analytics.models import MeasurementPlan
 from configuration.models import Item, Period, AttentionType, SubattentionType, ServiceType
 from common.scopes import current_permission
 
 logger = logging.getLogger(__name__)
 MODELS = dict(territory=Territory, activity=Activity, official=Official, delegation=Delegation, user=get_user_model(),
-    role=Role, area=Area, position=Position, group=Group, period=Period,
-    item=Item, attention_type=AttentionType, subattention_type=SubattentionType, staff_request=ClientRequest)
+    role=Role, area=Area, position=Position, function=Function, group=Group, period=Period,
+    item=Item, attention_type=AttentionType, subattention_type=SubattentionType, staff_request=ClientRequest,
+    measurement_plan=MeasurementPlan)
 ROUTES = dict(territory='territory_maintainer', activity='activity_maintainer', official='official_maintainer',
     delegation='delegation_list', user='user_maintainer', role='role_list', area='area_maintainer',
-    position='position_maintainer', group='group_maintainer', period='period_maintainer',
+    position='position_maintainer', function='function_maintainer', group='group_maintainer', period='period_maintainer',
     item='item_maintainer', attention_type='attention_type_maintainer', subattention_type='subattention_type_maintainer',
-    staff_request='staff_client_requests')
+    staff_request='staff_client_requests', measurement_plan='measurement_plan_list')
 _readers = Counter()
 _lock = Lock()
 
@@ -37,6 +39,9 @@ def permission(key):
 
 
 def can_read(user, key='activity'):
+    if key == 'measurement_plan':
+        from common.scopes import permission_scope
+        return user.is_active and permission_scope(user, permission(key)) == Role.Scope.ALL
     official = getattr(user, 'official', None)
     return bool(user.is_active and (user.is_superuser or (official and official.is_enabled))
                 and user.has_perm(permission(key)))
