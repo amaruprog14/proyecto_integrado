@@ -19,6 +19,7 @@ from common.text import clean_description_text, normalize_spaces
 from .cases import (ADD_ATTENTION, CHANGE_CASE, VIEW_CASE, assign_case, case_timeline,
                     change_request_status, record_case_event, scoped_cases)
 from .invitations import invite_to_portal
+from .evidence import VIEW_ACTIVITY, VIEW_EVIDENCE, evidence_activities
 from .models import AttentionCase, ClientRequest, PortalInvitation, SocialAttention
 
 
@@ -111,8 +112,22 @@ def render_case(request, case, *, request_list_url=None, errors=None):
     at_limit = case.attentions.count() >= SocialAttention.MAX_ATTENTIONS_PER_CASE
     can_invite = authorized_delegation and can_append and not case.client_request_id and not case.recipient.user_id
     invitation = PortalInvitation.objects.filter(recipient=case.recipient).first() if can_invite else None
+    timeline = case_timeline(case)
+    if user.has_perms((VIEW_ACTIVITY, VIEW_EVIDENCE)):
+        activities_by_attention = {
+            attention_id: (activity_id, code)
+            for attention_id, activity_id, code in evidence_activities(user, VIEW_EVIDENCE)
+                .filter(social_attentions__case=case, social_attentions__deleted_at__isnull=True)
+                .values_list("social_attentions__pk", "pk", "code")
+        }
+        for entry in timeline:
+            activity = activities_by_attention.get(entry.get("attention_id"))
+            if activity:
+                activity_id, code = activity
+                entry["evidence_url"] = reverse("activity_detail", args=[activity_id], fragment="activity-evidence-title")
+                entry["activity_code"] = code
     context = {
-        "case": case, "timeline": case_timeline(case), "request_list_url": request_list_url,
+        "case": case, "timeline": timeline, "request_list_url": request_list_url,
         "active_menu": "staff_client_request_detail" if request_list_url == reverse("staff_client_requests") else "attention_cases",
         "can_manage": can_manage and not case.is_closed, "can_register": can_register and not at_limit,
         "at_limit": at_limit, "needs_delegation_switch": can_register and not at_limit and active != case.delegation,

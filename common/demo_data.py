@@ -9,6 +9,7 @@ Los catálogos antiguos siguientes no se cargan en una base de demostración.
 # retira efectivamente lo que otorgaba.
 OPERATOR_PERMISSIONS = [
     "activities.view_activity", "activities.add_activity", "activities.change_activity",
+    "activities.view_evidence", "activities.add_evidence",
     "activities.view_socialattention", "activities.add_socialattention",
     "accounts.view_official", "configuration.view_item",
 ]

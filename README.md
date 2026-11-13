@@ -244,6 +244,16 @@ location ^~ /media/ {
 Mantener `/portal/perfil/foto/` en el proxy a Django. La configuración de Nginx vive en el
 servidor y se debe actualizar allí si todavía publica todo `MEDIA_ROOT`.
 
+Las evidencias de Actividades se guardan en `EVIDENCE_ROOT` (por defecto `private_evidence/`).
+Configura esta ruta fuera de los directorios públicos y en un volumen persistente en producción.
+Las imágenes se consultan mediante Django con los permisos y el alcance de la actividad.
+En **Actividades → Detalle**, cada evidencia registra una etapa, una descripción y de 1 a 10
+imágenes JPG o PNG. Desde **Casos sociales → Historial del caso**, cada gestión enlaza a las
+evidencias de su actividad. El rol Funcionario de la semilla puede adjuntar y el rol Verificador
+puede revisar dentro de su ámbito. Los roles existentes pueden configurarse desde Roles con
+`activities.view_evidence`, `activities.add_evidence` y `activities.add_evidencevalidation`
+según las operaciones que necesiten, junto con `activities.view_activity`.
+
 ### Páginas de error
 
 Con `DEBUG=False` el sistema usa sus propias páginas para 400 (solicitud no válida, por ejemplo un

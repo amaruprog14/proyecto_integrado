@@ -33,7 +33,8 @@ class CaseFixture:
         cls.official = Official.objects.create(user=cls.staff, delegation=cls.delegation, full_name="Funcionario Demo",
                                                national_id="FUNC-DEMO", email="funcionario@example.test")
         cls.staff.user_permissions.add(*Permission.objects.filter(content_type__app_label="activities",
-            codename__in=["view_activity", "add_activity", "add_socialattention", "view_socialattention", "change_socialattention"]))
+            codename__in=["view_activity", "view_evidence", "add_activity", "add_socialattention",
+                          "view_socialattention", "change_socialattention"]))
         item = Item.objects.create(item_name="Atención social de prueba")
         cls.kind = AttentionType.objects.create(name="Social", activity_item=item)
         cls.sub = SubattentionType.objects.create(name="Orientación", attention_type=cls.kind)
@@ -57,6 +58,23 @@ class CaseFollowUpTests(CaseFixture, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.create_fixture()
+
+    def test_case_links_to_the_activity_evidence_only_when_authorized(self):
+        entry = reverse("attention_entry")
+        self.assertRedirects(self.client.post(entry, self.attention_data()), entry)
+        attention = SocialAttention.objects.get()
+        case_url = reverse("attention_case_detail", args=[attention.case_id])
+        activity_url = reverse("activity_detail", args=[attention.activity_id])
+
+        response = self.client.get(case_url)
+        self.assertContains(response, f'href="{activity_url}#activity-evidence-title"')
+        self.assertContains(response, f"Ver evidencias de {attention.activity.code}")
+        self.assertContains(self.client.get(activity_url), 'id="activity-evidence-title"')
+
+        self.staff.user_permissions.remove(Permission.objects.get(
+            content_type__app_label="activities", codename="view_evidence",
+        ))
+        self.assertNotContains(self.client.get(case_url), "Ver evidencias")
 
     def test_reassignment_saves_responsible_and_history(self):
         entry = reverse("attention_entry")
