@@ -225,6 +225,7 @@ docs/*
 
 staticfiles/
 media/
+/private_evidence/
 
 .claude
 .DS_Store

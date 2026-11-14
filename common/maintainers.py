@@ -292,7 +292,10 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             if self.key == "period" and permission_scope(request.user, VIEW_PLAN) == Role.Scope.ALL:
                 context["measurement_url"] = reverse("measurement_plan_list", args=[obj.pk])
             if self.key == "activity":
+                from activities.evidence import evidence_context
+
                 context["measurement"] = activity_measurement(obj)
+                context.update(evidence_context(request.user, obj))
             if self.key == "activity" and hasattr(obj, "social_attentions"):
                 attention = obj.social_attentions
                 from activities.cases import scoped_cases

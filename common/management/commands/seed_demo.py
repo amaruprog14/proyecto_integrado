@@ -130,6 +130,10 @@ class Command(BaseCommand):
             if (name == "Administrador" and scope == Role.Scope.ALL
                     and current < expected and expected - current <= upgrade_permissions):
                 role.permissions.add(*(expected - current))
+            elif name == "Funcionario" and scope == Role.Scope.DELEGATION and current == expected - set(
+                get_permissions(["activities.view_evidence", "activities.add_evidence"]).values_list("pk", flat=True)
+            ):
+                role.permissions.add(*(expected - current))
             else:
                 raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
         return role

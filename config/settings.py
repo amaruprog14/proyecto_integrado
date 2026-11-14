@@ -166,6 +166,11 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_ROOT = Path(os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media')))
 MEDIA_URL = '/media/'
+EVIDENCE_ROOT = Path(os.getenv("EVIDENCE_ROOT", str(BASE_DIR / "private_evidence")))
+if EVIDENCE_ROOT.resolve().is_relative_to(MEDIA_ROOT.resolve()):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("EVIDENCE_ROOT debe estar fuera de MEDIA_ROOT.")
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
 

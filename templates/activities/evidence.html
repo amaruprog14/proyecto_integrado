@@ -1,0 +1,84 @@
+<section class="attention-entry-card mt-3" aria-labelledby="activity-evidence-title" data-evidence-gallery>
+    <header class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-3">
+        <h2 class="h5 mb-0" id="activity-evidence-title">Evidencias</h2>
+        <span class="small text-muted">{{ evidence_activity.code }}</span>
+    </header>
+
+    {% if evidence_batches %}
+        <ol class="activity-evidence-timeline" aria-label="Historial de evidencias">
+            {% for batch in evidence_batches %}
+                <li>
+                    <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+                        <h3 class="h6 mb-0">{{ batch.get_stage_display }}</h3>
+                        <time class="small text-muted" datetime="{{ batch.created_at|date:'c' }}">{{ batch.created_at|date:"d/m/Y H:i" }}</time>
+                    </div>
+                    <p class="mb-1 small text-muted">{{ batch.author.full_name }} · {% if batch.review %}{{ batch.review.get_status_display }}{% else %}Pendiente de revisión{% endif %}</p>
+                    <p class="my-1 text-break">{{ batch.description|linebreaksbr }}</p>
+                    <details>
+                        <summary class="small text-muted">{{ batch.active_images|length }} {% if batch.active_images|length == 1 %}imagen adjunta{% else %}imágenes adjuntas{% endif %}</summary>
+                        <ul class="d-flex flex-wrap gap-3 list-unstyled mt-2 mb-2">
+                            {% for image in batch.active_images %}
+                                {% url 'activity_evidence_image' evidence_activity.pk image.pk as image_url %}
+                                <li class="activity-evidence-image">
+                                    <a class="auth-text-link small" href="{{ image_url }}" target="_blank"
+                                       rel="noopener" data-evidence-preview>
+                                        <img src="{{ image_url }}" alt="" width="120" height="84" loading="lazy">
+                                        <span class="d-block text-break">{{ image.original_name }}</span>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% if batch.review %}
+                        <p class="small mb-1">Revisada por {{ batch.review.verifier.full_name }} · {{ batch.review.validated_at|date:"d/m/Y H:i" }}</p>
+                        {% if batch.review.observation %}<p class="small text-break mb-1">{{ batch.review.observation|linebreaksbr }}</p>{% endif %}
+                    {% endif %}
+                    {% if batch.review_form %}
+                        <details class="mt-2">
+                            <summary class="auth-text-link fw-semibold">Revisar evidencia</summary>
+                            <form method="post" action="{% url 'activity_evidence_review' evidence_activity.pk batch.pk %}" class="d-grid gap-2 mt-2">
+                                {% csrf_token %}
+                                {% for field in batch.review_form %}
+                                    <div class="attention-entry-field">{{ field.label_tag }}{{ field }}</div>
+                                {% endfor %}
+                                <div class="d-flex justify-content-end"><button class="btn btn-primary" type="submit">Guardar revisión</button></div>
+                            </form>
+                        </details>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ol>
+        <dialog class="activity-evidence-dialog" aria-labelledby="activity-evidence-viewer-title">
+            <header class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                <h3 class="h6 mb-0 text-break" id="activity-evidence-viewer-title">Imagen de evidencia</h3>
+                <form method="dialog" class="m-0">
+                    <button class="btn attention-entry-cancel" type="submit" autofocus>Cerrar</button>
+                </form>
+            </header>
+            <img alt="">
+        </dialog>
+    {% else %}
+        <p class="text-muted mb-3">Aún no hay evidencias adjuntas.</p>
+    {% endif %}
+
+    {% if evidence_upload_form %}
+        <details class="border-top pt-3" open>
+            <summary class="auth-text-link fw-semibold">Agregar evidencia</summary>
+            <form action="{% url 'activity_evidence_upload' evidence_activity.pk %}" method="post"
+                  enctype="multipart/form-data" class="d-grid gap-3 mt-3">
+                {% csrf_token %}
+                {% for field in evidence_upload_form %}
+                    <div class="attention-entry-field">
+                        {{ field.label_tag }}{{ field }}
+                        {% if field.name == "images" %}
+                            <p class="attention-entry-hint mb-0" id="activity-evidence-formats">JPG o PNG · Hasta {{ evidence_max_images }} imágenes por registro, 5 MiB y 20 megapíxeles por imagen.</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+                <div class="d-flex justify-content-end">
+                    <button class="btn btn-primary" type="submit">Guardar evidencia</button>
+                </div>
+            </form>
+        </details>
+    {% endif %}
+</section>

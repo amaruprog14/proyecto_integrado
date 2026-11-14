@@ -276,6 +276,22 @@ class SocialAttention(BaseModel):
             raise ValidationError(errors)
 
 
+class EvidenceBatch(BaseModel):
+    class Stage(models.TextChoices):
+        INITIAL = "INITIAL", "Diagnóstico inicial"
+        IN_PROGRESS = "IN_PROGRESS", "Trabajo en curso"
+        COMPLETED = "COMPLETED", "Trabajo terminado"
+
+    activity = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="evidence_batches")
+    author = models.ForeignKey(Official, on_delete=models.PROTECT, related_name="evidence_batches")
+    stage = models.CharField(max_length=16, choices=Stage.choices, verbose_name="Etapa del trabajo")
+    description = models.TextField(max_length=500, verbose_name="Descripción de lo realizado")
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        default_permissions = ()
+
+
 class Evidence(BaseModel):
     """Tabla operativa: archivo de respaldo asociado a una actividad."""
 
@@ -289,6 +305,8 @@ class Evidence(BaseModel):
         verbose_name="Actividad",
     )
     file_url = models.CharField(max_length=500, verbose_name="URL del archivo")
+    batch = models.ForeignKey(EvidenceBatch, on_delete=models.PROTECT, related_name="images", null=True, blank=True)
+    original_name = models.CharField(max_length=255, blank=True)
     file_format = models.CharField(max_length=10, blank=True, verbose_name="Formato")
     size_kb = models.PositiveIntegerField(default=0, verbose_name="Tamaño (KB)")
     upload_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de carga")

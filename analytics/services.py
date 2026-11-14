@@ -22,6 +22,7 @@ class CalculadorDesempenoService:
                 date__range=(period.start_date, period.end_date),
                 deleted_at__isnull=True,
                 evidences__deleted_at__isnull=True,
+                evidences__validations__deleted_at__isnull=True,
                 evidences__validations__status=EvidenceValidation.Status.APPROVED,
             )
             .distinct()
