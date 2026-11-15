@@ -6,7 +6,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 
-from accounts.models import Function, Official, Position
+from accounts.models import Delegation, Function, Official, Position
 from common.mixins import BaseModel
 from configuration.models import Item, Period
 
@@ -222,6 +222,10 @@ class IndicatorSnapshot(BaseModel):
 
     official = models.ForeignKey(
         Official, on_delete=models.PROTECT, related_name="indicator_snapshots", verbose_name="Funcionario"
+    )
+    closing_delegation = models.ForeignKey(
+        Delegation, on_delete=models.PROTECT, null=True, editable=False, related_name="+",
+        verbose_name="Delegación al cierre",
     )
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="indicator_snapshots", verbose_name="Ítem"

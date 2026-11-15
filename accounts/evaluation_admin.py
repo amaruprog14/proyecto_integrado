@@ -43,13 +43,15 @@ def provision_evaluation_admin(*, reset_password=False):
     # Permite actualizar únicamente el perfil sin cuenta de la semilla anterior.
     existing_roles = list(official.roles.all())
     legacy_permissions = set(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"])
+    performance_permission = {"analytics.view_indicatorsnapshot"}
+    agenda_permissions = {"agenda.view_commitment", "agenda.add_commitment", "agenda.change_commitment"}
     legacy = (official.user_id is None and len(existing_roles) == 1
               and existing_roles[0].role_name == "Funcionario"
               and existing_roles[0].scope == Role.Scope.DELEGATION
               and existing_roles[0].is_active and not existing_roles[0].deleted_at
-              # El rol Funcionario de la semilla puede incluir ya el panel de desempeño propio.
               and {f"{p.content_type.app_label}.{p.codename}" for p in existing_roles[0].permissions.select_related("content_type")}
-              in (legacy_permissions, legacy_permissions | {"analytics.view_indicatorsnapshot"}))
+              in (legacy_permissions, legacy_permissions | performance_permission,
+                  legacy_permissions | performance_permission | agenda_permissions))
     if existing_roles and {r.pk for r in existing_roles} != {role.pk} and not legacy:
         raise CommandError("El funcionario de evaluación tiene otros roles; no se reemplazan.")
     email = "adminevala@sgr.example.invalid"

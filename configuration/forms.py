@@ -3,9 +3,10 @@ import re
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 
 from common.text import DESCRIPTION_MAX_LENGTH, clean_description_text, normalize_spaces
-from configuration.models import AttentionType, Item, SubattentionType
+from configuration.models import AttentionType, Item, ServiceType, SubattentionType
 
 ITEM_STATUS_CHOICES = [("ACTIVE", "Activo"), ("INACTIVE", "Inactivo")]
 # Formato de la numeración automática (AutoCodeMixin): no se acepta como código manual.
@@ -31,6 +32,7 @@ def attention_type_snapshot(attention_type):
         "Descripción": attention_type.description or "—",
         "Estado": "Activo" if attention_type.is_active else "Inactivo",
         "Ítem automático": str(attention_type.activity_item or "—"),
+        "Servicio": str(attention_type.service_type or "—"),
     }
 
 
@@ -166,16 +168,24 @@ class AttentionTypeForm(LimitedTextFieldsMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         configure_text_widgets(self)
         self.fields["activity_item"].queryset = Item.objects.filter(is_active=True, deleted_at__isnull=True)
+        self.fields["service_type"].queryset = ServiceType.objects.filter(
+            Q(is_active=True, deleted_at__isnull=True, activity_type__is_active=True,
+              activity_type__deleted_at__isnull=True, activity_type__area__is_active=True,
+              activity_type__area__deleted_at__isnull=True) | Q(pk=self.instance.service_type_id),
+        ).select_related("activity_type__area")
+        self.fields["service_type"].label_from_instance = (
+            lambda service: f"{service.activity_type.area} · {service.activity_type} · {service.name}"
+        )
         if self.instance.pk:
-            from django.db.models import Q
             self.fields["activity_item"].queryset = Item.objects.filter(
                 Q(is_active=True, deleted_at__isnull=True) | Q(pk=self.instance.activity_item_id))
 
 
     class Meta:
         model = AttentionType
-        fields = ("name", "description", "is_active", "activity_item")
+        fields = ("name", "description", "is_active", "activity_item", "service_type")
         widgets = {
+            "service_type": forms.Select(attrs={"class": "form-select"}),
             "name": forms.TextInput(
                 attrs={"class": "form-control", "maxlength": 150, "autocomplete": "off"}
             ),
@@ -195,21 +205,23 @@ class AttentionTypeForm(LimitedTextFieldsMixin, forms.ModelForm):
         error_messages = {"name": {"required": "Ingresa el nombre del tipo de atención."}}
 
     def clean_name(self):
-        name = clean_catalog_name(self.cleaned_data.get("name"))
-        duplicates = AttentionType.objects.filter(
-            name__iexact=name, service_type=self.instance.service_type
-        )
-        if self.instance.pk:
-            duplicates = duplicates.exclude(pk=self.instance.pk)
-        if duplicates.exists():
-            raise ValidationError("Ya existe un tipo de atención con ese nombre.")
-        return name
+        return clean_catalog_name(self.cleaned_data.get("name"))
 
     def clean_description(self):
         return clean_description_text(self.cleaned_data.get("description"))
 
     def clean(self):
         cleaned_data = super().clean()
+        name = cleaned_data.get("name")
+        service = cleaned_data.get("service_type")
+        if "service_type" in cleaned_data and name and AttentionType.objects.filter(
+            name__iexact=name, service_type=service,
+        ).exclude(pk=self.instance.pk).exists():
+            self.add_error("name", "Ya existe un tipo de atención con ese nombre.")
+        if (self.instance.pk and "service_type" in cleaned_data
+                and getattr(service, "pk", None) != self.instance.service_type_id
+                and self.instance.manual_activities.exists()):
+            self.add_error("service_type", "Esta atención ya se usó en actividades y conserva su servicio original.")
         if (
             self.instance.pk
             and cleaned_data.get("is_active") is False
@@ -288,7 +300,7 @@ class SubattentionTypeForm(LimitedTextFieldsMixin, forms.ModelForm):
             self.instance.pk
             and attention_type is not None
             and attention_type.pk != self.instance.attention_type_id
-            and self.instance.social_attentions.exists()
+            and (self.instance.social_attentions.exists() or self.instance.manual_activities.exists())
         ):
             self.add_error(
                 "attention_type",

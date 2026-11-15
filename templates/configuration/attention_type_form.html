@@ -24,6 +24,12 @@
                 {% endif %}
 
                 <div class="attention-entry-grid">
+                    <div class="attention-entry-field attention-entry-field-full">
+                        {{ form.service_type.label_tag }}
+                        {{ form.service_type }}
+                        <p class="attention-entry-hint">Deja el campo vacío si este tipo es general para Ingreso de atención.</p>
+                        {% for error in form.service_type.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
                     {% if form_mode == "edit" %}
                         <div class="attention-entry-field">
                             <label for="attention-type-code">Código</label>

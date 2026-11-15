@@ -1,0 +1,10 @@
+{% if can_view_delegation %}
+    <nav class="performance-navigation mb-3" aria-label="Tableros de desempeño">
+        <a class="performance-navigation-link"
+           href="{% url 'my_performance' %}{% if period %}?period={{ period.pk }}{% endif %}"{% if not performance_tab %} aria-current="page"{% endif %}>Mi desempeño</a>
+        <a class="performance-navigation-link"
+           href="{% url 'delegation_performance' %}{% if period %}?period={{ period.pk }}{% endif %}"{% if performance_tab == 'delegation' %} aria-current="page"{% endif %}>Tablero de delegación</a>
+        <a class="performance-navigation-link"
+           href="{% url 'position_performance' %}{% if period %}?period={{ period.pk }}{% endif %}"{% if performance_tab == 'position' %} aria-current="page"{% endif %}>Vista por cargo</a>
+    </nav>
+{% endif %}

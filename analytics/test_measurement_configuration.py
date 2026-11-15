@@ -23,7 +23,12 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         cls.position = Position.objects.create(position_name="Gestor Social")
         cls.other_position = Position.objects.create(position_name="Apoyo Administrativo")
         cls.official.position = cls.position
-        cls.official.save(update_fields=["position"])
+        from accounts.models import Area
+        from configuration.models import ActivityType
+
+        cls.official.area = Area.objects.create(area_name="Gestión social")
+        cls.official.save(update_fields=["position", "area"])
+        cls.activity_type = ActivityType.objects.create(area=cls.official.area, name="Visita")
         cls.function = Function.objects.create(function_name="Seguimiento social")
         cls.function.positions.add(cls.position, cls.other_position)
         cls.period = Period.objects.get()
@@ -58,6 +63,7 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         return {
             "official": self.official.pk, "date": self.period.end_date.isoformat(), "item": self.item.pk,
             "record_type": Activity.RecordType.FIELD, "action_description": "Registro de prueba",
+            "subject": "Visita social", "activity_type": self.activity_type.pk,
             **changes,
         }
 

@@ -23,12 +23,20 @@
                 {% if attention_url %}<p class="mt-3 mb-0"><a class="auth-text-link" href="{{ attention_url }}">Ver atención de origen</a></p>{% endif %}
                 {% if case_url %}<p class="mt-3 mb-0"><a class="auth-text-link" href="{{ case_url }}">Ver seguimiento del caso</a></p>{% endif %}
                 {% if origin_request %}<p class="mt-3 mb-0"><a class="auth-text-link" href="{% url 'staff_client_request_detail' origin_request.pk %}">Ver solicitud de origen {{ origin_request.identifier }}</a></p>{% endif %}
+                {% if linked_commitments %}
+                    <h2 class="h6 mt-3">Compromisos de la Agenda</h2>
+                    <ul class="mb-0">{% for commitment in linked_commitments %}
+                        <li><a class="auth-text-link" href="{% url 'commitment_detail' commitment.pk %}">{{ commitment.identifier }}</a> · {{ commitment.get_current_status_display }}</li>
+                    {% endfor %}</ul>
+                {% endif %}
             </section>
             {% if show_evidence %}
                 {% include "activities/evidence.html" %}
             {% endif %}
+            {% if show_internal_comments %}{% include "agenda/internal_comments.html" %}{% endif %}
             <div class="attention-entry-actions">
                 <a class="btn attention-entry-cancel" href="{{ list_url }}">Volver al listado</a>
+                {% if commitment_create_url %}<a class="btn attention-entry-cancel" href="{{ commitment_create_url }}">Crear compromiso</a>{% endif %}
                 {% if measurement_url %}<a class="btn btn-primary maintainer-new-button" href="{{ measurement_url }}">Configuración de medición</a>{% endif %}
                 {% if row.reopen %}<a class="btn btn-primary maintainer-new-button" href="{{ row.reopen }}" data-modal-form>Reabrir período</a>{% endif %}
                 {% if can_archive and row.can_archive and row.mutable %}

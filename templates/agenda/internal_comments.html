@@ -1,0 +1,25 @@
+<section class="attention-entry-card mt-3" aria-labelledby="internal-comments">
+    <h2 class="h5" id="internal-comments">Comentarios internos</h2>
+    {% if internal_comments %}
+        <ol class="list-unstyled mb-3">
+            {% for comment in internal_comments %}
+                <li class="border-bottom py-2">
+                    <div><strong>{{ comment.author.full_name }}</strong> · <time datetime="{{ comment.date|date:'c' }}">{{ comment.date|date:"d-m-Y H:i" }}</time></div>
+                    <p class="mb-0 text-break">{{ comment.text|linebreaksbr }}</p>
+                </li>
+            {% endfor %}
+        </ol>
+    {% else %}
+        <p class="text-muted{% if not internal_comment_form %} mb-0{% endif %}">Aún no hay comentarios internos.</p>
+    {% endif %}
+    {% if internal_comment_form %}
+        <form method="post" action="{{ internal_comment_url }}">
+            {% csrf_token %}
+            <label class="form-label" for="{{ internal_comment_form.text.id_for_label }}">Agregar comentario interno</label>
+            {{ internal_comment_form.text }}
+            <div class="attention-entry-actions">
+                <button class="btn btn-primary" type="submit">Guardar comentario</button>
+            </div>
+        </form>
+    {% endif %}
+</section>

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Vista por cargo · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="maintainer-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Desempeño</p>
+                <h1 id="maintainer-title">Vista por cargo</h1>
+            </div>
+        </header>
+        {% include "analytics/performance_navigation.html" %}
+
+        {% if period %}
+            <form class="maintainer-tools performance-filters" method="get" aria-label="Delegación y período">
+                <div class="performance-filter">
+                    <label class="form-label" for="position-delegation">Delegación</label>
+                    <select class="form-select" id="position-delegation" name="delegation">
+                        <option value="">Todas las autorizadas</option>
+                        {% for option in delegations %}
+                            <option value="{{ option.pk }}"{% if option.pk == delegation.pk %} selected{% endif %}>{{ option.delegation_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="performance-filter">
+                    <label class="form-label" for="position-period">Período</label>
+                    <select class="form-select" id="position-period" name="period">
+                        {% for option in periods %}
+                            <option value="{{ option.pk }}"{% if option.pk == period.pk %} selected{% endif %}>{{ option.start_date|date:"d-m-Y" }} al {{ option.end_date|date:"d-m-Y" }} · {{ option.get_status_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-primary" type="submit">Ver resultados</button>
+            </form>
+
+            {% if closed %}
+                <p class="text-muted">
+                    {% if period.frozen_at %}
+                        Cifras de desempeño congeladas el {{ period.frozen_at|date:"d-m-Y H:i" }}. Se incluyen los resultados con delegación registrada al cierre.
+                    {% else %}
+                        El período está cerrado y aún no tiene resultados congelados.
+                    {% endif %}
+                </p>
+            {% endif %}
+            {% if groups %}
+                <section class="attention-entry-card mb-3" aria-labelledby="position-summary">
+                    <h2 class="h5" id="position-summary">Resumen por cargo</h2>
+                    <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="position-summary">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Cargo</th><th scope="col">Funcionarios medidos</th>
+                                <th scope="col">Actividades computadas</th><th scope="col">Promedio ponderado</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for group in groups %}
+                                    <tr>
+                                        <th scope="row">
+                                            <a class="auth-text-link" href="?period={{ period.pk }}{% if delegation %}&amp;delegation={{ delegation.pk }}{% endif %}&amp;position={{ group.key }}#position-detail">{{ group.name }}</a>
+                                        </th>
+                                        <td>{{ group.measured_count }} de {{ group.staff_count }}</td>
+                                        <td>{% if group.measured_count %}{{ group.activity_count|floatformat:0 }}{% else %}—{% endif %}</td>
+                                        <td>{% if group.average is not None %}{{ group.average|floatformat:2 }} puntos{% else %}—{% endif %}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% else %}
+                <p class="alert alert-info" role="status">No hay resultados por cargo para el período y ámbito seleccionados.</p>
+            {% endif %}
+
+            {% if selected %}
+                <section class="attention-entry-card mb-3" aria-labelledby="position-detail">
+                    <h2 class="h5" id="position-detail" tabindex="-1">{{ selected.name }}</h2>
+                    {% if item_totals %}
+                        <p class="text-muted">Se suman las cantidades y se promedian los porcentajes disponibles por funcionario.</p>
+                        <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-label="Metas y avances por ítem">
+                            <table class="table maintainer-table">
+                                <thead><tr><th scope="col">Ítem</th><th scope="col">Meta del equipo</th><th scope="col">Avance del equipo</th></tr></thead>
+                                <tbody>
+                                    {% for row in item_totals %}
+                                        <tr>
+                                            <th scope="row">{{ row.item }}</th>
+                                            <td>{% if row.goal is not None %}{{ row.goal|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                            <td>{% if row.progress is not None %}{{ row.progress|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="mb-0">El equipo aún no tiene ítems medidos en este período.</p>
+                    {% endif %}
+                </section>
+
+                <section class="attention-entry-card" aria-labelledby="position-staff">
+                    <h2 class="h5" id="position-staff">Funcionarios y actividad reciente</h2>
+                    {% if started %}
+                        <p class="text-muted">Actividades válidas hasta el {{ activity_cutoff|date:"d-m-Y" }}, según tu ámbito de consulta.{% if closed %} La consulta de actividad usa los registros vigentes.{% endif %}</p>
+                    {% else %}
+                        <p class="text-muted">El período aún no comienza.</p>
+                    {% endif %}
+                    <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="position-staff">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Funcionario</th><th scope="col">Delegación</th><th scope="col">Resultado ponderado</th>
+                                <th scope="col">Semáforo</th><th scope="col">Última actividad válida</th><th scope="col">Días sin registros</th>
+                                <th scope="col">Registros del período</th><th scope="col">Promedio diario</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for member in members %}
+                                    <tr>
+                                        <th scope="row">
+                                            {% if member.can_open_personal %}
+                                                <a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ member.result.official.pk }}">{{ member.result.official.full_name }}</a>
+                                            {% else %}
+                                                {{ member.result.official.full_name }}
+                                            {% endif %}
+                                            {% if member.result.notice %}<span class="performance-note">{{ member.result.notice }}</span>{% endif %}
+                                        </th>
+                                        <td>{{ member.delegation|default:"—" }}</td>
+                                        <td>{% if member.result.items %}{{ member.result.total|floatformat:2 }} puntos{% else %}—{% endif %}</td>
+                                        <td>{% include "analytics/traffic_light.html" with light=member.result.total_traffic_light %}</td>
+                                        <td>{{ member.recent.last_date|date:"d-m-Y"|default:"—" }}</td>
+                                        <td>
+                                            {% if member.recent.days_without is not None %}{{ member.recent.days_without }}{% else %}—{% endif %}
+                                            {% if member.recent.attention %}<span class="badge text-bg-warning">Inactividad</span>{% endif %}
+                                        </td>
+                                        <td>{% if started %}{{ member.recent.count }}{% else %}—{% endif %}</td>
+                                        <td>{% if started %}{{ member.recent.daily_average|floatformat:2 }}{% else %}—{% endif %}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% endif %}
+        {% else %}
+            <p class="alert alert-info" role="status">Aún no hay períodos de medición registrados.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

@@ -3,6 +3,7 @@ from django.utils.dateparse import parse_date
 from django.views import View
 
 from accounts.models import Official
+from activities.classification import CLASSIFICATION, classification_choices
 from activities.models import Activity
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.list_state import positive
@@ -36,4 +37,8 @@ class ActivityEligibleItemsView(ProtectedViewMixin, View):
                 pk=positive(activity_id, 0),
             )
         items = activity_item_choices(official, date, activity)
-        return JsonResponse({"items": list(items.values("id", "item_name"))})
+        choices = classification_choices(official, activity)
+        classification = {
+            key: list(choices[key].values("id", "name", parent)) for key, _, parent in CLASSIFICATION
+        }
+        return JsonResponse({"items": list(items.values("id", "item_name")), "classification": classification})

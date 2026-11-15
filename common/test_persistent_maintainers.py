@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 from accounts.models import Position, Area, Official, Delegation, Role
 from activities.models import Activity, SocialAttention
-from configuration.models import Item, Period, AttentionType, SubattentionType, AuditLog
+from configuration.models import ActivityType, Item, Period, AttentionType, ServiceType, SubattentionType, AuditLog
 from common.maintainer_forms import PositionForm, GroupForm
 from common.scopes import permission_scope
 
@@ -16,6 +16,9 @@ class PersistentMaintainerTests(TestCase):
         self.user = User.objects.create_superuser("crud", "crud@example.test", "test")
         self.delegation = Delegation.objects.create(delegation_name="Centro", address="Calle", commune="La Serena")
         self.official = Official.objects.create(user=self.user, full_name="Operador", national_id="12.345.678-5", email="crud@example.test", delegation=self.delegation)
+        self.official.area = Area.objects.create(area_name="Gestión territorial")
+        self.official.save(update_fields=["area"])
+        self.activity_type = ActivityType.objects.create(area=self.official.area, name="Registro operativo")
         self.item = Item.objects.create(item_name="Atenciones")
         self.today = timezone.localdate()
         self.period = Period.objects.create(start_date=self.today, end_date=self.today)
@@ -33,6 +36,29 @@ class PersistentMaintainerTests(TestCase):
         self.assertFalse(position.is_active)
         self.assertEqual(self.client.get(reverse("position_activate", args=[position.pk])).status_code, 405)
         self.assertTrue(AuditLog.objects.filter(affected_table=Position._meta.db_table).exists())
+
+    def test_activity_catalog_routes_manage_hierarchy_and_preserve_references(self):
+        area = self.official.area
+        url = reverse("activity_type_create")
+        self.assertEqual(self.client.post(url, {"name": "Apoyo local", "area": area.pk, "is_active": "True"}).status_code, 302)
+        parent = ActivityType.objects.get(name="Apoyo local")
+        service_create = reverse("service_type_create")
+        data = {"name": "Coordinación", "activity_type": parent.pk, "is_active": "True"}
+        self.assertEqual(self.client.post(service_create, data).status_code, 302)
+        duplicate = self.client.post(service_create, data)
+        self.assertIn("name", duplicate.context["form"].errors)
+        service = ServiceType.objects.get(name="Coordinación")
+        response = self.client.post(reverse("attention_type_create"), {
+            "name": "Seguimiento comunitario", "description": "", "is_active": "True", "service_type": service.pk,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(AttentionType.objects.get(name="Seguimiento comunitario").service_type, service)
+        self.assertContains(self.client.get(reverse("activity_type_maintainer")), "Apoyo local")
+        self.assertContains(self.client.get(reverse("service_type_maintainer")), "Coordinación")
+        self.client.post(reverse("activity_type_deactivate", args=[parent.pk]))
+        parent.refresh_from_db()
+        self.assertFalse(parent.is_active)
+        self.assertEqual(ServiceType.objects.get(pk=service.pk).activity_type, parent)
 
     def test_all_real_lists_details_and_excel(self):
         objects = {"position": Position.objects.create(position_name="Jefe"), "area": Area.objects.create(area_name="Social"),
@@ -55,13 +81,15 @@ class PersistentMaintainerTests(TestCase):
         activity.refresh_from_db()
         self.assertIsNone(activity.deleted_at)
         response = self.client.post(reverse("activity_create"), {"official": self.official.pk, "item": self.item.pk,
-            "date": self.today.isoformat(), "record_type": Activity.RecordType.FIELD})
+            "date": self.today.isoformat(), "record_type": Activity.RecordType.FIELD,
+            "subject": "Revisión", "action_description": "Revisión en terreno", "activity_type": self.activity_type.pk})
         self.assertContains(response, "período abierto")
         self.assertEqual(Activity.objects.count(), 1)
 
     def test_manual_create_and_move_from_closed_period_is_rejected(self):
         response = self.client.post(reverse("activity_create"), {"official": self.official.pk, "item": self.item.pk,
-            "date": self.today.isoformat(), "record_type": Activity.RecordType.MONTHLY})
+            "date": self.today.isoformat(), "record_type": Activity.RecordType.MONTHLY,
+            "subject": "Informe", "action_description": "Preparación del informe", "activity_type": self.activity_type.pk})
         self.assertEqual(response.status_code, 302)
         self.assertRegex(Activity.objects.get().code, r"^ACT-\d+$")
         self.client.post(reverse("period_close", args=[self.period.pk]))
@@ -105,7 +133,7 @@ class PersistentMaintainerTests(TestCase):
         with patch("common.maintainers.AuditoriaService.register_change", side_effect=RuntimeError("audit")):
             with self.assertRaises(RuntimeError):
                 self.client.post(reverse("area_create"), {"area_name": "Social", "is_active": "on"})
-        self.assertFalse(Area.objects.exists())
+        self.assertFalse(Area.objects.filter(area_name="Social").exists())
 
     def test_group_active_permissions_and_permission_specific_scope(self):
         self.user.is_superuser = False

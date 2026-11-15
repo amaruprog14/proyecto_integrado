@@ -23,6 +23,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY')
 SEED_DEMO_PASSWORD = os.getenv('SEED_DEMO_PASSWORD', '')
+PERFORMANCE_INACTIVITY_DAYS = int(os.getenv('PERFORMANCE_INACTIVITY_DAYS') or 0)
+COMMITMENT_DUE_WARNING_DAYS = max(0, int(os.getenv('COMMITMENT_DUE_WARNING_DAYS') or 3))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('1', 'true', 'yes')

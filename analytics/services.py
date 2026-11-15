@@ -7,15 +7,17 @@ aprobada (RN-009). Se conserva la precisión interna y se redondea solo al mostr
 
 GoalThreshold y Weighting quedan obsoletos: este servicio ya no los consulta.
 """
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Case, Count, Exists, F, OuterRef, Prefetch, Q, Subquery, When
+from django.db.models import Case, Count, Exists, F, OuterRef, Q, Subquery, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from activities.models import Activity, EvidenceValidation
-from analytics.measurement import version_for
+from analytics.measurement import published_versions_on
 from analytics.models import IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion
 
 HUNDRED = Decimal("100")
@@ -130,10 +132,21 @@ class PerformanceResult:
     frozen: bool = False
     calculated_at: object = None
     frozen_total_light: str | None = None
+    closing_delegation: object | None = None
+
+    @property
+    def position(self):
+        if self.frozen and self.version:
+            return self.version.plan.position
+        return self.official.position
 
     @property
     def total(self):
         return sum((row.weighted for row in self.items), Decimal("0"))
+
+    @property
+    def activity_count(self):
+        return sum((row.progress or 0) for row in self.items if row.goal_type == MeasurementItem.GoalType.QUANTITY)
 
     @property
     def total_traffic_light(self):
@@ -173,8 +186,12 @@ class CalculadorDesempenoService:
         """Meta esperada al día (RN-007) en %, con dos decimales."""
         return q2(expected_percentage(period, on_date or timezone.localdate(), include_start_day=include_start_day))
 
+    @classmethod
+    def percentage_progress(cls, official, period, until=None):
+        return cls._percentage_progress_by_official([official.pk], period, until).get(official.pk)
+
     @staticmethod
-    def percentage_progress(official, period, until=None):
+    def _percentage_progress_by_official(official_ids, period, until=None):
         """Ítems porcentuales («Soluciones de ingresos al tubo»): % de compromisos del funcionario
         con fecha comprometida en el período que están Realizados (guía, CAL-C y CAL-F).
 
@@ -184,45 +201,48 @@ class CalculadorDesempenoService:
         from agenda.models import Commitment, CommitmentStatusHistory
 
         commitments = Commitment.objects.filter(
-            responsible=official, deleted_at__isnull=True,
+            responsible_id__in=official_ids, deleted_at__isnull=True,
             committed_date__range=(period.start_date, period.end_date),
         )
-        cutoff = None
+        status = "current_status"
         if until is not None:
             # Se acota al término: un período terminado no cambia según el día de la consulta.
             until = min(until, period.end_date)
             cutoff = timezone.make_aware(datetime.combine(until + timedelta(days=1), time.min))
-            commitments = commitments.filter(creation_date__lt=cutoff)
-        statuses = dict(commitments.values_list("pk", "current_status"))
-        if not statuses:
-            return None
-        if cutoff is not None:
             # Estado al corte: el del último cambio anterior al corte; si todos los cambios son
             # posteriores, el estado previo al primero de ellos; sin historial, el estado actual.
             history = CommitmentStatusHistory.objects.filter(
-                commitment_id__in=statuses, deleted_at__isnull=True,
-            ).order_by("date", "pk").values_list("commitment_id", "previous_status", "new_status", "date")
-            resolved = set()
-            for pk, previous, new, changed_at in history:
-                if changed_at < cutoff:
-                    statuses[pk] = new
-                elif pk not in resolved:
-                    statuses[pk] = previous
-                    resolved.add(pk)
-        done = sum(status == Commitment.Status.DONE for status in statuses.values())
-        return Decimal(done) / Decimal(len(statuses)) * HUNDRED
+                commitment_id=OuterRef("pk"), deleted_at__isnull=True,
+            )
+            later = history.filter(date__gte=cutoff).order_by("date", "pk").values("previous_status")[:1]
+            earlier = history.filter(date__lt=cutoff).order_by("-date", "-pk").values("new_status")[:1]
+            status = "status_at_cutoff"
+            commitments = commitments.filter(creation_date__lt=cutoff).alias(
+                status_at_cutoff=Coalesce(Subquery(later), Subquery(earlier), F("current_status")),
+            )
+        rows = commitments.order_by().values("responsible_id").annotate(
+            total=Count("pk"), done=Count("pk", filter=Q(**{status: Commitment.Status.DONE})),
+        )
+        return {row["responsible_id"]: Decimal(row["done"]) / row["total"] * HUNDRED for row in rows}
 
     @classmethod
     def counted_progress(cls, official, period, until=None):
+        return cls._counted_progress_by_official([official.pk], period, until).get(official.pk, {})
+
+    @staticmethod
+    def _counted_progress_by_official(official_ids, period, until=None):
         """Avance por ítem. Cada actividad cuenta si su ítem está en la versión publicada que rige
         en su fecha para el cargo con que se registró; si el ítem quedó fuera del plan, no cuenta
         (criterio único en `computable_activities`)."""
         end = period.end_date if until is None else min(until, period.end_date)
         activities = Activity.objects.filter(
-            official=official, date__range=(period.start_date, end), deleted_at__isnull=True,
+            official_id__in=official_ids, date__range=(period.start_date, end), deleted_at__isnull=True,
         )
-        rows = computable_activities(activities).order_by().values("item_id").annotate(total=Count("pk"))
-        return {row["item_id"]: row["total"] for row in rows}
+        rows = computable_activities(activities).order_by().values("official_id", "item_id").annotate(total=Count("pk"))
+        progress = defaultdict(dict)
+        for row in rows:
+            progress[row["official_id"]][row["item_id"]] = row["total"]
+        return progress
 
     @classmethod
     def calculate(cls, official, period, on_date=None, include_start_day=False):
@@ -234,10 +254,54 @@ class CalculadorDesempenoService:
         La meta y el ponderador de cada ítem son los del ajuste individual cuando existe y, si no,
         los de la línea del plan. Los umbrales y el tope computable salen de la versión.
         """
+        return cls.calculate_many((official,), period, on_date, include_start_day)[0]
+
+    @classmethod
+    def calculate_many(cls, officials, period, on_date=None, include_start_day=False):
+        """Carga los datos de todo el equipo en bloque y usa el mismo cálculo para cada funcionario."""
+        officials = list(officials)
         on_date = on_date or timezone.localdate()
         reference = min(max(on_date, period.start_date), period.end_date)
+        position_ids = {official.position_id for official in officials if official.position_id is not None}
+        versions = {}
+        published = published_versions_on(reference, period).filter(plan__position_id__in=position_ids)
+        for version in published.select_related("plan"):
+            versions.setdefault(version.plan.position_id, version)
+        version_ids = {version.pk for version in versions.values()}
+        lines_by_version = defaultdict(list)
+        for line in MeasurementItem.objects.filter(version_id__in=version_ids).select_related("item"):
+            lines_by_version[line.version_id].append(line)
+
+        measured = [official for official in officials if official.position_id in versions]
+        official_ids = [official.pk for official in measured]
+        adjustments_by_official = defaultdict(dict)
+        adjustments = MeasurementAdjustment.objects.filter(
+            official_id__in=official_ids, line__version_id__in=version_ids,
+        ).order_by()
+        for adjustment in adjustments:
+            adjustments_by_official[adjustment.official_id][adjustment.line_id] = adjustment
+        counted = cls._counted_progress_by_official(official_ids, period, on_date)
+        percentage_versions = {
+            version_id for version_id, lines in lines_by_version.items()
+            if any(line.goal_type == MeasurementItem.GoalType.PERCENTAGE for line in lines)
+        }
+        percentage = cls._percentage_progress_by_official(
+            [official.pk for official in measured if versions[official.position_id].pk in percentage_versions],
+            period, on_date,
+        )
+        results = []
+        for official in officials:
+            version = versions.get(official.position_id)
+            lines = lines_by_version[version.pk] if version else ()
+            results.append(cls._build_result(
+                official, period, on_date, include_start_day, version, lines,
+                adjustments_by_official[official.pk], counted.get(official.pk, {}), percentage.get(official.pk),
+            ))
+        return results
+
+    @staticmethod
+    def _build_result(official, period, on_date, include_start_day, version, lines, adjustments, counted, percentage):
         expected = expected_percentage(period, on_date, official, include_start_day=include_start_day)
-        version = version_for(official.position_id, reference, period)
         result = PerformanceResult(official, period, on_date, version, expected)
         if official.position_id is None:
             result.notice = "El funcionario no tiene cargo asignado."
@@ -246,16 +310,8 @@ class CalculadorDesempenoService:
             result.notice = "No hay un plan de medición publicado para el cargo en este período."
             return result
 
-        lines = list(version.items.select_related("item").prefetch_related(Prefetch(
-            "adjustments", queryset=MeasurementAdjustment.objects.filter(official=official), to_attr="own",
-        )))
-        counted = cls.counted_progress(official, period, on_date)
-        percentage = None
-        if any(line.goal_type == MeasurementItem.GoalType.PERCENTAGE for line in lines):
-            percentage = cls.percentage_progress(official, period, on_date)
-
         for line in lines:
-            adjustment = line.own[0] if line.own else None
+            adjustment = adjustments.get(line.pk)
             goal = adjustment.goal if adjustment and adjustment.goal is not None else line.goal
             weight = adjustment.weight if adjustment and adjustment.weight is not None else line.weight
             weight = weight or Decimal("0")
@@ -288,6 +344,7 @@ class CalculadorDesempenoService:
         """Snapshot con el resultado completo; el ponderado y el avance se guardan ya calculados."""
         return IndicatorSnapshot(
             official=result.official, item=row.item, period=result.period, version=result.version,
+            closing_delegation_id=result.official.delegation_id if frozen else None,
             goal_type=row.goal_type, goal=q2(row.goal or 0), progress=row.progress,
             raw_compliance=row.raw_compliance, compliance=q2(row.compliance), applied_weighting=q2(row.weight),
             weighted=row.weighted, expected_percentage=result.expected_percentage,
@@ -320,19 +377,21 @@ class CalculadorDesempenoService:
         return IndicatorSnapshot.objects.filter(period=period, is_frozen=True, deleted_at__isnull=True)
 
     @classmethod
-    def frozen_result(cls, official, period):
+    def frozen_result(cls, official, period, snapshots=None):
         """Resultado oficial de un período cerrado, leído de los snapshots congelados (RN-013).
         Nunca se recalcula. None si el período no está congelado (`frozen_at` nulo)."""
         if period.frozen_at is None:
             return None
-        snapshots = list(cls.frozen_snapshots(period).filter(official=official)
-                         .select_related("item", "version").order_by("item__item_name", "pk"))
+        if snapshots is None:
+            snapshots = list(cls.frozen_snapshots(period).filter(official=official)
+                             .select_related("item", "version", "closing_delegation").order_by("item__item_name", "pk"))
         version = snapshots[0].version if snapshots else None
         expected = snapshots[0].expected_percentage if snapshots else HUNDRED
         result = PerformanceResult(official, period, period.end_date, version,
                                    expected if expected is not None else HUNDRED, frozen=True,
                                    calculated_at=snapshots[0].calculated_at if snapshots else period.frozen_at,
-                                   frozen_total_light=(snapshots[0].total_traffic_light or None) if snapshots else None)
+                                   frozen_total_light=(snapshots[0].total_traffic_light or None) if snapshots else None,
+                                   closing_delegation=snapshots[0].closing_delegation if snapshots else None)
         if not snapshots:
             result.notice = "El funcionario no tenía un plan de medición aplicable al cerrar el período."
         for snapshot in snapshots:

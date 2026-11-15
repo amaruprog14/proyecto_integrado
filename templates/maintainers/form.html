@@ -43,7 +43,7 @@
                                 {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                             </fieldset>
                         {% else %}
-                        <div class="attention-entry-field{% if field.name == 'description' or field.name == 'action_description' or field.name == 'permissions' or field.name == 'members' or field.name == 'positions' or field.name == 'reason' %} attention-entry-field-full{% endif %}">
+                        <div class="attention-entry-field{% if field.name == 'description' or field.name == 'action_description' or field.name == 'subject' or field.name == 'permissions' or field.name == 'members' or field.name == 'positions' or field.name == 'reason' %} attention-entry-field-full{% endif %}">
                             <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-hidden="true">*</span>{% endif %}</label>
                             {{ field }}
                             {% if field.help_text %}<p class="attention-entry-hint">{{ field.help_text }}</p>{% endif %}

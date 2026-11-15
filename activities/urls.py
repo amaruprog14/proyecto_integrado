@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.urls import path, reverse_lazy
 from django.views.generic import RedirectView
+from agenda.comments import InternalCommentView
 from .case_views import CaseActionView, CaseDetailView, CaseListView
 from .eligible_items import ActivityEligibleItemsView
 from .evidence import EvidenceImageView, EvidenceReviewView, EvidenceUploadView
@@ -34,10 +35,12 @@ urlpatterns += [
     path('atenciones/<int:pk>/', AttentionDetailView.as_view(), name='attention_detail'),
     path('casos/', CaseListView.as_view(), name='attention_cases'),
     path('casos/<int:pk>/', CaseDetailView.as_view(), name='attention_case_detail'),
+    path('casos/<int:pk>/comentarios/', InternalCommentView.as_view(target="case"), name="case_internal_comment"),
     path('casos/<int:pk>/<slug:action>/', CaseActionView.as_view(), name='attention_case_action'),
     path('<int:pk>/evidencias/nueva/', EvidenceUploadView.as_view(), name='activity_evidence_upload'),
     path('<int:pk>/evidencias/<int:batch_id>/revisar/', EvidenceReviewView.as_view(), name='activity_evidence_review'),
     path('<int:pk>/evidencias/imagen/<int:image_id>/', EvidenceImageView.as_view(), name='activity_evidence_image'),
+    path('<int:pk>/comentarios/', InternalCommentView.as_view(target="activity"), name="activity_internal_comment"),
 ]
 
 from common.maintainers import maintainer_urls

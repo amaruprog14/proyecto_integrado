@@ -19,6 +19,9 @@
             {% if case.response %}<dt class="col-sm-4">Respuesta publicada</dt><dd class="col-sm-8 text-break">{{ case.response|linebreaksbr }}</dd>{% endif %}
         </dl>
         <div class="attention-entry-actions">
+            {% if perms.agenda.view_commitment and perms.agenda.add_commitment %}
+                <a class="btn attention-entry-cancel" href="{% url 'commitment_from_case' case.pk %}">Crear compromiso</a>
+            {% endif %}
             {% if request_list_url %}<a class="btn attention-entry-cancel" href="{{ request_list_url }}">Volver al listado</a>{% endif %}
             {% if needs_delegation_switch %}
                 <form method="post" action="{% url 'active_delegation_select' %}" class="mb-0">
@@ -78,5 +81,6 @@
     {% elif not case.client_request_id and case.recipient.user_id %}
         <p class="attention-entry-hint mt-3">La ficha ya está vinculada a una cuenta del portal.</p>
     {% endif %}
+    {% include "agenda/internal_comments.html" %}
 </section>
 {% endblock %}

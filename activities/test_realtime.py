@@ -71,6 +71,13 @@ class ActivityRealtimeTests(TransactionTestCase):
         editor = Role.objects.create(role_name='Editor', scope=Role.Scope.DELEGATION)
         editor.permissions.add(*Permission.objects.filter(codename__in=['add_activity', 'change_activity']))
         self.users[0].official.roles.add(editor)
+        from accounts.models import Area
+        from configuration.models import ActivityType
+
+        actor = self.users[0].official
+        actor.area = Area.objects.create(area_name="Gestión operativa")
+        actor.save(update_fields=["area"])
+        self.activity_type = ActivityType.objects.create(area=actor.area, name="Visita")
         self.item = Item.objects.create(item_name='Trabajo')
         self.today = timezone.localdate()
         Period.objects.create(start_date=self.today, end_date=self.today)
@@ -85,8 +92,10 @@ class ActivityRealtimeTests(TransactionTestCase):
         return WebsocketCommunicator(application, '/ws/activities/', headers=headers)
 
     def payload(self, **extra):
-        return dict(official=self.users[0].official.pk, item=self.item.pk,
-            date=self.today.isoformat(), record_type=Activity.RecordType.FIELD, **extra)
+        data = dict(official=self.users[0].official.pk, item=self.item.pk,
+            date=self.today.isoformat(), record_type=Activity.RecordType.FIELD,
+            subject="Visita", action_description="Verificar avance", activity_type=self.activity_type.pk)
+        return {**data, **extra}
 
     def test_editor_updates_only_authorized_reader_after_http_save(self):
         async def scenario():

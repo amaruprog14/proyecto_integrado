@@ -10,6 +10,7 @@ from django.views.generic import TemplateView, View
 
 from accounts.delegation_context import get_active_delegation
 from accounts.models import Official
+from agenda.comments import comments_context
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.chilean_rut import normalize_chilean_rut
 from common.list_state import positive
@@ -140,6 +141,7 @@ def render_case(request, case, *, request_list_url=None, errors=None):
     }
     if errors:
         context.update(errors)
+    context.update(comments_context(user, case, "case"))
     return render(request, "activities/case_detail.html", context)
 
 
