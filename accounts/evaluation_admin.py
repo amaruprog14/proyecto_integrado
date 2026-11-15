@@ -47,7 +47,9 @@ def provision_evaluation_admin(*, reset_password=False):
               and existing_roles[0].role_name == "Funcionario"
               and existing_roles[0].scope == Role.Scope.DELEGATION
               and existing_roles[0].is_active and not existing_roles[0].deleted_at
-              and {f"{p.content_type.app_label}.{p.codename}" for p in existing_roles[0].permissions.select_related("content_type")} == legacy_permissions)
+              # El rol Funcionario de la semilla puede incluir ya el panel de desempeño propio.
+              and {f"{p.content_type.app_label}.{p.codename}" for p in existing_roles[0].permissions.select_related("content_type")}
+              in (legacy_permissions, legacy_permissions | {"analytics.view_indicatorsnapshot"}))
     if existing_roles and {r.pk for r in existing_roles} != {role.pk} and not legacy:
         raise CommandError("El funcionario de evaluación tiene otros roles; no se reemplazan.")
     email = "adminevala@sgr.example.invalid"

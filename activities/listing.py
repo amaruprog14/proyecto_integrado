@@ -20,7 +20,7 @@ def filtered_requests(user, params):
         return requests.none()
     status = params["status"]
     if status in (Activity.ListingStatus.ACTIVE, Activity.ListingStatus.INACTIVE) or any(
-        params[key] for key in ("official", "item", "record_type")
+        params[key] for key in ("official", "item", "record_type", "evidence")
     ):
         return requests.none()
     if status in ClientRequest.Status.values:

@@ -1,10 +1,12 @@
 """Semilla pública: volúmenes, integridad, repetibilidad y aislamiento de evaluación."""
 from datetime import date
+from decimal import Decimal
 from io import StringIO
+from time import perf_counter
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import Group, Permission, User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db.models import Count, F
@@ -17,7 +19,7 @@ from analytics.measurement import create_revision, eligible_items, version_for
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan, MeasurementVersion
 from configuration.models import AttentionType, AuditLog, Item, Period, SubattentionType
 from common.demo_data import demo_rut
-from common.sgr_seed_data import GEOGRAPHY, POSITIONS
+from common.sgr_seed_data import GEOGRAPHY, POSITION_PLANS, POSITIONS
 from common.testing_seed import TEST_SEED_PASSWORD
 
 PASSWORD = TEST_SEED_PASSWORD
@@ -77,6 +79,25 @@ class SeedDemoTests(TestCase):
         admin = User.objects.get(username="adminA")
         self.assertFalse(eligible_items(admin.official.position_id, date(2026, 11, 12))
                          .filter(item_name="Atención social a usuario presencial").exists())
+
+    def test_measurement_plans_use_the_real_goals_and_weights_of_the_excel(self):
+        for period in Period.objects.all():
+            for name, rows in POSITION_PLANS.items():
+                version = MeasurementVersion.objects.filter(
+                    plan__period=period, plan__position__position_name=name).order_by("number").first()
+                self.assertEqual(
+                    {(line.item.item_name, line.weight, line.goal) for line in version.items.select_related("item")},
+                    {(item, Decimal(weight), Decimal(goal)) for item, weight, goal in rows}, name,
+                )
+        coordinator = MeasurementVersion.objects.filter(plan__position__position_name="Coordinador de servicios comunitarios").first()
+        self.assertEqual(coordinator.items.get(item__item_name="Operativo Diserco").goal, 12)
+        planning = MeasurementVersion.objects.filter(plan__position__position_name="Gestión y planificación").first()
+        self.assertEqual(sum(line.weight for line in planning.items.all()), 100)  # 85 % normalizado
+        official = Official.objects.get(national_id=demo_rut(70000008))
+        attention = version_for(official.position_id, date(2026, 7, 1)).items.get(
+            item__item_name="Atención social a usuario presencial")
+        self.assertEqual((attention.weight, attention.goal), (25, 90))
+        self.assertEqual(attention.adjustments.get(official=official).weight, 30)
 
     def test_seed_allows_attention_outside_measurement_for_global_administrator(self):
         admin = User.objects.get(username="adminA")
@@ -291,6 +312,52 @@ class SeedDemoTests(TestCase):
                 self.assertTrue(admin.has_perm(f"analytics.{codename}"))
                 self.assertFalse(editor.has_perm(f"analytics.{codename}"))
                 self.assertFalse(User.objects.get(username="adminEvalA").has_perm(f"analytics.{codename}"))
+
+    def test_reseed_adds_performance_permissions_to_every_demo_role(self):
+        names = ("view_indicatorsnapshot", "view_team_performance")
+        for role in Role.objects.filter(role_name__in=("Administrador", "Funcionario", "Usuario consulta", "Delegado")):
+            role.permissions.remove(*role.permissions.filter(codename__in=names))
+        output = seed()
+        self.assertIn("Semilla SGR completada", output)
+        editor, reader = User.objects.get(username="editorA"), User.objects.get(username="readerA")
+        self.assertTrue(editor.has_perm("analytics.view_indicatorsnapshot"))
+        self.assertFalse(editor.has_perm("analytics.view_team_performance"))  # el funcionario ve solo lo suyo
+        self.assertTrue(reader.has_perm("analytics.view_indicatorsnapshot"))
+        self.assertFalse(reader.has_perm("analytics.view_team_performance"))
+        self.assertTrue(User.objects.get(username="adminA").has_perm("analytics.view_team_performance"))
+        # Un permiso ajeno a la lista de actualización sigue deteniendo la carga.
+        Role.objects.get(role_name="Delegado").permissions.remove(
+            *Permission.objects.filter(codename="view_delegation"))
+        with self.assertRaises(CommandError):
+            seed()
+
+    def test_reseed_does_not_upgrade_a_custom_role_with_a_demo_name(self):
+        # Un rol personalizado (sin el MARKER de la semilla) con el nombre de un rol de
+        # demostración nunca recibe permisos: la carga se detiene y el rol queda intacto.
+        role = Role.objects.get(role_name="Funcionario")
+        role.description = "Rol definido por la municipalidad."
+        role.save(update_fields=["description"])
+        role.permissions.remove(*role.permissions.filter(codename="view_indicatorsnapshot"))
+        before = set(role.permissions.values_list("pk", flat=True))
+        with self.assertRaises(CommandError):
+            seed()
+        self.assertEqual(set(role.permissions.values_list("pk", flat=True)), before)
+
+    def test_performance_panel_renders_under_two_seconds_with_the_seed(self):
+        # RNF-002: panel con los 2.000 registros de la semilla; el administrador global consulta al
+        # funcionario simulado con más actividades.
+        reader = User.objects.get(username="adminA")
+        official = Official.objects.filter(user__isnull=True).annotate(
+            total=Count("activities")).order_by("-total").first()
+        period = Period.objects.get(start_date="2026-07-01")
+        self.client.force_login(reader)
+        self.client.get(reverse("my_performance"))
+        started = perf_counter()
+        response = self.client.get(reverse("my_performance"), {"period": period.pk, "official": official.pk})
+        elapsed = perf_counter() - started
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["rows"])
+        self.assertLess(elapsed, 2)
 
     def test_reseed_completes_legacy_names_but_preserves_edited_names(self):
         legacy = User.objects.get(username="editorA")

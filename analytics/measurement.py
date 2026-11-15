@@ -14,13 +14,16 @@ CHANGE_PLAN = "analytics.change_measurementplan"
 PUBLISH_PLAN = "analytics.publish_measurementplan"
 
 
-def version_for(position_id, date):
+def version_for(position_id, date, period=None):
+    """Versión publicada y no archivada que rige en `date`; con `period`, solo de ese período."""
     if position_id is None or date is None:
         return None
-    return MeasurementVersion.objects.filter(
+    versions = MeasurementVersion.objects.all() if period is None else MeasurementVersion.objects.filter(plan__period=period)
+    return versions.filter(
         plan__position_id=position_id, plan__deleted_at__isnull=True,
         plan__period__deleted_at__isnull=True, plan__period__start_date__lte=date,
         plan__period__end_date__gte=date, effective_from__lte=date, published_at__isnull=False,
+        deleted_at__isnull=True,
     ).order_by("-effective_from").first()
 
 
@@ -56,7 +59,7 @@ def publish_version(version):
         raise ValidationError("El período está cerrado.")
     if not version.plan.position.is_active or version.plan.position.deleted_at:
         raise ValidationError("El cargo debe estar vigente para publicar.")
-    previous = version.plan.versions.filter(published_at__isnull=False).first()
+    previous = version.plan.versions.filter(published_at__isnull=False, deleted_at__isnull=True).first()
     if previous is None and version.effective_from != period.start_date:
         raise ValidationError({"effective_from": "La primera versión debe comenzar el primer día del período."})
     if previous and not previous.effective_from < version.effective_from <= period.end_date:
@@ -101,9 +104,11 @@ def publish_version(version):
 
 
 def create_revision(plan, effective_from):
-    previous = plan.versions.first()
+    """Copia la última versión no archivada; el número sigue al mayor existente (incluye archivadas)."""
+    previous = plan.versions.filter(deleted_at__isnull=True).first()
+    last_number = plan.versions.order_by("-number").values_list("number", flat=True).first()
     version = plan.versions.create(
-        number=previous.number + 1, effective_from=effective_from,
+        number=last_number + 1, effective_from=effective_from,
         max_computable=previous.max_computable, amber_threshold=previous.amber_threshold,
         green_threshold=previous.green_threshold, collective_threshold=previous.collective_threshold,
     )

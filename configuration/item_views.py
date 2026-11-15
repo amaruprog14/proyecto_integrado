@@ -3,8 +3,8 @@ from common.list_state import ordered
 CRUD de Ítems (persistencia real).
 
 Los ítems son un catálogo transversal: no pertenecen a una delegación, por lo que el listado no
-se filtra por ámbito. No se eliminan: se desactivan y reactivan. Las metas (GoalThreshold) no
-forman parte de este mantenedor.
+se filtra por ámbito. No se eliminan: se desactivan y reactivan. Las metas por cargo se configuran
+en los planes de medición (analytics), no en este mantenedor.
 """
 
 from django.contrib import messages

@@ -21,19 +21,46 @@ POSITIONS = {
     "Coordinador de servicios comunitarios": ("Servicios comunitarios", "Coordinar operaciones de aseo, ornato y medioambiente, cuadrillas y requerimientos técnicos de la comunidad."),
 }
 
-# Ítems de las tablas de indicadores, sin totales, ponderadores ni filas vacías.
-# La variante «SOLUCIONES AL INGRESO AL TUBO» se unifica con «SOLUCIONES DE INGRESOS AL TUBO».
-POSITION_ITEMS = {
-    "Apoyo administrativo": ("Atención de usuario teléfono y presencial", "Llamadas preventivas a usuarios", "Informe de inventarios", "Informe a comunicaciones", "Emergencia"),
-    "Coordinador de servicios comunitarios": ("Informes personal", "Informe trabajo", "Operativo delegación", "Operativo Diserco", "Talleres", "Terreno", "Atención requerimiento usuario", "Emergencia", "Soluciones de ingresos al tubo"),
-    "Organizaciones comunitarias": ("Atención de usuario teléfono y presencial", "Visitas y reuniones con organizaciones", "Conformación de organizaciones", "Gestión de talleres y actividades", "Emergencia", "Soluciones de ingresos al tubo"),
-    "Gestor social": ("Atención social a usuario presencial", "Visita terreno", "Entrega informe", "Entrega beneficio", "Emergencia", "Soluciones de ingresos al tubo"),
-    "Gestión y planificación": ("Reunión semanal con el equipo", "Solución de problemas a usuarios particulares", "Emergencia", "Soluciones de ingresos al tubo"),
+PERCENTAGE_ITEM = "Soluciones de ingresos al tubo"
+
+# Ítems de las tablas de indicadores del Excel trimestral: (ítem, ponderador %, meta del trimestre).
+# Sin totales, filas vacías ni datos personales. La variante «SOLUCIONES AL INGRESO AL TUBO» se
+# unifica con «SOLUCIONES DE INGRESOS AL TUBO», cuya meta es porcentual (80 % de compromisos
+# realizados). «Emergencia» tiene meta variable en el Excel; aquí se usa meta 1 (README, supuestos).
+# En «Organizaciones comunitarias», la fila «Atención de usuario» reutiliza el ítem de atención
+# telefónica y presencial, que es la misma actividad descrita en el descriptor de funciones.
+POSITION_PLANS = {
+    "Gestor social": (
+        ("Atención social a usuario presencial", "25", 90), ("Visita terreno", "20", 12),
+        ("Entrega informe", "20", 40), ("Entrega beneficio", "20", 8), ("Emergencia", "5", 1),
+        (PERCENTAGE_ITEM, "10", 80),
+    ),
+    "Apoyo administrativo": (
+        ("Atención de usuario teléfono y presencial", "20", 240), ("Llamadas preventivas a usuarios", "30", 90),
+        ("Informe de inventarios", "25", 1), ("Informe a comunicaciones", "20", 12), ("Emergencia", "5", 1),
+    ),
+    "Organizaciones comunitarias": (
+        ("Atención de usuario teléfono y presencial", "15", 60), ("Visitas y reuniones con organizaciones", "15", 24),
+        ("Conformación de organizaciones", "25", 1), ("Gestión de talleres y actividades", "15", 6),
+        ("Emergencia", "5", 1), (PERCENTAGE_ITEM, "25", 80),
+    ),
+    "Coordinador de servicios comunitarios": (
+        ("Informes personal", "10", 3), ("Informe trabajo", "10", 12), ("Operativo delegación", "15", 24),
+        ("Operativo Diserco", "10", 12), ("Talleres", "10", 12), ("Terreno", "10", 24),
+        ("Atención requerimiento usuario", "15", 24), ("Emergencia", "5", 1), (PERCENTAGE_ITEM, "15", 80),
+    ),
+    # El Excel suma 85 % (falta una fila): se normaliza proporcionalmente a 100 %.
+    "Gestión y planificación": (
+        ("Reunión semanal con el equipo", "17.65", 12), ("Solución de problemas a usuarios particulares", "35.29", 8),
+        ("Emergencia", "5.88", 1), (PERCENTAGE_ITEM, "41.18", 80),
+    ),
 }
-# No se inventan indicadores de compras o de delegado: sus actividades se asignan
-# a los ítems de coordinación/gestión que efectivamente describe el caso.
-POSITION_ITEMS["Delegado"] = POSITION_ITEMS["Gestión y planificación"]
-POSITION_ITEMS["Gestor de compras y proyectos"] = ("Reunión semanal con el equipo", "Informe trabajo")
+# No se inventan indicadores de compras o de delegado: el delegado usa la tabla de gestión y
+# planificación; para compras el Excel no trae hoja y se asume reunión semanal e informe de trabajo.
+POSITION_PLANS["Delegado"] = POSITION_PLANS["Gestión y planificación"]
+POSITION_PLANS["Gestor de compras y proyectos"] = (("Reunión semanal con el equipo", "50", 12), ("Informe trabajo", "50", 12))
+
+POSITION_ITEMS = {name: tuple(item for item, _, _ in lines) for name, lines in POSITION_PLANS.items()}
 
 # LISTA!B2:C8: las siete parejas válidas. No importar #N/A de DATO MENU.
 ATTENTION_CATALOG = {

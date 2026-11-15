@@ -36,6 +36,14 @@
             </nav>
         </div>
     {% endif %}
+    {% if perms.analytics.view_indicatorsnapshot %}
+        <div>
+            <p class="maintainer-sidebar-title" id="menu-desempeno">Desempeño</p>
+            <nav aria-labelledby="menu-desempeno">
+                <a class="maintainer-sidebar-link{% if active == 'performance' %} is-active{% endif %}" href="{% url 'my_performance' %}"{% if active == 'performance' %} aria-current="page"{% endif %}>{% if perms.analytics.view_team_performance %}Desempeño{% else %}Mi desempeño{% endif %}</a>
+            </nav>
+        </div>
+    {% endif %}
     {% if perms.configuration.view_item or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype or perms.configuration.view_period %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-configuracion">Configuración</p>

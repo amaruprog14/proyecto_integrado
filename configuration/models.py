@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from common.codes import AutoCodeMixin
@@ -41,6 +41,9 @@ class Period(BaseModel):
         max_length=20, choices=Status.choices, default=Status.OPEN, verbose_name="Estado"
     )
     first_closed_at = models.DateTimeField(null=True, editable=False)
+    # Marca del congelamiento de resultados (RN-013). Se fija al cerrar aunque no se genere
+    # ninguna fila, para que un período cerrado sin funcionarios medibles no se congele después.
+    frozen_at = models.DateTimeField(null=True, blank=True, editable=False, verbose_name="Resultados congelados el")
 
     class Meta:
         verbose_name = "Período"
@@ -77,10 +80,22 @@ class Period(BaseModel):
             raise ValidationError({"start_date": "El período se solapa con otro período existente."})
 
     def close_period(self):
-        self.status = self.Status.CLOSED
-        if self.first_closed_at is None:
-            self.first_closed_at = timezone.now()
-        self.save(update_fields=["status", "first_closed_at", "updated_at"])
+        """Cierra el período y congela sus resultados (RN-013) en la misma transacción."""
+        from analytics.services import CalculadorDesempenoService
+
+        with transaction.atomic():
+            # Se relee bloqueado: cerrar dos veces nunca reemplaza el resultado oficial congelado.
+            # Se trabaja con la fila bloqueada (fechas y estado actuales), no con la copia recibida.
+            locked = type(self).objects.select_for_update().get(pk=self.pk)
+            if locked.status != self.Status.CLOSED:
+                locked.status = self.Status.CLOSED
+                if locked.first_closed_at is None:
+                    locked.first_closed_at = timezone.now()
+                locked.save(update_fields=["status", "first_closed_at", "updated_at"])
+                # Cerrar de nuevo tras una reapertura reemplaza los resultados congelados anteriores.
+                CalculadorDesempenoService.freeze_period(locked, replace=True)
+            for field in ("start_date", "end_date", "status", "first_closed_at", "frozen_at", "updated_at"):
+                setattr(self, field, getattr(locked, field))
 
 class ActivityType(BaseModel):
     """Tabla maestra: tipo de actividad, definido por área."""

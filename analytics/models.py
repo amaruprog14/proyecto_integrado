@@ -176,7 +176,11 @@ class GoalThreshold(BaseModel):
 
 
 class Weighting(BaseModel):
-    """Tabla maestra: ponderación (%) de un ítem para un cargo (Ponderacion)."""
+    """Tabla maestra: ponderación (%) de un ítem para un cargo (Ponderacion).
+
+    OBSOLETA: los ponderadores salen de MeasurementItem y MeasurementAdjustment (#46).
+    Se conserva sin migrar datos; no agregar usos nuevos.
+    """
 
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="weightings", verbose_name="Ítem"
@@ -203,7 +207,13 @@ class Weighting(BaseModel):
 
 
 class IndicatorSnapshot(BaseModel):
-    """Tabla operativa: foto del indicador de un funcionario por ítem y período."""
+    """Tabla operativa: foto del indicador de un funcionario por ítem y período.
+
+    Con `is_frozen` es el resultado oficial de un período cerrado (RN-013): se guarda al cerrar y
+    se muestra tal cual, sin recalcular. Guarda el ponderado y el avance ya calculados (también el
+    porcentual del tubo), de modo que cambios posteriores en planes, evidencias o compromisos no
+    alteran el período cerrado.
+    """
 
     class TrafficLight(models.TextChoices):
         GREEN = "GREEN", "Verde"
@@ -219,19 +229,43 @@ class IndicatorSnapshot(BaseModel):
     period = models.ForeignKey(
         Period, on_delete=models.PROTECT, related_name="indicator_snapshots", verbose_name="Período"
     )
+    version = models.ForeignKey(
+        MeasurementVersion, on_delete=models.PROTECT, null=True, blank=True, related_name="snapshots",
+        verbose_name="Versión del plan",
+    )
+    goal_type = models.CharField(max_length=10, choices=MeasurementItem.GoalType.choices, blank=True,
+                                 verbose_name="Tipo de meta")
     goal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"), verbose_name="Meta")
-    progress = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"), verbose_name="Avance")
+    progress = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, default=Decimal("0"),
+                                   verbose_name="Avance")
     compliance = models.DecimalField(
         max_digits=8, decimal_places=2, default=Decimal("0"), verbose_name="Cumplimiento (%)"
     )
+    raw_compliance = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True,
+                                         verbose_name="Cumplimiento sin tope (%)")
     applied_weighting = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal("0"), verbose_name="Ponderación aplicada (%)"
     )
+    weighted = models.DecimalField(max_digits=16, decimal_places=6, default=Decimal("0"),
+                                   verbose_name="Ponderado (puntos)")
+    expected_percentage = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True,
+                                              verbose_name="Meta esperada (%)")
+    expected_units = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True,
+                                         verbose_name="Meta esperada (unidades)")
+    difference = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True,
+                                     verbose_name="Diferencia")
+    individual = models.BooleanField(default=False, verbose_name="Con ajuste individual")
+    notice = models.CharField(max_length=200, blank=True, verbose_name="Aviso")
+    is_frozen = models.BooleanField(default=False, db_index=True, verbose_name="Congelado al cierre")
     adjustment = models.DecimalField(
         max_digits=8, decimal_places=2, default=Decimal("0"), verbose_name="Ajuste"
     )
     traffic_light = models.CharField(
         max_length=10, choices=TrafficLight.choices, blank=True, verbose_name="Semáforo"
+    )
+    total_traffic_light = models.CharField(
+        max_length=10, choices=TrafficLight.choices, blank=True, verbose_name="Semáforo del total",
+        help_text="Semáforo del total ponderado del funcionario al congelar; no se recalcula.",
     )
     calculated_at = models.DateTimeField(default=timezone.now, verbose_name="Fecha de cálculo")
 
@@ -240,38 +274,12 @@ class IndicatorSnapshot(BaseModel):
         verbose_name_plural = "Indicadores (snapshots)"
         ordering = ["-calculated_at"]
         indexes = [models.Index(fields=["official", "period", "item"])]
+        permissions = [
+            ("view_team_performance", "Puede ver el desempeño de otros funcionarios de su ámbito"),
+        ]
 
     def __str__(self):
         return f"{self.official} / {self.item} / {self.period}"
-
-    def calculate_compliance(self, max_computable=None):
-        """% de cumplimiento = avance / meta x 100 (RN-004), limitado al máximo computable si se indica."""
-        if not self.goal or self.goal <= 0:
-            self.compliance = Decimal("0")
-        else:
-            value = (self.progress / self.goal * 100).quantize(Decimal("0.01"))
-            if max_computable is not None:
-                value = min(value, Decimal(max_computable))
-            self.compliance = value
-        return self.compliance
-
-    def calculate_weighted_compliance(self):
-        """Cumplimiento ponderado = ponderador x % de cumplimiento (RN-005)."""
-        return (self.applied_weighting / 100 * self.compliance).quantize(Decimal("0.01"))
-
-    def determine_traffic_light(self, expected_goal_to_date, amber_ratio=Decimal("0.6")):
-        """
-        RN-008: verde si el avance >= meta esperada; ámbar si >= 60 % de ella; rojo en otro caso.
-        `expected_goal_to_date` está en las mismas unidades que `progress`.
-        """
-        expected = Decimal(expected_goal_to_date)
-        if self.progress >= expected:
-            self.traffic_light = self.TrafficLight.GREEN
-        elif self.progress >= expected * Decimal(amber_ratio):
-            self.traffic_light = self.TrafficLight.AMBER
-        else:
-            self.traffic_light = self.TrafficLight.RED
-        return self.traffic_light
 
 
 class IncentiveApplication(BaseModel):

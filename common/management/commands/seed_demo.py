@@ -21,12 +21,20 @@ from configuration.models import AttentionType, Item, Period, PeriodMutex, Subat
 from configuration.services import AuditoriaService
 from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 from common.sgr_seed_data import (
-    ATTENTION_CATALOG, GEOGRAPHY, POSITIONS, POSITION_ITEMS, fictional_name,
+    ATTENTION_CATALOG, GEOGRAPHY, PERCENTAGE_ITEM, POSITIONS, POSITION_ITEMS, POSITION_PLANS, fictional_name,
 )
 
 MARKER = "[SGR seed v1]"
 CONSULTATION_GROUP = "Consulta SGR"
 MEASUREMENT_PLAN_PERMISSIONS = (VIEW_PLAN, ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN)
+VIEW_PERFORMANCE = ["analytics.view_indicatorsnapshot"]
+TEAM_PERFORMANCE = VIEW_PERFORMANCE + ["analytics.view_team_performance"]
+# Permisos agregados después de la primera semilla: una base ya cargada los recibe sin abortar,
+# siempre que al rol de demostración solo le falten permisos de esta lista.
+UPGRADE_PERMISSIONS = [
+    "accounts.archive_official", "activities.archive_activity", *MEASUREMENT_PLAN_PERMISSIONS,
+    "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE,
+]
 DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
 DEMO_REVISION_DATE = date(2026, 10, 15)
 DEMO_ADJUSTED_OFFICIAL_INDEX = 8
@@ -49,6 +57,7 @@ def get_administrator_permissions():
         Q(content_type__app_label__in=["accounts", "activities", "configuration"])
         | Q(content_type__app_label="auth", content_type__model__in=["user", "group"])
         | Q(pk__in=get_permissions(MEASUREMENT_PLAN_PERMISSIONS))
+        | Q(pk__in=get_permissions(TEAM_PERFORMANCE))
     ).exclude(codename__startswith="delete_").exclude(
         codename__in=["add_auditlog", "change_auditlog"]
     )
@@ -122,18 +131,14 @@ class Command(BaseCommand):
         if (Role, role.pk) in self.new_objects:
             role.permissions.set(expected)
         elif set(role.permissions.values_list("pk", flat=True)) != expected:
-            upgrade_permissions = set(get_permissions([
-                "accounts.archive_official", "activities.archive_activity",
-                *MEASUREMENT_PLAN_PERMISSIONS,
-            ]).values_list("pk", flat=True))
+            upgrade_permissions = set(get_permissions(UPGRADE_PERMISSIONS).values_list("pk", flat=True))
             current = set(role.permissions.values_list("pk", flat=True))
-            if (name == "Administrador" and scope == Role.Scope.ALL
-                    and current < expected and expected - current <= upgrade_permissions):
+            # Solo se completan los roles creados por la semilla (descripción con el MARKER);
+            # un rol personalizado con el mismo nombre nunca se modifica.
+            is_demo_role = role.description.startswith(MARKER)
+            if is_demo_role and current < expected and expected - current <= upgrade_permissions:
                 role.permissions.add(*(expected - current))
-            elif name == "Funcionario" and scope == Role.Scope.DELEGATION and current == expected - set(
-                get_permissions(["activities.view_evidence", "activities.add_evidence"]).values_list("pk", flat=True)
-            ):
-                role.permissions.add(*(expected - current))
+                self.created["UpgradedRole"] += 1
             else:
                 raise CommandError(f"El rol {name} tiene permisos distintos. Revisa su configuración antes de cargar.")
         return role
@@ -166,17 +171,14 @@ class Command(BaseCommand):
 
             plan = MeasurementPlan.objects.create(period=period, position=position)
             version = plan.versions.create(number=1, effective_from=period.start_date)
-            item_names = POSITION_ITEMS[name]
-            basis_points, remainder = divmod(10000, len(item_names))
             lines = {}
-            for index, item_name in enumerate(item_names):
-                percentage = item_name == "Soluciones de ingresos al tubo"
-                weight = Decimal(basis_points + (1 if index < remainder else 0)) / 100
+            # Ponderadores y metas trimestrales reales del Excel (common/sgr_seed_data.py).
+            for item_name, weight, goal in POSITION_PLANS[name]:
+                percentage = item_name == PERCENTAGE_ITEM
                 lines[item_name] = MeasurementItem.objects.create(
                     version=version, function=functions[name], item=items[item_name],
                     goal_type=MeasurementItem.GoalType.PERCENTAGE if percentage else MeasurementItem.GoalType.QUANTITY,
-                    goal=80 if percentage else 12,
-                    weight=weight,
+                    goal=goal, weight=Decimal(weight),
                 )
 
             if name == "Gestor social" and demo_official.position_id == position.pk:
@@ -227,12 +229,15 @@ class Command(BaseCommand):
 
         roles = {
             "adminA": self.role("Administrador", "ALL", get_administrator_permissions()),
-            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"])),
-            "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS)),
+            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"] + VIEW_PERFORMANCE)),
+            # Solo el desempeño propio: el rol debe seguir siendo asignable por editorA, que no tiene permisos de equipo.
+            "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + VIEW_PERFORMANCE)),
         }
-        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"]))
-        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"]))
-        self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"]))
+        # Panel de desempeño: funcionarios, lectores y verificadores ven lo suyo; Delegado, Coordinador y
+        # Administrador eligen funcionarios dentro de su alcance.
+        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE))
+        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE))
+        self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"] + VIEW_PERFORMANCE))
         # Grupo funcional pequeño: replica la lectura que ya otorga el rol de consulta.
         # El alcance sigue siendo la delegación principal de cada miembro.
         group = self.ensure(Group, name=CONSULTATION_GROUP)
