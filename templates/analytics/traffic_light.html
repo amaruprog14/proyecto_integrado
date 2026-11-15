@@ -1,0 +1,13 @@
+{% comment %}
+    Semáforo accesible (RF-027): el estado se comunica con texto e ícono, nunca solo con color.
+    `light` es GREEN, AMBER, RED o vacío.
+{% endcomment %}
+{% if light == "GREEN" %}
+    <span class="traffic-light is-green" data-traffic-light="GREEN"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12l5 5 9-10"/></svg>Verde: en meta</span>
+{% elif light == "AMBER" %}
+    <span class="traffic-light is-amber" data-traffic-light="AMBER"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>Ámbar: bajo lo esperado</span>
+{% elif light == "RED" %}
+    <span class="traffic-light is-red" data-traffic-light="RED"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>Rojo: bajo el umbral</span>
+{% else %}
+    <span class="traffic-light is-none" data-traffic-light="">Sin semáforo</span>
+{% endif %}

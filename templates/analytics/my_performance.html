@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Mi desempeño · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="maintainer-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Desempeño</p>
+                <h1 id="maintainer-title">{% if subject and subject != user.official %}Desempeño de {{ subject.full_name }}{% else %}Mi desempeño{% endif %}</h1>
+            </div>
+        </header>
+
+        <form class="maintainer-tools performance-filters" method="get" aria-label="Período y funcionario">
+            <div class="performance-filter">
+                <label class="form-label" for="performance-period">Período</label>
+                <select class="form-select" id="performance-period" name="period">
+                    {% for option in periods %}
+                        <option value="{{ option.pk }}"{% if option.pk == period.pk %} selected{% endif %}>{{ option.start_date|date:"d-m-Y" }} al {{ option.end_date|date:"d-m-Y" }} · {{ option.get_status_display }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if can_choose %}
+                <div class="performance-filter">
+                    <label class="form-label" for="performance-official">Funcionario</label>
+                    <select class="form-select" id="performance-official" name="official">
+                        {% for option in officials %}
+                            <option value="{{ option.pk }}"{% if option.pk == subject.pk %} selected{% endif %}>{{ option.full_name }}{% if option.position %} · {{ option.position }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+            <button class="btn btn-primary" type="submit">Ver resultado</button>
+        </form>
+
+        {% if not period %}
+            <p class="alert alert-info" role="status">Aún no hay períodos de medición registrados.</p>
+        {% elif not subject %}
+            <p class="alert alert-info" role="status">Selecciona un funcionario para ver su resultado.</p>
+        {% else %}
+            <section class="attention-entry-card mb-3" aria-labelledby="resumen-title">
+                <h2 class="h5" id="resumen-title">Resumen del período</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Funcionario</dt><dd class="col-sm-8">{{ subject.full_name }}{% if subject.position %} · {{ subject.position }}{% endif %}</dd>
+                    <dt class="col-sm-4">Delegación</dt>
+                    <dd class="col-sm-8" data-performance-delegation>{{ subject.delegation|default:"Sin delegación asignada" }}{% if authorized_delegations %}<span class="performance-note">También autorizado en: {{ authorized_delegations|join:", " }}</span>{% endif %}</dd>
+                    <dt class="col-sm-4">Período</dt><dd class="col-sm-8">{{ period.start_date|date:"d-m-Y" }} al {{ period.end_date|date:"d-m-Y" }} · {{ period.get_status_display }}</dd>
+                    {% if result.frozen and result.calculated_at %}
+                        <dt class="col-sm-4">Resultado</dt><dd class="col-sm-8">Congelado al cierre el {{ result.calculated_at|date:"d-m-Y H:i" }}; no se recalcula.</dd>
+                    {% elif not result.frozen %}
+                        <dt class="col-sm-4">Calculado al</dt><dd class="col-sm-8">{{ today|date:"d-m-Y" }}</dd>
+                    {% endif %}
+                    {% if result.version %}
+                        <dt class="col-sm-4">Meta esperada al día</dt><dd class="col-sm-8">{{ result.expected_percentage|floatformat:2 }} %</dd>
+                        <dt class="col-sm-4">Total ponderado</dt>
+                        <dd class="col-sm-8"><strong data-performance-total>{{ result.total|floatformat:2 }} puntos</strong> {% include "analytics/traffic_light.html" with light=total_light %}</dd>
+                    {% endif %}
+                </dl>
+                {% if result.notice %}<p class="alert alert-warning mt-3 mb-0" role="status">{{ result.notice }}</p>{% endif %}
+            </section>
+
+            {% if deviation %}
+                <section class="attention-entry-card mb-3 performance-deviation" aria-labelledby="desviacion-title">
+                    <h2 class="h5" id="desviacion-title">Desviación: resultado bajo el umbral</h2>
+                    <p class="mb-0">
+                        {% if deviation.last_date %}
+                            Último registro: {{ deviation.last_date|date:"d-m-Y" }} · {{ deviation.days_without }} día{{ deviation.days_without|pluralize }} sin registros.
+                        {% else %}
+                            No hay registros del funcionario hasta la fecha.
+                        {% endif %}
+                    </p>
+                </section>
+            {% endif %}
+
+            {% if rows %}
+                <section class="attention-entry-card mb-3" aria-labelledby="items-title">
+                    <h2 class="h5" id="items-title">Resultado por ítem</h2>
+                    <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="items-title">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Ítem</th><th scope="col">Meta</th><th scope="col">Avance</th>
+                                <th scope="col">Cumplimiento</th><th scope="col">Ponderador</th><th scope="col">Ponderado</th>
+                                <th scope="col">Meta esperada al día</th><th scope="col">Diferencia</th><th scope="col">Semáforo</th>
+                            </tr></thead>
+                            <tbody>
+                            {% for entry in rows %}
+                                {% with row=entry.row %}
+                                <tr>
+                                    <th scope="row">
+                                        {% if entry.link %}<a class="auth-text-link" href="{{ entry.link }}" title="Ver actividades de origen">{{ row.item }}</a>{% else %}{{ row.item }}{% endif %}
+                                        {% if row.individual %}<span class="performance-note">Meta o ponderador individual</span>{% endif %}
+                                        {% if row.notice %}<span class="performance-note">{{ row.notice }}</span>{% endif %}
+                                        {% if entry.hidden %}<span class="performance-note" data-hidden-activities="{{ entry.hidden }}">Incluye {{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} de otra delegación que no puedes ver.</span>{% endif %}
+                                    </th>
+                                    <td>{{ row.goal|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}</td>
+                                    <td>{% if row.progress is None %}—{% else %}{{ row.progress|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}{% endif %}</td>
+                                    <td>{{ row.compliance|floatformat:2 }} %</td>
+                                    <td>{{ row.weight|floatformat:"-2" }} %</td>
+                                    <td>{{ row.weighted|floatformat:2 }}</td>
+                                    <td>{% if row.expected_units is None %}—{% else %}{{ row.expected_units|floatformat:2 }}{% if row.is_percentage %} %{% endif %}{% endif %}</td>
+                                    <td>{% if row.difference is None %}—{% else %}{{ row.difference|floatformat:2 }}{% endif %}</td>
+                                    <td>{% include "analytics/traffic_light.html" with light=row.traffic_light %}</td>
+                                </tr>
+                                {% endwith %}
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="maintainer-record-count mt-2">Tope computable por ítem: {{ result.max_computable|floatformat:"-2" }} %. Solo suma la evidencia aprobada; el enlace de cada ítem abre esas mismas actividades.</p>
+                </section>
+            {% endif %}
+
+            <section class="attention-entry-card" aria-labelledby="pendientes-title">
+                <h2 class="h5" id="pendientes-title">Pendientes del funcionario en el período</h2>
+                <ul class="performance-counters">
+                    <li><strong data-counter="evidence-pending">{{ evidence.pending }}</strong> evidencias pendientes de revisión</li>
+                    <li><strong data-counter="evidence-rejected">{{ evidence.rejected }}</strong> evidencias rechazadas</li>
+                    <li><strong data-counter="evidence-correction">{{ evidence.correction }}</strong> evidencias con corrección solicitada</li>
+                    <li><strong data-counter="commitments-open">{{ commitments.open }}</strong> compromisos abiertos{% if commitments.overdue %}, {{ commitments.overdue }} vencido{{ commitments.overdue|pluralize }}{% endif %}</li>
+                    <li><strong data-counter="commitments-done">{{ commitments.done }}</strong> compromisos realizados</li>
+                </ul>
+            </section>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

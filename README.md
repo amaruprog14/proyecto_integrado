@@ -23,7 +23,8 @@ End (TI3041) – Evaluación Sumativa III.
 | Sub Atención | Operativo con persistencia real |
 | Ingreso de atención y consulta de la atención registrada | Operativo con persistencia real |
 | Cargos, Áreas, Grupos, Períodos y Actividades | Operativos con persistencia, validación, Excel y auditoría |
-| Agenda, evidencias, cálculos y tableros | Pendientes para la siguiente etapa |
+| Planes de medición, evidencias, cálculo de desempeño y panel «Mi desempeño» | Operativos: metas y ponderadores reales por cargo, semáforo accesible y congelamiento al cerrar el período (ver «Medición del desempeño») |
+| Agenda y tableros | Pendientes para la siguiente etapa |
 | Pruebas de estrés | Pendientes de evidencia: no se han inventado métricas; requieren el entorno de prueba acordado, la concurrencia, la duración y los umbrales de aceptación |
 
 Los mantenedores operativos y el ingreso de atención guardan y consultan registros en la base de datos, validan en
@@ -536,6 +537,150 @@ limitan a las delegaciones autorizadas del actor (todas si tiene un rol vigente 
 Un identificador de otra delegación responde 404, igual que uno inexistente, y el intento queda en
 `AuditLog`. Los formularios solo ofrecen delegaciones del ámbito, de modo que un identificador
 fuera de él enviado desde el navegador no valida.
+
+## Medición del desempeño
+
+Las metas y ponderadores salen de los planes de medición publicados por cargo y período
+(`MeasurementPlan` → `MeasurementVersion` → `MeasurementItem`, con `MeasurementAdjustment`
+individual). `analytics/services.py::CalculadorDesempenoService.calculate(funcionario, período, fecha)`
+devuelve, por ítem, meta, avance, cumplimiento con tope, ponderado, meta esperada en unidades,
+diferencia y semáforo, además del total del funcionario.
+
+- **Versión aplicada.** Meta, ponderador, umbrales y tope son los de la versión publicada y no archivada vigente a
+  la fecha de cálculo para el cargo actual del funcionario. Cada actividad cuenta solo si su ítem
+  está en la versión que regía en la fecha de la actividad para el cargo con que se registró; un
+  ítem retirado del plan deja de contar desde la nueva vigencia.
+- **Ajuste individual.** Si existe, reemplaza la meta o el ponderador de la línea solo para ese funcionario.
+- **Avance.** Actividades vigentes del funcionario, ítem y período, con fecha hasta la fecha de
+  cálculo y al menos una imagen con validación aprobada no anulada (RN-009). Cada actividad cuenta
+  una vez. El resultado cambia solo al aprobar o anular evidencia, al registrar o archivar
+  actividades o al cambiar la fecha de cálculo.
+- **Fórmulas.** Cumplimiento = avance / meta × 100; computable = mínimo entre cumplimiento y
+  `max_computable` (150 % por defecto); ponderado = ponderador × computable / 100; total = suma de
+  ponderados. Meta esperada = días computables transcurridos / días computables del período × 100.
+- **Semáforo (RN-008).** Compara el cumplimiento sin tope con la meta esperada, ambos en %:
+  verde desde `green_threshold` % de lo esperado (100), ámbar desde `amber_threshold` % (60) y rojo
+  bajo ese límite. El total usa la misma regla. Se conserva la precisión interna y se redondea a
+  dos decimales, con mitad hacia arriba (5,545 → 5,55), solo al mostrar o persistir; los límites del
+  semáforo se comparan sin redondear (con esperado 50 %: 29,99 rojo, 30 ámbar, 49,99 ámbar, 50 verde).
+- **Sin división por cero.** Una meta nula o igual a 0 (solo posible forzándola en la base) marca
+  «Meta no válida» y el ítem no aporta. Un funcionario sin cargo o sin plan publicado recibe un aviso.
+
+### Panel «Mi desempeño» (`/analytics/mi-desempeno/`)
+
+- **Contenido.** Selector de período (por defecto el vigente) y, por ítem: meta, avance,
+  cumplimiento, ponderador, ponderado, meta esperada al día, diferencia y semáforo. Total ponderado
+  con su semáforo y contadores de evidencias pendientes, rechazadas y con corrección solicitada, y de
+  compromisos abiertos, vencidos y realizados. Muestra la delegación del funcionario y las otras en
+  que está autorizado. Cada ítem enlaza al listado de Actividades filtrado por ese funcionario, ítem,
+  período (hasta hoy si está abierto) y «Solo las que cuentan en la medición»: evidencia aprobada e
+  ítem incluido en la versión del plan que rige en su fecha para el cargo con que se registró. Es el
+  mismo criterio del avance (`analytics.services.computable_activities`), así que el total del
+  listado coincide con el Avance del ítem. El ítem porcentual del tubo no tiene enlace
+  porque proviene de la agenda.
+- **Semáforo accesible.** Siempre texto + ícono («Verde: en meta» ✓, «Ámbar: bajo lo esperado» !,
+  «Rojo: bajo el umbral» ✕); el color solo refuerza.
+- **Desviación (RF-030, parte A).** Con el total en rojo se muestran el último registro del
+  funcionario y los días sin registros.
+- **Acceso.** `analytics.view_indicatorsnapshot` permite ver el propio resultado.
+  `analytics.view_team_performance` permite elegir otro funcionario dentro del alcance del rol
+  (delegación o global). Un identificador fuera del alcance responde 404 y queda en la auditoría.
+  En la semilla: Funcionario, Usuario consulta y Verificador ven solo lo propio; Delegado,
+  Coordinador del sistema y Administrador eligen dentro de su alcance. (Usuario consulta no recibe el
+  permiso de equipo para que `editorA` pueda seguir asignando ese rol: nadie asigna permisos que no tiene.) El rol «Administrador
+  evaluación A» no recibe el panel. `seed_demo` agrega estos permisos a los roles de demostración de
+  una base ya cargada sin abortar; solo a los creados por la semilla (descripción con el marcador
+  `[SGR seed v1]`). Un rol personalizado con el mismo nombre no se modifica y la carga se detiene.
+- Un funcionario sin cargo o sin plan publicado ve un aviso, no un error.
+
+### Congelamiento de períodos cerrados (RN-013)
+
+Al cerrar un período (`Period.close_period`, usado por el mantenedor y el admin) se guarda, en la
+misma transacción, un `IndicatorSnapshot` congelado por funcionario medible e ítem, calculado al día
+de término: meta, avance (también el % del tubo), cumplimiento con y sin tope, ponderador, ponderado
+ya calculado, meta esperada, diferencia, semáforo del ítem, semáforo del total y versión del plan.
+El cierre fija además `Period.frozen_at`, aunque no haya ningún funcionario medible: esa marca, y no
+la existencia de filas, indica que el período está congelado. Los funcionarios archivados no se
+congelan. Un período cerrado se muestra
+**siempre** desde esos snapshots: archivar o reasignar compromisos, aprobar evidencia o cambiar
+planes después del cierre no lo altera. Si se reabre y se vuelve a cerrar, los snapshots anteriores
+se archivan y se congela de nuevo; cerrar un período que ya está cerrado no hace nada. Los contadores
+de compromisos del panel cuentan los de fecha comprometida dentro del período elegido. Para períodos
+cerrados antes de esta función:
+
+```bash
+python manage.py freeze_period <id_del_período>
+```
+
+Es idempotente: si el período ya tiene `frozen_at` no cambia nada (tampoco si después del cierre
+se asigna un cargo con plan a alguien). Mientras no se
+ejecute, el panel avisa que el período cerrado no tiene resultados congelados (no los recalcula).
+
+`GoalThreshold` y `Weighting` quedan **obsoletos**: el calculador ya no los consulta. Se conservan
+sin migrar ni borrar datos para no perder información; no deben recibir usos nuevos.
+
+## Supuestos y limitaciones
+
+- **Días computables.** Se usan días corridos. Toda la regla vive en
+  `analytics.services.computable_days(period, official=None, until=None, include_start_day=False)`.
+  - Por defecto (`include_start_day=False`) se cuenta como el ejemplo de la guía: (fecha − inicio).
+    1/07–30/09 da 91 días y al 26/08 van 56 (61,54 %); el día de inicio la meta esperada es 0 %.
+  - Con `include_start_day=True` el conteo es inclusivo, como el lote de ensayo CAL-D:
+    1–30/10 da 30 días; el 1/10 va 3,33 %, el 15/10 va 50 %; antes del inicio 0 % y después del término 100 %.
+  - **Divergencia.** Los dos ejemplos son incompatibles: con el conteo por defecto CAL-D da 48,28 %
+    al 15/10, y con el inclusivo el ejemplo de la guía daría 92 días y 61,96 %. CAL-D es un dato de
+    ensayo propuesto por el plan de pruebas, no una regla institucional, por lo que el sistema usa
+    el ejemplo de la guía y deja el modo inclusivo disponible y probado: `calculate(...,
+    include_start_day=True)` reproduce CAL-D completo con el resultado del funcionario.
+  - La guía nombra los días computables (RF-005, RN-007) sin definir qué se descuenta; el Excel
+    descuenta licencias, vacaciones, emergencias y compensatorios. No se descuentan festivos. Las
+    fechas se toman en la zona horaria del proyecto (`timezone.localdate`). El parámetro `official`
+    queda reservado para esos descuentos.
+- **Ítems porcentuales.** «Soluciones de ingresos al tubo» tiene meta 80 % y su avance es el % de
+  compromisos del funcionario con fecha comprometida en el período que están Realizados (CAL-C y
+  CAL-F: 8 de 10 realizados con meta 80 % = 100 %). Sin compromisos no hay denominador: el ítem
+  muestra un aviso y no aporta. Al calcular a una fecha pasada solo cuentan los compromisos creados
+  hasta ese día, cada uno con el estado que tenía según su historial. El semáforo compara ese
+  cumplimiento con la meta esperada del día.
+- **Felicitaciones y reclamos (pendiente de aprobación institucional).** Se propone felicitación =
+  +10 puntos sobre el total ponderado (máximo 3 por funcionario y período) y reclamo = −20 puntos
+  (el Excel usa −0,2 y −0,3 según la hoja). La guía pide no fijar automáticamente esos valores y
+  aplicarlos solo con reglas parametrizadas aprobadas: serán parámetros de la versión del plan y
+  los valores +10/−20 son solo los propuestos por defecto hasta que la institución los apruebe.
+- **Cambio de cargo a mitad de período (limitación conocida).** Las metas y ponderadores son los
+  del plan del cargo actual, pero cada actividad cuenta según el plan del cargo con que se registró.
+  Si ambos planes comparten un ítem, ese ítem suma el avance de los dos cargos.
+- **Gestión y planificación.** El Excel suma 85 % (falta una fila); se normaliza proporcionalmente
+  a 100 %: 17,65 / 35,29 / 5,88 / 41,18. El Delegado usa la misma tabla.
+- **Gestor de compras y proyectos.** El Excel no trae su hoja: se asume Reunión semanal 50 % / meta 12
+  e Informe trabajo 50 % / meta 12.
+- **Emergencia.** El Excel la trae con meta variable; se usa meta 1.
+- **Hoja «AP ADM.».** En el Excel su total excluye la fila Emergencia; el SGR suma todas las filas (RF-024).
+- **Organizaciones comunitarias.** La fila «Atención de usuario» usa el ítem «Atención de usuario
+  teléfono y presencial».
+- **Base existente.** `seed_demo` no reemplaza planes ya creados: en una base cargada antes de este
+  cambio los planes conservan los ponderadores repartidos en partes iguales. Para aplicar los valores
+  reales, crea una revisión del plan desde la pantalla de medición o carga la semilla en una base nueva.
+- **Funcionario autorizado en varias delegaciones.** El desempeño es del funcionario completo: el
+  total y el avance suman todas sus actividades, aunque se registren en otra delegación. Quien lo
+  consulta con alcance de delegación ve ese total, pero el enlace al detalle de actividades queda
+  limitado a su alcance y la fila avisa «Incluye N actividades de otra delegación que no puedes ver».
+  Con alcance global no hay actividades ocultas.
+- **Período futuro.** Antes de que empiece un período, su meta esperada y su avance son 0. El enlace
+  a las actividades usa como corte la fecha de inicio, de modo que puede listar actividades fechadas
+  ese día (si se registraran por adelantado) que el avance todavía no cuenta.
+- **Filtro «Solo las que cuentan en la medición» en archivadas.** El filtro aplica la regla del ítem
+  y la evidencia, pero no excluye por sí mismo las actividades archivadas: en el historial de
+  archivadas (estado «Archivada») muestra actividades que el avance no cuenta porque están archivadas.
+  El enlace del panel siempre abre las vigentes.
+- **Actividades antiguas sin cargo registrado.** Las actividades creadas antes de guardar el cargo al
+  registrar (`registration_position_captured` falso) se miden con el cargo **actual** del
+  funcionario. Si después cambia de cargo, el avance en vivo, el enlace y el aviso de actividades
+  ocultas usan el plan del cargo nuevo; un período ya congelado conserva su resultado, pero su enlace
+  y su aviso se calculan con ese cargo actual.
+- **Datos en vivo en un período cerrado.** El resultado se lee de lo congelado, pero los contadores de
+  evidencias y compromisos y la desviación se calculan al consultar.
+- **Datos.** Solo datos ficticios: no se cargan nombres ni teléfonos del Excel.
 
 ## Arquitectura del proyecto
 

@@ -78,7 +78,15 @@
                                 {% for item in items %}<option value="{{ item.pk }}"{% if request.GET.item == item.pk|stringformat:"s" %} selected{% endif %}>{{ item }}</option>{% endfor %}
                             </select>
                         </div>
-                        <div class="attention-entry-field attention-entry-field-full">
+                        <div class="attention-entry-field">
+                            <label for="filter-evidence">Evidencia</label>
+                            <select class="form-select" id="filter-evidence" name="evidence" data-swal-autosubmit{% if request.GET.record_source == 'request' %} disabled{% endif %}>
+                                <option value="">Todas las actividades</option>
+                                <option value="approved"{% if request.GET.evidence == 'approved' %} selected{% endif %}>Solo con evidencia aprobada</option>
+                                <option value="counted"{% if request.GET.evidence == 'counted' %} selected{% endif %}>Solo las que cuentan en la medición</option>
+                            </select>
+                        </div>
+                        <div class="attention-entry-field">
                             <label for="filter-record-type">Tipo de registro</label>
                             <select class="form-select" id="filter-record-type" name="record_type" data-swal-autosubmit{% if request.GET.record_source == 'request' %} disabled{% endif %}>
                                 <option value="">Todos los tipos</option>
@@ -112,7 +120,7 @@
                             </tr>
                         {% empty %}
                             <tr><td colspan="{{ headers|length|add:'1' }}" class="text-center">
-                                {% if query or selected_status or request.GET.date_from or request.GET.date_to or request.GET.official or request.GET.item or request.GET.record_type or request.GET.record_source %}
+                                {% if query or selected_status or request.GET.date_from or request.GET.date_to or request.GET.official or request.GET.item or request.GET.record_type or request.GET.record_source or request.GET.evidence %}
                                     No hay registros que coincidan con la búsqueda o el filtro aplicado.
                                 {% else %}
                                     Aún no hay registros disponibles.
@@ -163,5 +171,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-    <script src="{% static 'js/maintainer-states.js' %}?v=20261111-list" defer></script>
+    <script src="{% static 'js/maintainer-states.js' %}?v=20261115-evidence-filter" defer></script>
 {% endblock %}

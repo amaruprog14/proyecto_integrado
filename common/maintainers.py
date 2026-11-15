@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from django.urls import path, reverse
@@ -22,7 +22,7 @@ from common.maintainer_forms import FunctionForm, PositionForm, AreaForm, GroupF
 from configuration.models import Item, Period
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
-from activities.models import Activity, AttentionCase, ClientRequest
+from activities.models import Activity, AttentionCase, ClientRequest, EvidenceValidation
 from activities.listing import export_objects, filtered_requests, listing_objects, ordered_records, request_row
 
 CATALOGS = {
@@ -188,6 +188,16 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                     qs = qs.filter(**{param + "_id": value})
             if self.request.GET.get("record_type") in Activity.RecordType.values:
                 qs = qs.filter(record_type=self.request.GET["record_type"])
+            evidence = self.request.GET.get("evidence")
+            if evidence == "approved":
+                qs = qs.filter(Exists(EvidenceValidation.objects.filter(
+                    evidence__activity=OuterRef("pk"), evidence__deleted_at__isnull=True,
+                    deleted_at__isnull=True, status=EvidenceValidation.Status.APPROVED,
+                )))
+            elif evidence == "counted":
+                # Mismo criterio que el avance del panel de desempeño (RF-028).
+                from analytics.services import computable_activities
+                qs = computable_activities(qs)
             from django.utils.dateparse import parse_date
             for param, lookup in (("date_from", "date__gte"), ("date_to", "date__lte")):
                 try:

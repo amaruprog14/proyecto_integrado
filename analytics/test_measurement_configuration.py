@@ -191,3 +191,41 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
                               start_date=(timezone.localdate() - timedelta(days=2)).isoformat(),
                               end_date=self.period.end_date.isoformat())
         self.assertContains(response, "Las fechas quedan fijas")
+
+    def test_publication_requires_weights_to_add_exactly_one_hundred(self):
+        # RN-001: 40/59 (99 %) y 40/61 (101 %) se rechazan; 40/60 (100 %) se publica.
+        _, version = self.new_plan()
+        self.add_item(version, self.item, "40")
+        line = self.add_item(version, self.other_item, "59")
+        for weight, total in (("59", "99.00"), ("61", "101.00")):
+            MeasurementItem.objects.filter(pk=line.pk).update(weight=weight)
+            self.assertContains(self.publish(version), f"suman {total} %. Deben sumar 100 %.")
+            version.refresh_from_db()
+            self.assertFalse(version.is_published)
+        MeasurementItem.objects.filter(pk=line.pk).update(weight="60")
+        self.assertEqual(self.publish(version).status_code, 204)
+        version.refresh_from_db()
+        self.assertTrue(version.is_published)
+
+    def test_item_form_rejects_zero_and_negative_goals(self):
+        _, version = self.new_plan()
+        for goal in ("0", "-1"):
+            response = self.write("measurement_item_create", self.period.pk, version.plan_id, version.pk,
+                                  function=self.function.pk, item=self.item.pk, goal_type="QUANTITY",
+                                  goal=goal, weight="100")
+            self.assertEqual(response.status_code, 200, goal)
+            self.assertTrue(response.context["form"].errors.get("goal"), goal)
+            self.assertFalse(version.items.exists(), goal)
+        self.add_item(version, self.item, "100", goal="10")
+
+    def test_item_form_rejects_negative_and_over_one_hundred_weights(self):
+        _, version = self.new_plan()
+        for weight in ("-1", "100.01", "101"):
+            response = self.write("measurement_item_create", self.period.pk, version.plan_id, version.pk,
+                                  function=self.function.pk, item=self.item.pk, goal_type="QUANTITY",
+                                  goal="10", weight=weight)
+            self.assertEqual(response.status_code, 200, weight)
+            self.assertTrue(response.context["form"].errors.get("weight"), weight)
+            self.assertFalse(version.items.exists(), weight)
+        self.add_item(version, self.item, "100")
+

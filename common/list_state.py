@@ -115,8 +115,9 @@ def normalize(params, module):
             state[key] = str(positive(params.get(key), 0) or '')
         value = params.get('record_type', '')
         state['record_type'] = value if value in Activity.RecordType.values else ''
+        state['evidence'] = params.get('evidence') if params.get('evidence') in ('approved', 'counted') else ''
         if state['record_source'] == 'request':
-            state.update(official='', item='', record_type='')
+            state.update(official='', item='', record_type='', evidence='')
             if state['status'] in (Activity.ListingStatus.ACTIVE, Activity.ListingStatus.INACTIVE):
                 state['status'] = ''
         if state['record_source'] == 'activity' and state['status'] in (ClientRequest.Status.RECEIVED, ClientRequest.Status.REVIEW):
