@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% block title %}Nuevo compromiso · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="commitment_list" %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="new-commitment">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'commitment_list' %}">Agenda colectiva</a></p>
+        <h1 id="new-commitment">Nuevo compromiso</h1>
+    </header>
+    {% if origin_case or origin_activity %}
+        <p>Origen: {% if origin_case %}{{ origin_case.identifier }} · {{ origin_case.subject }}{% else %}{{ origin_activity.code }}{% endif %}</p>
+        <p>Delegación: {{ delegation }}</p>
+    {% else %}
+        <form method="get" class="maintainer-tools performance-filters mb-3">
+            <div class="performance-filter">
+                <label class="form-label" for="commitment-delegation">Delegación</label>
+                <select class="form-select" name="delegacion" id="commitment-delegation">
+                    {% for option in delegations %}<option value="{{ option.pk }}"{% if option.pk == delegation.pk %} selected{% endif %}>{{ option }}</option>{% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn attention-entry-cancel">Seleccionar delegación</button>
+        </form>
+    {% endif %}
+    {% if delegation %}
+        <form method="post" class="attention-entry-card">
+            {% csrf_token %}
+            {% bootstrap_form form %}
+            <div class="attention-entry-actions"><button class="btn btn-primary" type="submit">Guardar compromiso</button></div>
+        </form>
+    {% else %}
+        <p class="alert alert-info">Tu cuenta no tiene una delegación habilitada para registrar compromisos.</p>
+    {% endif %}
+</section>
+{% endblock %}

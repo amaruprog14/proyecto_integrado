@@ -127,6 +127,8 @@ urlpatterns += [
 
 from common.maintainers import maintainer_urls
 urlpatterns += maintainer_urls('period', 'periodos/')
+urlpatterns += maintainer_urls('activity_type', 'tipos-actividad/')
+urlpatterns += maintainer_urls('service_type', 'servicios/')
 
 period_path = "periodos/<int:period_id>/"
 plan_list_path = period_path + "medicion/"

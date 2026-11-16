@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Alertas · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="alert_list" %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="alert-list-title">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Operación</p>
+        <h1 id="alert-list-title">Alertas</h1>
+    </header>
+    <nav class="performance-navigation mb-3" aria-label="Estado de las alertas">
+        <a class="performance-navigation-link" href="{% url 'alert_list' %}"{% if pending_only %} aria-current="page"{% endif %}>Pendientes</a>
+        <a class="performance-navigation-link" href="{% url 'alert_list' %}?estado=todas"{% if not pending_only %} aria-current="page"{% endif %}>Todas</a>
+    </nav>
+    {% if page_obj %}
+        <ul class="list-unstyled">
+            {% for alert in page_obj %}
+                <li class="attention-entry-card mb-2">
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+                        <div>
+                            <h2 class="h6 mb-1">{{ alert.get_alert_type_display }}</h2>
+                            <p class="mb-1 text-break">{{ alert.reason }}</p>
+                            <p class="small text-muted mb-0">{{ alert.official.full_name }} · {{ alert.date|date:"d-m-Y H:i" }}</p>
+                        </div>
+                        {% if alert.resolved_at %}
+                            <span class="maintainer-status-pill is-active">Resuelta</span>
+                        {% else %}
+                            <span class="maintainer-status-pill is-inactive">{{ alert.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="attention-entry-actions">
+                        {% if alert.reference_link %}<a class="btn attention-entry-cancel" href="{{ alert.reference_link }}">Ver registro</a>{% endif %}
+                        {% if alert.status == "PENDING" and not alert.resolved_at %}
+                            <form method="post" action="{% url 'alert_seen' alert.pk %}">
+                                {% csrf_token %}<button class="btn btn-primary" type="submit">Marcar como revisada</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+        {% if page_obj.has_other_pages %}
+            <nav class="d-flex flex-wrap align-items-center gap-3" aria-label="Páginas de alertas">
+                {% if page_obj.has_previous %}<a class="auth-text-link" href="?page={{ page_obj.previous_page_number }}{% if not pending_only %}&amp;estado=todas{% endif %}">Anterior</a>{% endif %}
+                <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}<a class="auth-text-link" href="?page={{ page_obj.next_page_number }}{% if not pending_only %}&amp;estado=todas{% endif %}">Siguiente</a>{% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <p class="alert alert-info">{% if pending_only %}No tienes alertas pendientes.{% else %}No hay alertas en tu historial.{% endif %}</p>
+    {% endif %}
+</section>
+{% endblock %}

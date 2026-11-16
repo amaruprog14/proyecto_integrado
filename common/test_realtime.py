@@ -32,10 +32,13 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
                 item=item, date=timezone.localdate(), record_type=Activity.RecordType.FIELD)
         else:
             seed_test_data()
-        from accounts.models import Function, Position, Territory, Delegation, ServiceRecipient
+        from accounts.models import Area, Function, Position, Territory, Delegation, ServiceRecipient
         from activities.models import ClientRequest
         from analytics.models import MeasurementPlan
-        from configuration.models import Period, SubattentionType
+        from configuration.models import ActivityType, Period, ServiceType, SubattentionType
+        area = Area.objects.first()
+        activity_type = ActivityType.objects.create(area=area, name="Gestión para la prueba")
+        ServiceType.objects.create(activity_type=activity_type, name="Servicio para la prueba")
         position = Position.objects.first()
         function = Function.objects.create(function_name="Función de prueba")
         function.positions.add(position)
@@ -74,7 +77,7 @@ class AllMaintainersRealtimeTests(TransactionTestCase):
             fields = dict(territory='territory_name', activity='record_type', official='full_name', delegation='delegation_name',
                 user='username', role='role_name', area='area_name', position='position_name', function='function_name',
                 group='name', period='status', item='item_name', attention_type='name', subattention_type='name',
-                staff_request='subject', measurement_plan='position')
+                staff_request='subject', measurement_plan='position', activity_type='name', service_type='name')
             field = fields[key]
             old_value = getattr(obj, field)
             new_value = ('Registro mensual' if old_value != 'Registro mensual' else 'Terreno') if key == 'activity' else ('CLOSED' if old_value != 'CLOSED' else 'OPEN') if key == 'period' else f'{old_value} WS'

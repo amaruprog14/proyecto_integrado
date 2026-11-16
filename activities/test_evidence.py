@@ -9,6 +9,8 @@ from django.urls import reverse
 from PIL import Image
 
 from accounts.models import Official
+from agenda.alerts import notify_evidence_reviewers
+from agenda.models import Alert
 from analytics.services import CalculadorDesempenoService
 from configuration.models import Period
 
@@ -112,3 +114,32 @@ class EvidenceTests(CaseFixture, TestCase):
         self.assertFalse(EvidenceValidation.objects.exists())
         self.client.post(review, {"status": "CORRECTION_REQUESTED", "observation": "Falta claridad."})
         self.assertEqual(EvidenceValidation.objects.get().observation, "Falta claridad.")
+
+    def test_upload_notifies_only_scoped_reviewers_and_review_resolves_alert(self):
+        self.upload_images([self.photo()])
+        batch = EvidenceBatch.objects.get()
+        notify_evidence_reviewers(batch)
+        alert = Alert.objects.get(evidence_batch=batch)
+        reviewer = User.objects.get(username="verificador")
+        self.assertEqual(alert.official, reviewer.official)
+        self.assertEqual(alert.reference_link, self.detail + f"#evidence-batch-{batch.pk}")
+        inbox = reverse("alert_list")
+        seen = reverse("alert_seen", args=[alert.pk])
+        self.assertEqual(self.client.post(seen).status_code, 404)
+
+        self.client.force_login(reviewer)
+        self.assertContains(self.client.get(inbox), alert.reason)
+        self.assertEqual(self.client.get(seen).status_code, 405)
+        self.assertRedirects(self.client.post(seen), inbox)
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, Alert.Status.SEEN)
+        self.assertNotContains(self.client.get(inbox), alert.reason)
+        self.assertContains(self.client.get(inbox, {"estado": "todas"}), alert.reason)
+
+        review = reverse("activity_evidence_review", args=[self.activity.pk, batch.pk])
+        self.client.post(review, {"status": "APPROVED"})
+        alert.refresh_from_db()
+        self.assertIsNotNone(alert.resolved_at)
+        self.assertContains(self.client.get(inbox, {"estado": "todas"}), "Resuelta")
+        reviewer.user_permissions.clear()
+        self.assertNotContains(self.client.get(inbox, {"estado": "todas"}), alert.reason)

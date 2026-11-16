@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% block title %}{{ record.identifier }} · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="commitment_list" %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="commitment-title">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'commitment_list' %}">Agenda colectiva</a></p>
+        <h1 id="commitment-title">{{ record.identifier }}</h1>
+    </header>
+    <section class="attention-entry-card mb-3" aria-label="Datos del compromiso">
+        <dl class="row mb-0">
+            <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8 text-break">{{ record.description|default:"—"|linebreaksbr }}</dd>
+            <dt class="col-sm-4">Origen</dt><dd class="col-sm-8">{% if origin_url %}<a class="auth-text-link" href="{{ origin_url }}">Ver registro de origen</a>{% elif record.origin_case_id or record.origin_activity_id %}Registro asociado{% else %}Gestión interna{% endif %}</dd>
+            <dt class="col-sm-4">Solicitante</dt><dd class="col-sm-8">{{ record.requester }}</dd>
+            <dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ record.delegation|default:"—" }}</dd>
+            <dt class="col-sm-4">Territorio</dt><dd class="col-sm-8">{{ record.territory }}</dd>
+            <dt class="col-sm-4">Responsable</dt><dd class="col-sm-8">{{ record.responsible }}</dd>
+            <dt class="col-sm-4">Área de apoyo</dt><dd class="col-sm-8">{{ record.support_area|default:"—" }}</dd>
+            <dt class="col-sm-4">Fecha comprometida</dt><dd class="col-sm-8">{{ record.committed_date|date:"d-m-Y" }}</dd>
+            {% if record.completed_on %}<dt class="col-sm-4">Fecha de realización</dt><dd class="col-sm-8">{{ record.completed_on|date:"d-m-Y" }}</dd>{% endif %}
+            <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{{ record.get_current_status_display }}{% if deadline %} · <strong>{{ deadline }}</strong>{% endif %}</dd>
+        </dl>
+    </section>
+    {% if status_form %}
+        <form method="post" action="{% url 'commitment_status' record.pk %}" class="attention-entry-card mb-3">
+            <h2 class="h5">Actualizar estado</h2>
+            {% csrf_token %}{% bootstrap_form status_form %}
+            <div class="attention-entry-actions"><button class="btn btn-primary" type="submit">Guardar estado</button></div>
+        </form>
+    {% endif %}
+    {% if assign_form %}
+        <form method="post" action="{% url 'commitment_assign' record.pk %}" class="attention-entry-card mb-3">
+            <h2 class="h5">Reasignar responsable</h2>
+            {% csrf_token %}{% bootstrap_form assign_form %}
+            <div class="attention-entry-actions"><button class="btn btn-primary" type="submit">Guardar reasignación</button></div>
+        </form>
+    {% endif %}
+    <section class="attention-entry-card" aria-labelledby="commitment-history">
+        <h2 class="h5" id="commitment-history">Historial de estados</h2>
+        <ol class="list-unstyled mb-0">
+            {% for event in history %}
+                <li class="border-bottom py-2">
+                    <strong>{{ event.get_previous_status_display }} → {{ event.get_new_status_display }}</strong>
+                    <div class="small text-muted">{{ event.author }} · {{ event.date|date:"d-m-Y H:i" }}</div>
+                    <p class="mb-0 text-break">{{ event.observation|linebreaksbr }}</p>
+                </li>
+            {% empty %}<li class="text-muted">Aún no hay cambios de estado.</li>{% endfor %}
+        </ol>
+    </section>
+    {% if reassignments %}
+        <section class="attention-entry-card mt-3" aria-labelledby="commitment-assignment-history">
+            <h2 class="h5" id="commitment-assignment-history">Historial de reasignaciones</h2>
+            <ul class="list-unstyled mb-0">
+                {% for event in reassignments %}
+                    <li class="border-bottom py-2">
+                        <div>{{ event.previous_value }} → {{ event.new_value }}</div>
+                        <div class="small text-muted">{{ event.official }} · {{ event.date|date:"d-m-Y H:i" }}</div>
+                    </li>
+                {% endfor %}
+            </ul>
+        </section>
+    {% endif %}
+    {% include "agenda/internal_comments.html" %}
+</section>
+{% endblock %}

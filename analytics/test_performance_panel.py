@@ -19,7 +19,7 @@ from django.utils import timezone
 from accounts.models import Delegation, Function, Role
 from activities.models import (Activity, AttentionCase, Evidence, EvidenceBatch, EvidenceValidation, ServiceRecipient,
                                SocialAttention)
-from agenda.models import Commitment
+from agenda.models import Alert, Commitment
 from analytics.measurement import publish_version
 from analytics.models import IndicatorSnapshot, MeasurementItem, MeasurementPlan, MeasurementVersion
 from analytics.services import CalculadorDesempenoService as Calc
@@ -29,6 +29,8 @@ from configuration.models import AttentionType, AuditLog, Period, SubattentionTy
 
 TODAY = date(2026, 8, 26)
 URL = reverse("my_performance")
+TEAM_URL = reverse("delegation_performance")
+POSITION_URL = reverse("position_performance")
 
 
 def permissions(*names):
@@ -79,6 +81,133 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
             EvidenceValidation.objects.create(evidence=image, verifier=self.verifier, status=status,
                                               observation="Motivo")
         return batch
+
+    def test_delegation_dashboard_enforces_team_scope_and_primary_membership(self, _today):
+        self.worker.authorized_delegations.add(self.other_delegation)
+        self.delegate.authorized_delegations.add(self.other_delegation)
+        self.client.force_login(self.worker.user)
+        self.assertNotContains(self.client.get(URL), "Tablero de delegación")
+        self.assertEqual(self.client.get(TEAM_URL).status_code, 403)
+
+        self.client.force_login(self.delegate.user)
+        self.assertContains(self.client.get(URL), "Tablero de delegación")
+        response = self.client.get(TEAM_URL, {"delegation": self.other_delegation.pk})
+        self.assertContains(response, self.outsider.full_name)
+        self.assertNotContains(response, self.worker.full_name)
+        self.assertEqual(self.client.get(TEAM_URL, {
+            "delegation": self.other_delegation.pk, "official": self.worker.pk,
+        }).status_code, 404)
+        self.delegate.authorized_delegations.clear()
+        self.assertEqual(self.client.get(TEAM_URL, {"delegation": self.other_delegation.pk}).status_code, 404)
+
+        self.client.force_login(self.coordinator.user)
+        self.assertContains(self.client.get(TEAM_URL, {"delegation": self.other_delegation.pk}), self.outsider.full_name)
+
+    def test_delegation_totals_reuse_individual_results_and_measured_activity_filter(self, _today):
+        [approved] = self.record(self.worker, "Visita terreno", 1)
+        self.batch(approved, EvidenceValidation.Status.APPROVED)
+        [pending] = self.record(self.worker, "Visita terreno", 1, status=None)
+        self.record(self.outsider, "Visita terreno", 4)
+        self.record(self.worker, "Visita terreno", 1, status=EvidenceValidation.Status.REJECTED)
+        self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 27))
+        self.delegate.roles.get().permissions.add(*permissions("activities.view_activity"))
+        self.client.force_login(self.delegate.user)
+
+        response = self.client.get(TEAM_URL, {"official": self.worker.pk})
+        self.assertContains(response, "Abrir desempeño individual")
+        context = response.context
+        self.assertEqual(context["delegation"], self.delegation)
+        self.assertEqual(context["period"], self.period)
+        self.assertEqual(context["total_activities"], 1)
+        worker_total = Calc.result_for(self.worker, self.period, TODAY).total
+        self.assertEqual(context["selected"]["result"].total, worker_total)
+        self.assertEqual(context["measured_count"], 2)
+        self.assertEqual(context["average"], worker_total / 2)
+        visit = next(entry for entry in context["selected_items"] if entry["item"].item.item_name == "Visita terreno")
+        listing = self.client.get(visit["activity_link"])
+        self.assertEqual(listing.context["total"], visit["item"].progress)
+
+        self.batch(pending, EvidenceValidation.Status.APPROVED)
+        self.assertEqual(self.client.get(TEAM_URL).context["total_activities"], 2)
+
+    def test_delegation_history_keeps_attribution_and_totals_after_transfer(self, _today):
+        self.record(self.worker, "Visita terreno", 2)
+        self.close()
+        self.worker.delegation = self.other_delegation
+        self.worker.save(update_fields=["delegation"])
+        self.record(self.worker, "Visita terreno", 1)
+
+        self.client.force_login(self.delegate.user)
+        response = self.client.get(TEAM_URL, {"official": self.worker.pk})
+        self.assertContains(response, "Resultados congelados")
+        self.assertEqual(response.context["total_activities"], 2)
+        self.assertFalse(response.context["can_open_personal"])
+        self.assertFalse(any(entry["activity_link"] for entry in response.context["selected_items"]))
+        self.client.force_login(self.coordinator.user)
+        response = self.client.get(TEAM_URL, {"delegation": self.other_delegation.pk})
+        self.assertNotContains(response, self.worker.full_name)
+        self.assertEqual(response.context["total_activities"], 0)
+
+    def test_delegation_dashboard_queries_do_not_grow_with_team_size(self, _today):
+        self.client.force_login(self.delegate.user)
+        self.client.get(TEAM_URL)
+        with CaptureQueriesContext(connection) as small:
+            response = self.client.get(TEAM_URL)
+        initial_count = response.context["measured_count"]
+
+        for index in range(8):
+            official = self.official(f"Funcionario adicional {index}", "Gestor social")
+            self.record(official, "Visita terreno", 1)
+        with CaptureQueriesContext(connection) as large:
+            response = self.client.get(TEAM_URL)
+
+        self.assertEqual(response.context["total_activities"], 8)
+        self.assertEqual(response.context["measured_count"], initial_count + 8)
+        self.assertEqual(len(small), len(large))
+
+    def test_position_dashboard_filters_and_totals_follow_team_scope(self, _today):
+        self.record(self.worker, "Visita terreno", 2)
+        self.record(self.outsider, "Visita terreno", 3)
+        self.worker.authorized_delegations.add(self.other_delegation)
+        position = self.worker.position_id
+        self.client.force_login(self.worker.user)
+        self.assertNotContains(self.client.get(URL), "Vista por cargo")
+        self.assertEqual(self.client.get(POSITION_URL).status_code, 403)
+
+        self.client.force_login(self.delegate.user)
+        response = self.client.get(POSITION_URL, {"position": position})
+        self.assertContains(response, self.worker.full_name)
+        self.assertNotContains(response, self.outsider.full_name)
+        self.assertEqual(response.context["selected"]["activity_count"], 2)
+        self.assertEqual(self.client.get(POSITION_URL, {"delegation": self.other_delegation.pk}).status_code, 404)
+        self.assertEqual(self.client.get(POSITION_URL, {"position": "999999"}).status_code, 404)
+
+        self.client.force_login(self.coordinator.user)
+        response = self.client.get(POSITION_URL, {"position": position})
+        self.assertContains(response, self.outsider.full_name)
+        self.assertEqual(response.context["selected"]["staff_count"], 2)
+        self.assertEqual(response.context["selected"]["activity_count"], 5)
+        visit = next(row for row in response.context["item_totals"] if row["item"] == self.items["Visita terreno"])
+        self.assertEqual((visit["goal"], visit["progress"]), (24, 5))
+        tube = next(row for row in response.context["item_totals"] if row["is_percentage"])
+        self.assertEqual((tube["goal"], tube["progress"]), (80, None))
+        filtered = self.client.get(POSITION_URL, {"position": position, "delegation": self.other_delegation.pk})
+        self.assertEqual(filtered.context["selected"]["activity_count"], 3)
+
+    def test_position_dashboard_uses_frozen_position_and_delegation_after_transfer(self, _today):
+        self.record(self.worker, "Visita terreno", 2)
+        original_position = self.worker.position_id
+        self.close()
+        self.worker.position = self.colleague.position
+        self.worker.delegation = self.other_delegation
+        self.worker.save(update_fields=["position", "delegation"])
+        self.client.force_login(self.delegate.user)
+        response = self.client.get(POSITION_URL, {"position": original_position})
+        self.assertContains(response, self.worker.full_name)
+        self.assertEqual(response.context["selected"]["activity_count"], 2)
+        member = response.context["members"][0]
+        self.assertEqual(member["delegation"], self.delegation)
+        self.assertFalse(member["can_open_personal"])
 
     # --- Acceso y alcance -------------------------------------------------------------------
 
@@ -141,7 +270,57 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.assertEqual(response.context["total_light"], "RED")
         self.assertContains(response, "Desviación: resultado bajo el umbral")
         self.assertContains(response, "06-08-2026")
-        self.assertEqual(response.context["deviation"]["days_without"], 20)
+        self.assertEqual(response.context["recent"]["days_without"], 20)
+
+    @override_settings(PERFORMANCE_INACTIVITY_DAYS=7)
+    def test_recent_activity_uses_valid_records_and_counts_elapsed_calendar_days(self, _today):
+        [approved] = self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 19))
+        self.batch(approved, EvidenceValidation.Status.APPROVED)
+        [pending] = self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 24), status=None)
+        self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 25), status=EvidenceValidation.Status.REJECTED)
+        self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 27))
+        self.record(self.worker, "Informe de inventarios", 1, day=TODAY)
+
+        response = self.view(self.worker)
+        self.assertContains(response, "Actividad reciente")
+        self.assertEqual(response.context["recent"], {
+            "count": 1, "last_date": date(2026, 8, 19), "days_without": 7,
+            "daily_average": Decimal(1) / 57, "attention": True,
+        })
+        self.batch(pending, EvidenceValidation.Status.APPROVED)
+        recent = self.view(self.worker).context["recent"]
+        self.assertEqual((recent["count"], recent["last_date"], recent["attention"]), (2, pending.date, False))
+
+    @override_settings(PERFORMANCE_INACTIVITY_DAYS=7)
+    def test_performance_alerts_follow_scope_and_resolve_without_duplicates(self, _today):
+        call_command("refresh_performance_alerts", stdout=StringIO())
+        scoped = Alert.objects.filter(official=self.delegate, performance_period=self.period)
+        self.assertEqual(set(scoped.filter(performance_subject=self.worker).values_list("alert_type", flat=True)),
+                         {Alert.AlertType.NO_RECORDS, Alert.AlertType.LOW_PROGRESS})
+        self.assertFalse(scoped.filter(performance_subject=self.outsider).exists())
+        self.assertTrue(Alert.objects.filter(official=self.worker, performance_subject=self.worker).exists())
+        total = Alert.objects.count()
+        call_command("refresh_performance_alerts", stdout=StringIO())
+        self.assertEqual(Alert.objects.count(), total)
+
+        self.record(self.worker, "Visita terreno", 12, day=TODAY)
+        call_command("refresh_performance_alerts", stdout=StringIO())
+        self.assertIsNotNone(scoped.get(performance_subject=self.worker, alert_type=Alert.AlertType.NO_RECORDS).resolved_at)
+        self.assertEqual(Alert.objects.count(), total)
+
+    def test_commitment_can_be_completed_without_rewriting_frozen_progress(self, _today):
+        self.worker.user.user_permissions.add(*permissions("agenda.view_commitment", "agenda.change_commitment"))
+        commitment = Commitment.objects.create(
+            responsible=self.worker, delegation=self.delegation, requester="Vecino", territory="Centro",
+            committed_date=TODAY, creation_date=timezone.make_aware(datetime.combine(TODAY, time.min)),
+        )
+        self.close()
+        self.client.force_login(self.worker.user)
+        response = self.client.post(reverse("commitment_status", args=[commitment.pk]),
+                                    {"status": "DONE", "observation": "Gestión completada después del cierre."})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Calc.percentage_progress(self.worker, self.period), 100)
+        self.assertEqual(live_row(Calc.result_for(self.worker, self.period, TODAY), PERCENTAGE_ITEM).progress, 0)
 
     def test_counters_of_evidence_and_commitments(self, _today):
         [first, second, third, fourth] = self.record(self.worker, "Visita terreno", 4, status=None)
@@ -438,6 +617,8 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.assertEqual(sum(r["hidden"] for r in response.context["rows"]), 2)
         self.assertEqual(entry["row"].progress, 5)  # el total incluye las atenciones de la otra delegación
         self.assertEqual(entry["hidden"], 2)
+        self.assertEqual(response.context["recent"]["count"], 3)
+        self.assertEqual(response.context["recent"]["last_date"], date(2026, 7, 10))
         self.assertContains(response, "Incluye 2 actividades de otra delegación que no puedes ver.")
         listing = self.client.get(entry["link"])
         self.assertEqual(listing.context["total"], 3)
@@ -450,6 +631,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         coordinator = self.with_user(self.official("Coordinación total"), "coordinaciontotal", global_role)
         response = self.view(coordinator, official=shared.pk)
         self.assertNotContains(response, "de otra delegación que no puedes ver")
+        self.assertEqual(response.context["recent"]["count"], 5)
         entry = next(r for r in response.context["rows"] if r["row"].item.item_name == "Visita terreno")
         self.assertEqual(self.client.get(entry["link"]).context["total"], 5)
 

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Agenda colectiva · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="commitment_list" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content" aria-labelledby="agenda-title">
+    <header class="maintainer-heading">
+        <div><p class="maintainer-breadcrumb">Gestión municipal / Operación</p><h1 id="agenda-title">Agenda colectiva</h1></div>
+        {% if can_add %}<a class="btn btn-primary maintainer-new-button" href="{% url 'commitment_create' %}">Nuevo compromiso</a>{% endif %}
+    </header>
+    <form method="get" class="maintainer-tools performance-filters mb-3" aria-label="Filtrar compromisos">
+        <div><label class="form-label" for="filter-delegation">Delegación</label>
+            <select class="form-select" name="delegacion" id="filter-delegation">
+                <option value="">Todas</option>
+                {% for option in delegations %}<option value="{{ option.pk }}"{% if request.GET.delegacion == option.pk|stringformat:"s" %} selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="filter-responsible">Responsable</label>
+            <select class="form-select" name="responsable" id="filter-responsible">
+                <option value="">Todos</option>
+                {% for option in responsibles %}<option value="{{ option.pk }}"{% if request.GET.responsable == option.pk|stringformat:"s" %} selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="filter-territory">Territorio</label>
+            <select class="form-select" name="territorio" id="filter-territory">
+                <option value="">Todos</option>
+                {% for option in territories %}<option value="{{ option.pk }}"{% if request.GET.territorio == option.pk|stringformat:"s" %} selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="filter-status">Estado</label>
+            <select class="form-select" name="estado" id="filter-status">
+                <option value="">Todos</option>
+                {% for value, label in statuses %}<option value="{{ value }}"{% if request.GET.estado == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <div><label class="form-label" for="filter-from">Desde</label>
+            <input class="form-control" type="date" name="desde" id="filter-from" value="{{ request.GET.desde }}">
+        </div>
+        <div><label class="form-label" for="filter-until">Hasta</label>
+            <input class="form-control" type="date" name="hasta" id="filter-until" value="{{ request.GET.hasta }}">
+        </div>
+        <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+        <a class="btn attention-entry-cancel" href="{% url 'commitment_list' %}">Limpiar</a>
+    </form>
+    <section class="attention-entry-card mb-3" aria-labelledby="agenda-summary">
+        <h2 class="h5" id="agenda-summary">Resumen del conjunto filtrado</h2>
+        <p>{{ summary.total }} compromisos · {{ summary.done }} realizados · {{ summary.soon }} próximos a vencer · {{ summary.overdue }} vencidos · {{ summary.late }} realizados fuera de plazo</p>
+        {% if by_responsible %}
+            <details>
+                <summary class="auth-text-link">Ver resumen por responsable</summary>
+                <div class="table-responsive maintainer-table-wrap performance-results-table-wrap mt-2" tabindex="0" role="region" aria-label="Resumen por responsable">
+                    <table class="table maintainer-table">
+                        <thead><tr>
+                            <th scope="col">Responsable</th><th scope="col">Ingresados</th><th scope="col">Pendientes</th>
+                            <th scope="col">En proceso</th><th scope="col">Realizados</th><th scope="col">% realizado</th><th scope="col">% por realizar</th>
+                        </tr></thead>
+                        <tbody>{% for row in by_responsible %}<tr>
+                            <th scope="row">{{ row.responsible__full_name }}</th><td>{{ row.entered }}</td><td>{{ row.pending }}</td>
+                            <td>{{ row.in_progress }}</td><td>{{ row.done }}</td><td>{{ row.done_pct|floatformat:2 }} %</td><td>{{ row.open_pct|floatformat:2 }} %</td>
+                        </tr>{% endfor %}</tbody>
+                    </table>
+                </div>
+            </details>
+        {% endif %}
+    </section>
+    {% if page_obj %}
+        <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-label="Compromisos">
+            <table class="table maintainer-table">
+                <thead><tr>
+                    <th scope="col">Compromiso</th><th scope="col">Solicitante</th><th scope="col">Delegación y territorio</th>
+                    <th scope="col">Responsable</th><th scope="col">Fecha comprometida</th><th scope="col">Estado</th>
+                </tr></thead>
+                <tbody>{% for record in page_obj %}<tr>
+                    <th scope="row"><a class="auth-text-link" href="{% url 'commitment_detail' record.pk %}">{{ record.identifier }}</a>
+                        {% if record.description %}<span class="performance-note">{{ record.description|truncatechars:90 }}</span>{% endif %}
+                    </th>
+                    <td>{{ record.requester }}</td><td>{{ record.delegation|default:"—" }} · {{ record.territory }}</td>
+                    <td>{{ record.responsible }}</td><td>{{ record.committed_date|date:"d-m-Y" }}</td>
+                    <td>{{ record.get_current_status_display }}{% if record.deadline_label %}<div><span class="maintainer-status-pill is-inactive">{{ record.deadline_label }}</span></div>{% endif %}</td>
+                </tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        {% if page_obj.has_other_pages %}
+            <nav class="d-flex flex-wrap gap-3 mt-3" aria-label="Páginas de la agenda">
+                {% if page_obj.has_previous %}<a class="auth-text-link" href="?page={{ page_obj.previous_page_number }}&amp;{{ querystring }}">Anterior</a>{% endif %}
+                <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}<a class="auth-text-link" href="?page={{ page_obj.next_page_number }}&amp;{{ querystring }}">Siguiente</a>{% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <p class="alert alert-info">No hay compromisos para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+{% endblock %}

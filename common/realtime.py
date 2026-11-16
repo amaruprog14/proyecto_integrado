@@ -14,19 +14,20 @@ from django.dispatch import receiver
 from accounts.models import Official, Delegation, Role, Area, Function, Position, GroupProfile, Territory, ServiceRecipient
 from activities.models import Activity, AttentionCase, ClientRequest, SocialAttention
 from analytics.models import MeasurementPlan
-from configuration.models import Item, Period, AttentionType, SubattentionType, ServiceType
+from configuration.models import ActivityType, Item, Period, AttentionType, SubattentionType, ServiceType
 from common.scopes import current_permission
 
 logger = logging.getLogger(__name__)
 MODELS = dict(territory=Territory, activity=Activity, official=Official, delegation=Delegation, user=get_user_model(),
     role=Role, area=Area, position=Position, function=Function, group=Group, period=Period,
     item=Item, attention_type=AttentionType, subattention_type=SubattentionType, staff_request=ClientRequest,
-    measurement_plan=MeasurementPlan)
+    measurement_plan=MeasurementPlan, activity_type=ActivityType, service_type=ServiceType)
 ROUTES = dict(territory='territory_maintainer', activity='activity_maintainer', official='official_maintainer',
     delegation='delegation_list', user='user_maintainer', role='role_list', area='area_maintainer',
     position='position_maintainer', function='function_maintainer', group='group_maintainer', period='period_maintainer',
     item='item_maintainer', attention_type='attention_type_maintainer', subattention_type='subattention_type_maintainer',
-    staff_request='staff_client_requests', measurement_plan='measurement_plan_list')
+    staff_request='staff_client_requests', measurement_plan='measurement_plan_list',
+    activity_type='activity_type_maintainer', service_type='service_type_maintainer')
 _readers = Counter()
 _lock = Lock()
 
@@ -150,12 +151,13 @@ def affected(instance):
         Delegation: (('territory', Territory, 'delegation_id'), ('official', Official, 'delegation_id'),
                      ('activity', Activity, 'official__delegation_id'), ('staff_request', ClientRequest, 'delegation_id')),
         ServiceRecipient: (('staff_request', ClientRequest, 'recipient_id'),),
-        Area: (('official', Official, 'area_id'),),
+        Area: (('official', Official, 'area_id'), ('activity_type', ActivityType, 'area_id')),
         Position: (('official', Official, 'position_id'),),
         Item: (('activity', Activity, 'item_id'),),
         ClientRequest: (('activity', Activity, 'social_attentions__case__client_request_id'),),
         AttentionType: (('subattention_type', SubattentionType, 'attention_type_id'),),
         ServiceType: (('attention_type', AttentionType, 'service_type_id'),),
+        ActivityType: (('service_type', ServiceType, 'activity_type_id'),),
         get_user_model(): (('official', Official, 'user_id'),),
     }
     for key, model, lookup in related.get(type(instance), ()):
@@ -163,7 +165,7 @@ def affected(instance):
     return rows
 
 
-WATCHED = tuple(MODELS.values()) + (AttentionCase, SocialAttention, GroupProfile, ServiceType, ServiceRecipient)
+WATCHED = tuple(MODELS.values()) + (AttentionCase, SocialAttention, GroupProfile, ServiceRecipient)
 
 
 def snapshot(instance):

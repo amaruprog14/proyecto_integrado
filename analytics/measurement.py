@@ -14,17 +14,21 @@ CHANGE_PLAN = "analytics.change_measurementplan"
 PUBLISH_PLAN = "analytics.publish_measurementplan"
 
 
+def published_versions_on(date, period=None):
+    versions = MeasurementVersion.objects.all() if period is None else MeasurementVersion.objects.filter(plan__period=period)
+    return versions.filter(
+        plan__deleted_at__isnull=True,
+        plan__period__deleted_at__isnull=True, plan__period__start_date__lte=date,
+        plan__period__end_date__gte=date, effective_from__lte=date, published_at__isnull=False,
+        deleted_at__isnull=True,
+    ).order_by("-effective_from", "-pk")
+
+
 def version_for(position_id, date, period=None):
     """Versión publicada y no archivada que rige en `date`; con `period`, solo de ese período."""
     if position_id is None or date is None:
         return None
-    versions = MeasurementVersion.objects.all() if period is None else MeasurementVersion.objects.filter(plan__period=period)
-    return versions.filter(
-        plan__position_id=position_id, plan__deleted_at__isnull=True,
-        plan__period__deleted_at__isnull=True, plan__period__start_date__lte=date,
-        plan__period__end_date__gte=date, effective_from__lte=date, published_at__isnull=False,
-        deleted_at__isnull=True,
-    ).order_by("-effective_from").first()
+    return published_versions_on(date, period).filter(plan__position_id=position_id).first()
 
 
 def eligible_items(position_id, date):

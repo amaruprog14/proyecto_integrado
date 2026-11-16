@@ -152,7 +152,18 @@ class Activity(AutoCodeMixin, BaseModel):
 
     date = models.DateField(verbose_name="Fecha")
     record_type = models.CharField(max_length=50, choices=RecordType.choices, verbose_name="Tipo de registro")
+    subject = models.CharField(max_length=200, blank=True, verbose_name="Actividad, solicitud o problema atendido")
+    contact_name = models.CharField(max_length=150, blank=True, verbose_name="Nombre o referencia de contacto")
+    phone = models.CharField(max_length=30, blank=True, verbose_name="Teléfono de contacto")
     action_description = models.TextField(blank=True, verbose_name="Descripción de la acción")
+    activity_type = models.ForeignKey("configuration.ActivityType", on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="manual_activities", verbose_name="Tipo de actividad")
+    service_type = models.ForeignKey("configuration.ServiceType", on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="manual_activities", verbose_name="Servicio")
+    attention_type = models.ForeignKey(AttentionType, on_delete=models.PROTECT, null=True, blank=True,
+                                      related_name="manual_activities", verbose_name="Tipo de atención")
+    subattention_type = models.ForeignKey(SubattentionType, on_delete=models.PROTECT, null=True, blank=True,
+                                         related_name="manual_activities", verbose_name="Subatención")
 
     class Meta:
         verbose_name = "Actividad"

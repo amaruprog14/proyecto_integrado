@@ -23,8 +23,12 @@ End (TI3041) – Evaluación Sumativa III.
 | Sub Atención | Operativo con persistencia real |
 | Ingreso de atención y consulta de la atención registrada | Operativo con persistencia real |
 | Cargos, Áreas, Grupos, Períodos y Actividades | Operativos con persistencia, validación, Excel y auditoría |
+| Tipos de actividad y Servicios | Catálogos por área para clasificar el registro manual |
 | Planes de medición, evidencias, cálculo de desempeño y panel «Mi desempeño» | Operativos: metas y ponderadores reales por cargo, semáforo accesible y congelamiento al cerrar el período (ver «Medición del desempeño») |
-| Agenda y tableros | Pendientes para la siguiente etapa |
+| Tablero de delegación | Consolida resultados del equipo y permite consultar el detalle por funcionario |
+| Vista por cargo y actividad reciente | Operativas en Desempeño, con filtros de período y ámbito |
+| Comentarios internos y alertas | Hilos en Actividades y Casos sociales, avisos por revisión de evidencia y seguimiento de desempeño |
+| Agenda colectiva | Registro, asignación, seguimiento, alertas de vencimiento y medición del tubo |
 | Pruebas de estrés | Pendientes de evidencia: no se han inventado métricas; requieren el entorno de prueba acordado, la concurrencia, la duración y los umbrales de aceptación |
 
 Los mantenedores operativos y el ingreso de atención guardan y consultan registros en la base de datos, validan en
@@ -324,6 +328,20 @@ archivar, consultar el filtro «Archivada» y restaurar dentro de su ámbito. La
 aparecen en el listado habitual ni se exportan; intentar exportar desde el historial muestra
 un aviso para volver a Vigente. Las actividades de períodos cerrados y las vinculadas a una
 atención social permanecen de solo consulta, conservando su origen e historial.
+
+Para registrar manualmente una actividad nueva se indica el asunto o problema, la acción ejecutada
+y el tipo de actividad vigente del área del funcionario. El nombre o referencia de contacto y el
+teléfono se registran cuando corresponde. El formulario exige el siguiente nivel si el catálogo
+seleccionado tiene opciones vigentes: **tipo de actividad → servicio → tipo de atención →
+subatención**. **Configuración → Tipos de actividad / Servicios** administra los primeros niveles.
+En **Tipo de Atención** se puede asociar un servicio. Los tipos de atención generales ya usados por
+el portal y por Ingreso de atención siguen disponibles en esos flujos.
+
+Si se desactiva un catálogo, las relaciones históricas de las actividades se conservan. Las
+actividades anteriores pueden seguir consultándose sin completar una clasificación retroactiva.
+Desde el detalle manual se puede crear un compromiso y consultar los compromisos vinculados para
+los que se tenga permiso de Agenda.
+
 Al cerrar un caso, sus actividades se muestran con el estado «Resuelta» en el listado,
 el detalle y el Excel. En el listado, el filtro «Resuelta» se aplica a las actividades y solicitudes
 según el origen seleccionado.
@@ -580,8 +598,13 @@ diferencia y semáforo, además del total del funcionario.
   porque proviene de la agenda.
 - **Semáforo accesible.** Siempre texto + ícono («Verde: en meta» ✓, «Ámbar: bajo lo esperado» !,
   «Rojo: bajo el umbral» ✕); el color solo refuerza.
-- **Desviación (RF-030, parte A).** Con el total en rojo se muestran el último registro del
-  funcionario y los días sin registros.
+- **Actividad reciente (RF-030).** Muestra la fecha de la última actividad computable hasta el corte,
+  los días transcurridos desde esa actividad, la cantidad de registros válidos del período y el
+  promedio diario. El promedio usa días corridos desde el inicio hasta el corte, ambos incluidos.
+  El corte es hoy o el término del período, lo que ocurra primero. Con
+  `PERFORMANCE_INACTIVITY_DAYS` se puede destacar la inactividad desde el umbral indicado
+  (por defecto `0`, desactivado). Si nunca hubo registros válidos, el aviso usa los días desde
+  el inicio del período.
 - **Acceso.** `analytics.view_indicatorsnapshot` permite ver el propio resultado.
   `analytics.view_team_performance` permite elegir otro funcionario dentro del alcance del rol
   (delegación o global). Un identificador fuera del alcance responde 404 y queda en la auditoría.
@@ -592,6 +615,75 @@ diferencia y semáforo, además del total del funcionario.
   una base ya cargada sin abortar; solo a los creados por la semilla (descripción con el marcador
   `[SGR seed v1]`). Un rol personalizado con el mismo nombre no se modifica y la carga se detiene.
 - Un funcionario sin cargo o sin plan publicado ve un aviso, no un error.
+
+### Tablero de delegación (`/analytics/desempeno-delegacion/`)
+
+Disponible en Desempeño para quienes tienen permiso de consulta de equipo con alcance de delegación
+o global. Permite seleccionar la delegación y el período y abrir el detalle por funcionario.
+Agrupa por delegación principal. El total de actividades suma el avance de los ítems de cantidad y el
+resultado del equipo promedia los puntos de quienes tienen ítems medidos. Los compromisos de un
+período abierto se muestran aparte. En el detalle de un período abierto, los enlaces a Actividades
+respetan el alcance de consulta y señalan los registros computados que quedan fuera del alcance.
+
+En períodos cerrados, el tablero consulta el resultado y la delegación registrados al cierre.
+La migración añade el campo para los nuevos cierres. Los resultados históricos que carecen de esa
+atribución siguen disponibles en el panel individual.
+
+### Vista por cargo (`/analytics/desempeno-cargos/`)
+
+Reutiliza el permiso de consulta de equipo y permite filtrar por período y por una delegación
+autorizada o por todas las disponibles para el usuario. Agrupa por cargo y delegación principal
+vigentes, o por los registrados en el resultado al cierre de un período. Desde un cargo se puede
+consultar las metas y avances del equipo por ítem, el semáforo y la actividad reciente de cada
+funcionario, y abrir su panel individual cuando el alcance actual lo permite.
+
+Las cantidades se suman y los porcentajes se promedian por funcionario con dato disponible.
+Los indicadores de actividad reciente se calculan con los registros vigentes dentro del alcance
+de consulta, incluso cuando el resultado ponderado se muestra congelado.
+
+### Comentarios internos y alertas (RF-035, RF-037)
+
+En el detalle de Actividades y Casos sociales se pueden consultar los comentarios internos con
+autor y fecha. Para publicar se requiere permiso de modificación sobre el registro. Los casos
+cerrados y las actividades archivadas quedan en consulta. El portal ciudadano muestra sus propios
+mensajes de seguimiento y respuestas.
+
+En **Operación → Alertas**, cada funcionario habilitado consulta sus avisos y puede marcarlos como
+revisados. Al adjuntar evidencia, se avisa a los verificadores habilitados que pueden revisar ese
+registro según sus roles y su ámbito. Una decisión de revisión resuelve el aviso y conserva el
+historial. La bandeja vuelve a comprobar permisos sobre los registros enlazados.
+
+Las alertas de desempeño se generan para funcionarios medidos y supervisores autorizados en el
+período vigente. El aviso de inactividad usa `PERFORMANCE_INACTIVITY_DAYS` y el de bajo avance usa
+el semáforo rojo del plan. Para actualizar ambos:
+
+```bash
+python manage.py refresh_performance_alerts
+```
+
+Para ejecutarlo automáticamente, programa el comando en el entorno de operación. Puede repetirse:
+mantiene un aviso por tipo, destinatario, período y funcionario, y lo resuelve cuando la condición
+deja de cumplirse. El mismo comando actualiza los avisos de vencimiento de la Agenda colectiva.
+
+### Agenda colectiva (RF-016 a RF-021)
+
+En **Operación → Agenda colectiva** se pueden registrar compromisos internos o crearlos desde el
+detalle de un caso o una actividad. El compromiso conserva su delegación, territorio, responsable,
+solicitante, área de apoyo cuando corresponda y registro de origen. El listado y su resumen
+comparten filtros de delegación, territorio, responsable, estado y rango de fechas.
+
+El estado inicial es **Ingresado**. Un funcionario autorizado puede avanzar la gestión o dejarla
+pendiente con una observación. **Realizado** es el cierre operativo y registra fecha, autor y
+observación. Los roles de supervisión pueden reasignar compromisos aún abiertos con motivo
+auditable. El cálculo del tubo usa compromisos realizados sobre el total del funcionario por fecha
+comprometida. Un compromiso se puede terminar después del cierre del período asociado y conserva
+la fecha real, mientras la medición congelada sigue mostrando su resultado al cierre.
+
+El aviso al responsable y a supervisores autorizados se programa con
+`COMMITMENT_DUE_WARNING_DAYS` (3 días por defecto). Los avisos se actualizan al crear, reasignar o
+cambiar el estado, y al ejecutar `refresh_performance_alerts` para detectar el avance del calendario.
+La migración agrega permisos de agenda a los roles de demostración marcados por `seed_demo`.
+Los roles personalizados se configuran desde el mantenedor de roles.
 
 ### Congelamiento de períodos cerrados (RN-013)
 
@@ -692,7 +784,7 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
 | `configuration` | Ítems, catálogos de atención, períodos y auditoría                                                       | Implementada                      |
 | `activities`    | CRUD de actividades, ingreso/consulta de atenciones, portal y solicitudes del cliente, consumidores WebSocket | Implementada                      |
 | `common`        | `BaseModel`, control de acceso, exportación a Excel, paginación, `get_user_area` y comando `seed_demo` | Implementada                      |
-| `agenda`        | Planificación de actividades                                                                           | Reservada para la siguiente etapa |
+| `agenda`        | Agenda colectiva, comentarios internos y alertas                                                       | Implementada                      |
 | `analytics`     | Reportes e indicadores                                                                                   | Reservada para la siguiente etapa |
 
 ### Estructura de carpetas

@@ -89,7 +89,8 @@ class EvaluationAdminTests(TestCase):
 
     def activity_payload(self, **changes):
         data = dict(official=self.target.pk, item=self.activity.item_id, date=self.activity.date.isoformat(),
-                    record_type=self.activity.record_type, action_description='Evaluación ámbito A')
+                    record_type=self.activity.record_type, action_description='Evaluación ámbito A',
+                    subject="Actividad de evaluación", activity_type=self.target.area.activity_types.get().pk)
         data.update(changes)
         return data
 

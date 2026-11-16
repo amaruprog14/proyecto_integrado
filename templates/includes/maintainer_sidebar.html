@@ -23,7 +23,7 @@
             </nav>
         </div>
     {% endif %}
-    {% if perms.activities.add_socialattention or perms.activities.view_activity or perms.activities.view_socialattention %}
+    {% if perms.activities.add_socialattention or perms.activities.view_activity or perms.activities.view_socialattention or perms.agenda.view_commitment or user.official.is_enabled %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-operacion">Operación</p>
             <nav aria-labelledby="menu-operacion">
@@ -33,6 +33,8 @@
                 {% if perms.activities.add_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_entry' %} is-active{% endif %}" href="{% url 'attention_entry' %}"{% if active == 'attention_entry' %} aria-current="page"{% endif %}>Ingreso de atención</a>{% endif %}
                 {% if perms.activities.view_activity %}<a class="maintainer-sidebar-link{% if active == 'activities' %} is-active{% endif %}" href="{% url 'activity_maintainer' %}"{% if active == 'activities' %} aria-current="page"{% endif %}>Actividades</a>{% endif %}
                 {% if perms.activities.view_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_cases' %} is-active{% endif %}" href="{% url 'attention_cases' %}"{% if active == 'attention_cases' %} aria-current="page"{% endif %}>Casos sociales</a>{% endif %}
+                {% if perms.agenda.view_commitment %}<a class="maintainer-sidebar-link{% if active == 'commitment_list' %} is-active{% endif %}" href="{% url 'commitment_list' %}"{% if active == 'commitment_list' %} aria-current="page"{% endif %}>Agenda colectiva</a>{% endif %}
+                {% if user.official.is_enabled %}<a class="maintainer-sidebar-link{% if active == 'alert_list' %} is-active{% endif %}" href="{% url 'alert_list' %}"{% if active == 'alert_list' %} aria-current="page"{% endif %}>Alertas</a>{% endif %}
             </nav>
         </div>
     {% endif %}
@@ -44,11 +46,13 @@
             </nav>
         </div>
     {% endif %}
-    {% if perms.configuration.view_item or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype or perms.configuration.view_period %}
+    {% if perms.configuration.view_item or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype or perms.configuration.view_period or perms.configuration.view_activitytype or perms.configuration.view_servicetype %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-configuracion">Configuración</p>
             <nav aria-labelledby="menu-configuracion">
                 {% if perms.configuration.view_item %}<a class="maintainer-sidebar-link{% if active == 'items' %} is-active{% endif %}" href="{% url 'item_maintainer' %}"{% if active == 'items' %} aria-current="page"{% endif %}>Ítems y metas</a>{% endif %}
+                {% if perms.configuration.view_activitytype %}<a class="maintainer-sidebar-link{% if active == 'activity-types' %} is-active{% endif %}" href="{% url 'activity_type_maintainer' %}"{% if active == 'activity-types' %} aria-current="page"{% endif %}>Tipos de actividad</a>{% endif %}
+                {% if perms.configuration.view_servicetype %}<a class="maintainer-sidebar-link{% if active == 'service-types' %} is-active{% endif %}" href="{% url 'service_type_maintainer' %}"{% if active == 'service-types' %} aria-current="page"{% endif %}>Servicios</a>{% endif %}
                 {% if perms.configuration.view_attentiontype %}<a class="maintainer-sidebar-link{% if active == 'attention_types' %} is-active{% endif %}" href="{% url 'attention_type_maintainer' %}"{% if active == 'attention_types' %} aria-current="page"{% endif %}>Tipo de Atención</a>{% endif %}
                 {% if perms.configuration.view_subattentiontype %}<a class="maintainer-sidebar-link{% if active == 'subattention_types' %} is-active{% endif %}" href="{% url 'subattention_type_maintainer' %}"{% if active == 'subattention_types' %} aria-current="page"{% endif %}>Sub Atención</a>{% endif %}
                 {% if perms.configuration.view_period %}<a class="maintainer-sidebar-link{% if active == 'periods' %} is-active{% endif %}" href="{% url 'period_maintainer' %}"{% if active == 'periods' %} aria-current="page"{% endif %}>Períodos</a>{% endif %}

@@ -15,11 +15,11 @@ from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
 
-from accounts.models import Role, ServiceRecipient
+from accounts.models import Area, Role, ServiceRecipient
 from accounts.test_official_completion import OfficialFixture
 from activities.models import Activity, AttentionCase, SocialAttention
 from common.maintainer_forms import ActivityForm
-from configuration.models import Item, Period, AttentionType, SubattentionType, AuditLog
+from configuration.models import ActivityType, Item, Period, AttentionType, ServiceType, SubattentionType, AuditLog
 from config.asgi import application
 
 
@@ -34,6 +34,9 @@ class ActivityFixture(OfficialFixture):
         self.period = Period.objects.create(start_date=self.today-timedelta(days=10), end_date=self.today+timedelta(days=10))
         self.item = Item.objects.create(item_name='Visita territorial')
         self.other_item = Item.objects.create(item_name='Reunión')
+        self.target.area = Area.objects.create(area_name="Operación territorial")
+        self.target.save(update_fields=["area"])
+        self.activity_type = ActivityType.objects.create(area=self.target.area, name="Visita territorial")
         self.activity = Activity.objects.create(official=self.target, item=self.item, date=self.today,
             record_type=Activity.RecordType.FIELD, action_description='Visita de demostración')
         self.foreign_activity = Activity.objects.create(official=self.foreign, item=self.item, date=self.today,
@@ -43,7 +46,8 @@ class ActivityFixture(OfficialFixture):
 
     def payload(self, **changes):
         data = dict(official=self.target.pk, item=self.item.pk, date=self.today.isoformat(),
-                    record_type=Activity.RecordType.FIELD, action_description='Visita validada')
+                    record_type=Activity.RecordType.FIELD, action_description='Visita validada',
+                    subject="Visita de prueba", activity_type=self.activity_type.pk)
         data.update(changes)
         return data
 
@@ -53,6 +57,45 @@ class ActivityFixture(OfficialFixture):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], ALLOWED_HOSTS=['localhost','testserver'])
 class ActivityCompletionTests(ActivityFixture, TestCase):
+    def test_manual_activity_checks_area_chain_and_retains_historical_values(self):
+        self.client.force_login(self.users['editor'])
+        foreign_area = Area.objects.create(area_name="Área ajena")
+        foreign_type = ActivityType.objects.create(area=foreign_area, name="Inspección")
+        service = ServiceType.objects.create(activity_type=self.activity_type, name="Apoyo comunitario")
+        attention = AttentionType.objects.create(service_type=service, name="Orientación")
+        subattention = SubattentionType.objects.create(attention_type=attention, name="Consulta")
+        create = reverse("activity_create")
+        choices = self.client.get(reverse("activity_eligible_items"), {
+            "official": self.target.pk, "date": self.today.isoformat(),
+        }).json()["classification"]
+        self.assertEqual([row["id"] for row in choices["activity_type"]], [self.activity_type.pk])
+
+        for changes, field in (
+            ({"activity_type": ""}, "activity_type"),
+            ({"activity_type": foreign_type.pk}, "activity_type"),
+            ({}, "service_type"),
+            ({"service_type": service.pk}, "attention_type"),
+            ({"service_type": service.pk, "attention_type": attention.pk}, "subattention_type"),
+            ({"phone": "incorrecto"}, "phone"),
+        ):
+            response = self.client.post(create, self.payload(**changes), HTTP_X_MODAL_REQUEST="true")
+            self.assertIn(field, response.context["form"].errors)
+        payload = self.payload(
+            service_type=service.pk, attention_type=attention.pk, subattention_type=subattention.pk,
+            contact_name="Contacto ficticio", phone="56912345678",
+        )
+        self.assertEqual(self.client.post(create, payload, HTTP_X_MODAL_REQUEST="true").status_code, 204)
+        saved = Activity.objects.get(action_description="Visita validada")
+        self.assertEqual(saved.subattention_type, subattention)
+        self.activity_type.is_active = False
+        self.activity_type.save(update_fields=["is_active"])
+        self.assertEqual(self.client.post(reverse("activity_update", args=[saved.pk]), payload,
+                                         HTTP_X_MODAL_REQUEST="true").status_code, 204)
+        self.assertContains(self.client.get(reverse("activity_detail", args=[saved.pk])), "Apoyo comunitario")
+        self.assertIn("activity_type", self.client.post(
+            create, payload, HTTP_X_MODAL_REQUEST="true",
+        ).context["form"].errors)
+
     def test_editor_has_complete_create_detail_edit_modal_flow_without_archival(self):
         self.client.force_login(self.users['editor'])
         response = self.client.get(reverse('activity_create'), HTTP_X_MODAL_REQUEST='true')

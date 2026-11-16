@@ -13,6 +13,8 @@
             </div>
         </header>
 
+        {% include "analytics/performance_navigation.html" %}
+
         <form class="maintainer-tools performance-filters" method="get" aria-label="Período y funcionario">
             <div class="performance-filter">
                 <label class="form-label" for="performance-period">Período</label>
@@ -61,23 +63,29 @@
                 {% if result.notice %}<p class="alert alert-warning mt-3 mb-0" role="status">{{ result.notice }}</p>{% endif %}
             </section>
 
-            {% if deviation %}
-                <section class="attention-entry-card mb-3 performance-deviation" aria-labelledby="desviacion-title">
-                    <h2 class="h5" id="desviacion-title">Desviación: resultado bajo el umbral</h2>
-                    <p class="mb-0">
-                        {% if deviation.last_date %}
-                            Último registro: {{ deviation.last_date|date:"d-m-Y" }} · {{ deviation.days_without }} día{{ deviation.days_without|pluralize }} sin registros.
-                        {% else %}
-                            No hay registros del funcionario hasta la fecha.
-                        {% endif %}
-                    </p>
-                </section>
-            {% endif %}
+            <section class="attention-entry-card mb-3{% if total_light == 'RED' or recent.attention %} performance-deviation{% endif %}" aria-labelledby="recent-activity-title">
+                <h2 class="h5" id="recent-activity-title">Actividad reciente</h2>
+                {% if total_light == "RED" %}<p class="mb-2">Desviación: resultado bajo el umbral</p>{% endif %}
+                {% if period.start_date > today %}
+                    <p class="mb-0">El período aún no comienza.</p>
+                {% else %}
+                    <p class="text-muted">Actividades válidas hasta el {{ activity_cutoff|date:"d-m-Y" }}.{% if result.frozen %} La consulta de actividad usa los registros vigentes.{% endif %}</p>
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">Última actividad válida</dt>
+                        <dd class="col-sm-6">{{ recent.last_date|date:"d-m-Y"|default:"Sin registros válidos" }}</dd>
+                        <dt class="col-sm-6">Días sin registros válidos</dt>
+                        <dd class="col-sm-6">{% if recent.days_without is not None %}{{ recent.days_without }}{% else %}—{% endif %}</dd>
+                        <dt class="col-sm-6">Registros válidos del período</dt><dd class="col-sm-6">{{ recent.count }}</dd>
+                        <dt class="col-sm-6">Promedio diario del período</dt><dd class="col-sm-6">{{ recent.daily_average|floatformat:2 }}</dd>
+                    </dl>
+                    {% if recent.attention %}<p class="alert alert-warning mb-0">Se alcanzó el umbral de días sin registros válidos.</p>{% endif %}
+                {% endif %}
+            </section>
 
             {% if rows %}
                 <section class="attention-entry-card mb-3" aria-labelledby="items-title">
                     <h2 class="h5" id="items-title">Resultado por ítem</h2>
-                    <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="items-title">
+                    <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="items-title">
                         <table class="table maintainer-table">
                             <thead><tr>
                                 <th scope="col">Ítem</th><th scope="col">Meta</th><th scope="col">Avance</th>
@@ -121,6 +129,9 @@
                     <li><strong data-counter="commitments-open">{{ commitments.open }}</strong> compromisos abiertos{% if commitments.overdue %}, {{ commitments.overdue }} vencido{{ commitments.overdue|pluralize }}{% endif %}</li>
                     <li><strong data-counter="commitments-done">{{ commitments.done }}</strong> compromisos realizados</li>
                 </ul>
+                {% if perms.agenda.view_commitment %}
+                    <p class="mt-3 mb-0"><a class="auth-text-link" href="{% url 'commitment_list' %}?responsable={{ subject.pk }}&amp;desde={{ period.start_date|date:'Y-m-d' }}&amp;hasta={{ period.end_date|date:'Y-m-d' }}">Ver compromisos del período</a></p>
+                {% endif %}
             </section>
         {% endif %}
     </section>

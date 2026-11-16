@@ -18,8 +18,9 @@ from common.exports import xlsx_response
 from common.modal_forms import add_form_success, is_modal_request
 from common.text import normalize_spaces, describe_changes
 from common.scopes import permission_scope, delegation_ids
-from common.maintainer_forms import FunctionForm, PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm, TerritoryForm, protect_last_group_administrator
-from configuration.models import Item, Period
+from common.maintainer_forms import (FunctionForm, PositionForm, AreaForm, GroupForm, PeriodForm, ActivityForm,
+    ActivityTypeForm, ServiceTypeForm, TerritoryForm, protect_last_group_administrator)
+from configuration.models import ActivityType, Item, Period, ServiceType
 from configuration.services import AuditoriaService
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
 from activities.models import Activity, AttentionCase, ClientRequest, EvidenceValidation
@@ -30,6 +31,8 @@ CATALOGS = {
     "position": (Position, PositionForm, "Cargos", "positions", ("position_name", "description")),
     "function": (Function, FunctionForm, "Funciones", "functions", ("function_name", "description")),
     "area": (Area, AreaForm, "Áreas", "areas", ("area_name",)),
+    "activity_type": (ActivityType, ActivityTypeForm, "Tipos de actividad", "activity-types", ("name", "area__area_name")),
+    "service_type": (ServiceType, ServiceTypeForm, "Servicios", "service-types", ("name", "activity_type__name")),
     "group": (Group, GroupForm, "Grupos", "groups", ("name",)),
     "period": (Period, PeriodForm, "Períodos", "periods", ("start_date", "end_date")),
     "activity": (Activity, ActivityForm, "Actividades", "activities", ("code", "official__full_name", "item__item_name", "date", "record_type")),
@@ -123,6 +126,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         qs = model.objects.all()
         if self.key == "group":
             return qs.select_related("sgr_profile")
+        if self.key in ("activity_type", "service_type"):
+            return qs.filter(deleted_at__isnull=True).select_related(self.spec[1].parent_field)
         return qs.filter(deleted_at__isnull=True)
 
     def object(self, pk):
@@ -135,7 +140,9 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
     def context(self):
         permission = self.get_permission_required()[0].split(".")[0]
         model = self.spec[0]._meta.model_name
-        entities = {"territory": "territorio", "position": "cargo", "function": "función", "area": "área", "group": "grupo", "period": "período", "activity": "actividad"}
+        entities = {"territory": "territorio", "position": "cargo", "function": "función", "area": "área",
+                    "group": "grupo", "period": "período", "activity": "actividad",
+                    "activity_type": "tipo de actividad", "service_type": "servicio"}
         entity = entities[self.key]
         feminine = self.key in ("area", "activity", "function")
         form_title = f"Editar {entity}" if self.operation == "update" else f"{'Nueva' if feminine else 'Nuevo'} {entity}"
@@ -160,6 +167,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             match = Q()
             for field in self.spec[4]:
                 match |= Q(**{field + "__icontains": query})
+            if self.key == "activity":
+                match |= Q(subject__icontains=query) | Q(action_description__icontains=query)
             qs = qs.filter(match)
         status = self.request.GET.get("status")
         if self.key == "period" and status in ("OPEN", "CLOSED"):
@@ -303,9 +312,21 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 context["measurement_url"] = reverse("measurement_plan_list", args=[obj.pk])
             if self.key == "activity":
                 from activities.evidence import evidence_context
+                from agenda.comments import comments_context
 
+                fields = ("subject", "contact_name", "phone", "activity_type", "service_type", "attention_type", "subattention_type")
+                for name in fields:
+                    if not getattr(obj, name):
+                        context["values"].pop(str(Activity._meta.get_field(name).verbose_name), None)
                 context["measurement"] = activity_measurement(obj)
                 context.update(evidence_context(request.user, obj))
+                context.update(comments_context(request.user, obj, "activity"))
+                if obj.deleted_at is None and request.user.has_perms(("agenda.view_commitment", "agenda.add_commitment")):
+                    context["commitment_create_url"] = reverse("commitment_from_activity", args=[obj.pk])
+                if request.user.has_perm("agenda.view_commitment"):
+                    from agenda.commitments import scoped_commitments
+
+                    context["linked_commitments"] = scoped_commitments(request.user).filter(origin_activity=obj)
             if self.key == "activity" and hasattr(obj, "social_attentions"):
                 attention = obj.social_attentions
                 from activities.cases import scoped_cases
@@ -377,8 +398,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 context["statuses"] = (*context["statuses"], *request_statuses)
         template = {"territory": "accounts/territory_list.html", "position": "accounts/position_list.html", "area": "accounts/area_list.html",
             "group": "accounts/group_list.html", "period": "configuration/period_list.html",
-            "function": "maintainers/list.html",
-            "activity": "activities/activity_list.html"}[self.key]
+            "activity": "activities/activity_list.html"}.get(self.key, "maintainers/list.html")
         context.update(self.list_pagination_context())
         response = render(request, template, context)
         response["X-List-URL"] = request.path + "?" + query_params(request._list_state).urlencode()
@@ -400,6 +420,10 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 raise PermissionDenied("La delegación del territorio no está autorizada o vigente.")
         if isinstance(obj, Group) and not self.request.user.is_superuser and obj.user_set.filter(pk=self.request.user.pk).exists():
             raise PermissionDenied("No puedes modificar tu propio grupo.")
+        if self.operation == "activate" and isinstance(obj, (ActivityType, ServiceType)):
+            parents = (obj.area,) if isinstance(obj, ActivityType) else (obj.activity_type, obj.activity_type.area)
+            if any(not parent.is_active or parent.deleted_at is not None for parent in parents):
+                raise ValidationError("Activa primero los catálogos de los que depende este registro.")
 
     def post(self, request, pk=None):
         if self.operation not in ("create", "update", "activate", "deactivate", "close"):

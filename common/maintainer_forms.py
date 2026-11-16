@@ -9,12 +9,13 @@ from accounts.role_forms import (
     PermissionCheckboxSelectMultiple, PermissionMultipleChoiceField,
     assignable_permissions, can_grant_privileged_permissions, group_permissions,
 )
-from accounts.forms import privileged_permission_query
+from accounts.forms import clean_phone, privileged_permission_query
 from common.text import normalize_spaces, clean_description_text
 from common.field_validation import LimitedTextFieldsMixin, clean_catalog_name, configure_text_widgets
 from common.scopes import scope_officials
-from configuration.models import Period, Item
+from configuration.models import ActivityType, Item, Period, ServiceType
 from activities.models import Activity
+from activities.classification import CLASSIFICATION, classification_choices
 from analytics.measurement import eligible_items
 
 
@@ -119,6 +120,59 @@ class AreaForm(MaintainerForm):
         fields = ("area_name", "is_active")
 
 
+class ActivityCatalogForm(MaintainerForm):
+    text_limits = {"name": 100}
+    parent_field = ""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields[self.parent_field]
+        original = getattr(self.instance, f"{self.parent_field}_id")
+        field.queryset = field.queryset.filter(Q(is_active=True, deleted_at__isnull=True) | Q(pk=original))
+
+    def clean_name(self):
+        return clean_catalog_name(self.cleaned_data["name"])
+
+    def clean(self):
+        data = super().clean()
+        parent = data.get(self.parent_field)
+        name = data.get("name")
+        if parent and name and self._meta.model.objects.filter(
+            **{self.parent_field: parent, "name__iexact": name},
+        ).exclude(pk=self.instance.pk).exists():
+            self.add_error("name", "Ya existe un registro con este nombre en el grupo seleccionado.")
+        if parent and self.instance.pk and parent.pk != getattr(self.instance, f"{self.parent_field}_id"):
+            if self.instance.manual_activities.exists() or getattr(self.instance, self.children).exists():
+                self.add_error(self.parent_field, "El registro ya está en uso y conserva su asociación original.")
+        return data
+
+
+class ActivityTypeForm(ActivityCatalogForm):
+    parent_field = "area"
+    children = "service_types"
+
+    class Meta:
+        model = ActivityType
+        fields = ("name", "area", "is_active")
+
+
+class ServiceTypeForm(ActivityCatalogForm):
+    parent_field = "activity_type"
+    children = "attention_types"
+
+    class Meta:
+        model = ServiceType
+        fields = ("name", "activity_type", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields["activity_type"]
+        field.queryset = field.queryset.filter(
+            Q(area__is_active=True, area__deleted_at__isnull=True) | Q(pk=self.instance.activity_type_id),
+        ).select_related("area")
+        field.label_from_instance = lambda record: f"{record.area} · {record.name}"
+
+
 class PeriodForm(MaintainerForm):
     def clean(self):
         data = super().clean()
@@ -145,11 +199,14 @@ class PeriodForm(MaintainerForm):
 
 
 class ActivityForm(MaintainerForm):
-    text_limits = {"action_description": 200}
+    text_limits = {"action_description": 200, "subject": 200, "contact_name": 150, "phone": 30}
 
     class Meta:
         model = Activity
-        fields = ("official", "item", "date", "record_type", "action_description")
+        fields = (
+            "official", "item", "date", "record_type", "subject", "action_description",
+            "contact_name", "phone", "activity_type", "service_type", "attention_type", "subattention_type",
+        )
 
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, actor=actor, **kwargs)
@@ -173,13 +230,42 @@ class ActivityForm(MaintainerForm):
         if self.instance.pk:
             self.fields["item"].widget.attrs["data-activity-id"] = self.instance.pk
         self.fields["record_type"].choices = Activity.RecordType.choices[:2]
+        catalog_required = not self.instance.pk or self.instance.activity_type_id is not None
+        for key, _, _ in CLASSIFICATION:
+            self.fields[key].widget.attrs["data-activity-classification"] = key
+        for key, choices in classification_choices(official, self.instance).items():
+            self.fields[key].queryset = choices
+        for key in ("subject", "action_description", "activity_type"):
+            self.fields[key].required = catalog_required
+        self.fields["activity_type"].help_text = "Se muestran los tipos de actividad vigentes del área del funcionario."
+        self.fields["service_type"].help_text = "Si el tipo ofrece servicios, elige el que corresponda."
+
+    def clean_phone(self):
+        return clean_phone(self.cleaned_data["phone"])
 
     def clean(self):
         data = super().clean()
         official, date, item = (data.get(field) for field in ("official", "date", "item"))
         if official and date and item and not activity_item_choices(official, date, self.instance).filter(pk=item.pk).exists():
             self.add_error("item", self.fields["item"].error_messages["invalid_choice"])
+        if official and self.fields["activity_type"].required and not self.fields["activity_type"].queryset.exists():
+            self.add_error("official", "El funcionario necesita un área con tipos de actividad vigentes.")
+        if data.get("phone") and not data.get("contact_name"):
+            self.add_error("contact_name", "Indica el nombre o una referencia para este teléfono.")
+        self.validate_classification(data)
         return data
+
+    def validate_classification(self, data):
+        for index, (key, _, parent_field) in enumerate(CLASSIFICATION[1:], start=1):
+            parent_key = CLASSIFICATION[index - 1][0]
+            parent = data.get(parent_key)
+            selected = data.get(key)
+            if key in self.errors:
+                continue
+            if selected and (parent is None or getattr(selected, parent_field) != parent.pk):
+                self.add_error(key, "Elige una opción asociada al catálogo seleccionado.")
+            elif parent and not selected and self.fields[key].queryset.filter(**{parent_field: parent.pk}).exists():
+                self.add_error(key, "Selecciona una opción de este catálogo.")
 
     def save(self, commit=True):
         previous_official = self.initial.get("official")

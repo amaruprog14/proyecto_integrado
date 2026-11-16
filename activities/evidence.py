@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views import View
 from PIL import Image, ImageOps
 
+from agenda.alerts import notify_evidence_reviewers, resolve_evidence_alerts
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.text import clean_description_text
 from configuration.models import Period
@@ -201,6 +202,7 @@ class EvidenceUploadView(EvidenceMutationView):
                     saved.append(name)
                     Evidence.objects.create(activity=activity, batch=batch, original_name=original, file_url=name,
                                             file_format=extension, size_kb=(len(content) + 1023) // 1024)
+                notify_evidence_reviewers(batch)
                 AuditoriaService.register_change(actor, "Evidencia adjuntada", batch,
                                                 new_value=f"{activity.code} · {batch.get_stage_display()} · {len(saved)} imágenes")
         except Exception as error:
@@ -244,6 +246,7 @@ class EvidenceReviewView(EvidenceMutationView):
                                        validated_at=timezone.now())
                     for image in images
                 ])
+                resolve_evidence_alerts(batch)
                 AuditoriaService.register_change(actor, "Evidencia revisada", batch,
                     previous_value=EvidenceValidation.Status.PENDING, new_value=f"{status} · {observation}")
         except ValidationError as error:

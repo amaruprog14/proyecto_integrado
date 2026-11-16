@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Tablero de delegación · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="maintainer-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> Desempeño</p>
+                <h1 id="maintainer-title">Tablero de delegación</h1>
+            </div>
+        </header>
+
+        {% include "analytics/performance_navigation.html" %}
+
+        {% if periods and delegations %}
+            <form class="maintainer-tools performance-filters" method="get" aria-label="Delegación y período">
+                <div class="performance-filter">
+                    <label class="form-label" for="team-delegation">Delegación</label>
+                    <select class="form-select" id="team-delegation" name="delegation">
+                        {% for option in delegations %}
+                            <option value="{{ option.pk }}"{% if option.pk == delegation.pk %} selected{% endif %}>{{ option.delegation_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="performance-filter">
+                    <label class="form-label" for="team-period">Período</label>
+                    <select class="form-select" id="team-period" name="period">
+                        {% for option in periods %}
+                            <option value="{{ option.pk }}"{% if option.pk == period.pk %} selected{% endif %}>{{ option.start_date|date:"d-m-Y" }} al {{ option.end_date|date:"d-m-Y" }} · {{ option.get_status_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-primary" type="submit">Ver resultado</button>
+            </form>
+        {% endif %}
+
+        {% if not period %}
+            <p class="alert alert-info" role="status">Aún no hay períodos de medición registrados.</p>
+        {% elif not delegation %}
+            <p class="alert alert-info" role="status">No hay delegaciones disponibles para tu cuenta.</p>
+        {% else %}
+            <section class="attention-entry-card mb-3" aria-labelledby="team-summary">
+                <h2 class="h5" id="team-summary">Resumen de {{ delegation.delegation_name }}</h2>
+                {% if closed %}
+                    {% if period.frozen_at %}
+                        <p class="text-muted">Resultados congelados el {{ period.frozen_at|date:"d-m-Y H:i" }}. Se incluyen los funcionarios cuya delegación quedó registrada al cierre.</p>
+                    {% else %}
+                        <p class="text-muted">El período está cerrado y aún no tiene resultados congelados.</p>
+                    {% endif %}
+                {% endif %}
+                {% if rows or not closed %}
+                <dl class="row mb-0">
+                    <dt class="col-sm-6">Actividades computadas</dt><dd class="col-sm-6">{{ total_activities|floatformat:"0" }}</dd>
+                    <dt class="col-sm-6">Funcionarios medidos</dt><dd class="col-sm-6">{{ measured_count }} de {{ rows|length }}</dd>
+                    <dt class="col-sm-6">Resultado del equipo (promedio ponderado individual)</dt>
+                    <dd class="col-sm-6">{% if average is not None %}{{ average|floatformat:2 }} puntos{% else %}—{% endif %}</dd>
+                    <dt class="col-sm-6">Meta esperada promedio</dt>
+                    <dd class="col-sm-6">{% if expected_average is not None %}{{ expected_average|floatformat:2 }} %{% else %}—{% endif %}</dd>
+                    <dt class="col-sm-6">Funcionarios por semáforo</dt>
+                    <dd class="col-sm-6">Verde {{ colors.GREEN }} · Ámbar {{ colors.AMBER }} · Rojo {{ colors.RED }}</dd>
+                    {% if commitments %}
+                        <dt class="col-sm-6">Compromisos del período</dt>
+                        <dd class="col-sm-6">{{ commitments.done }} de {{ commitments.total }} realizados · {{ commitments.overdue }} vencidos</dd>
+                    {% endif %}
+                </dl>
+                <p class="performance-note mt-2 mb-0">El equipo se agrupa por delegación principal. Los resultados individuales incluyen las actividades computadas de cada funcionario.</p>
+                {% endif %}
+            </section>
+
+            {% if rows %}
+                <section class="attention-entry-card mb-3" aria-labelledby="team-officials">
+                    <h2 class="h5" id="team-officials">Resultados por funcionario</h2>
+                    <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="team-officials">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Funcionario</th><th scope="col">Cargo</th><th scope="col">Actividades computadas</th>
+                                <th scope="col">Meta esperada</th><th scope="col">Resultado ponderado</th><th scope="col">Semáforo</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for row in rows %}
+                                    <tr>
+                                        <th scope="row">
+                                            <a class="auth-text-link" href="?delegation={{ delegation.pk }}&amp;period={{ period.pk }}&amp;official={{ row.result.official.pk }}#team-detail">{{ row.result.official.full_name }}</a>
+                                            {% if row.result.notice %}<span class="performance-note">{{ row.result.notice }}</span>{% endif %}
+                                        </th>
+                                        <td>{{ row.position|default:"Sin cargo" }}</td>
+                                        <td>{% if row.result.items %}{{ row.activity_count|floatformat:"0" }}{% else %}—{% endif %}</td>
+                                        <td>{% if row.result.items %}{{ row.result.expected_percentage|floatformat:2 }} %{% else %}—{% endif %}</td>
+                                        <td>{% if row.result.items %}{{ row.result.total|floatformat:2 }} puntos{% else %}—{% endif %}</td>
+                                        <td>{% include "analytics/traffic_light.html" with light=row.light %}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% else %}
+                <p class="alert alert-info" role="status">No hay resultados para esta delegación y período.</p>
+            {% endif %}
+
+            {% if selected %}
+                <section class="attention-entry-card" aria-labelledby="team-detail" tabindex="-1">
+                    <h2 class="h5" id="team-detail">Detalle de {{ selected.result.official.full_name }}</h2>
+                    {% if can_open_personal %}
+                        <p><a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ selected.result.official.pk }}">Abrir desempeño individual</a></p>
+                    {% endif %}
+                    {% if selected_items %}
+                        <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="team-detail">
+                            <table class="table maintainer-table">
+                                <thead><tr>
+                                    <th scope="col">Ítem</th><th scope="col">Meta</th><th scope="col">Avance</th>
+                                    <th scope="col">Resultado ponderado</th><th scope="col">Semáforo</th>
+                                </tr></thead>
+                                <tbody>
+                                    {% for entry in selected_items %}
+                                        {% with item=entry.item %}
+                                            <tr>
+                                                <th scope="row">
+                                                    {% if entry.activity_link %}
+                                                        <a class="auth-text-link" href="{{ entry.activity_link }}" title="Ver actividades de origen">{{ item.item }}</a>
+                                                        {% if entry.hidden %}<span class="performance-note">{{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} fuera de tu alcance de consulta.</span>{% endif %}
+                                                    {% else %}
+                                                        {{ item.item }}
+                                                    {% endif %}
+                                                </th>
+                                                <td>{% if item.goal is not None %}{{ item.goal|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                                <td>{% if item.progress is not None %}{{ item.progress|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                                <td>{{ item.weighted|floatformat:2 }} puntos</td>
+                                                <td>{% include "analytics/traffic_light.html" with light=item.traffic_light %}</td>
+                                            </tr>
+                                        {% endwith %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p>{{ selected.result.notice|default:"No hay ítems medidos en el período." }}</p>
+                    {% endif %}
+                </section>
+            {% endif %}
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
