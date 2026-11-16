@@ -25,32 +25,22 @@ from accounts.models import Delegation, Official, Role
 from activities.models import Activity, EvidenceBatch, EvidenceValidation
 from agenda.models import Commitment
 from analytics.models import MeasurementItem
-from analytics.services import CalculadorDesempenoService, TrafficLight, computable_activities, computable_days
+from analytics.queries import (
+    TEAM_PERFORMANCE, VIEW_PERFORMANCE, available_periods, performance_delegations,
+    select_period, summarize_team, team_results,
+)
+from analytics.services import CalculadorDesempenoService, computable_activities, computable_days
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.maintainers import activity_queryset
-from common.scopes import delegation_ids, permission_scope, scope_officials
+from common.scopes import permission_scope, scope_officials
 from configuration.models import Period
 
-VIEW_PERFORMANCE = "analytics.view_indicatorsnapshot"
-TEAM_PERFORMANCE = "analytics.view_team_performance"
 VIEW_ACTIVITY = "activities.view_activity"
 
 
-def default_period(periods, today):
-    current = next((p for p in periods if p.start_date <= today <= p.end_date), None)
-    started = next((p for p in periods if p.start_date <= today), None)
-    return current or started or (periods[0] if periods else None)
-
-
 def period_selection(request, today):
-    periods = list(Period.objects.filter(deleted_at__isnull=True).order_by("-start_date"))
-    period_id = request.GET.get("period")
-    if not period_id:
-        return periods, default_period(periods, today)
-    period = next((option for option in periods if str(option.pk) == period_id), None)
-    if period is None:
-        raise Http404("No se encontró el período solicitado.")
-    return periods, period
+    periods = list(available_periods())
+    return periods, select_period(periods, today, request.GET.get("period"))
 
 
 def activity_list_link(official, item, period, until):
@@ -203,31 +193,7 @@ class TeamPerformanceView(ProtectedViewMixin, View):
         )
 
     def delegations(self):
-        queryset = Delegation.objects.filter(deleted_at__isnull=True).order_by("delegation_name", "pk")
-        if permission_scope(self.request.user, TEAM_PERFORMANCE) == Role.Scope.ALL:
-            return queryset
-        return queryset.filter(pk__in=delegation_ids(self.request.user))
-
-    def team_results(self, period, today, delegations):
-        if period.status == Period.Status.CLOSED:
-            if period.frozen_at is None:
-                return []
-            grouped = defaultdict(list)
-            snapshots = CalculadorDesempenoService.frozen_snapshots(period).filter(
-                closing_delegation__in=delegations,
-            ).select_related("official", "item", "version__plan__position", "closing_delegation").order_by(
-                "official__full_name", "official_id", "item__item_name", "pk",
-            )
-            for snapshot in snapshots:
-                grouped[snapshot.official_id].append(snapshot)
-            return [
-                CalculadorDesempenoService.frozen_result(rows[0].official, period, rows)
-                for rows in grouped.values()
-            ]
-        officials = Official.objects.filter(delegation__in=delegations, deleted_at__isnull=True).select_related(
-            "position", "delegation",
-        ).order_by("full_name", "pk")
-        return CalculadorDesempenoService.calculate_many(officials, period, today)
+        return performance_delegations(self.request.user)
 
     def requested_delegation(self, delegation_options):
         delegation_id = self.request.GET.get("delegation")
@@ -256,15 +222,11 @@ class DelegationPerformanceView(TeamPerformanceView):
             return render(request, "analytics/delegation_performance.html", context)
 
         closed = period.status == Period.Status.CLOSED
-        results = self.team_results(period, today, delegation_options.filter(pk=delegation.pk).order_by())
+        results = team_results(period, today, delegation_options.filter(pk=delegation.pk).order_by())
 
         rows = []
-        measured = [result for result in results if result.items]
-        colors = {light: 0 for light in TrafficLight.values}
         for result in results:
             light = result.total_traffic_light
-            if light in colors:
-                colors[light] += 1
             rows.append({
                 "result": result, "light": light,
                 "position": result.position,
@@ -289,11 +251,7 @@ class DelegationPerformanceView(TeamPerformanceView):
                 overdue=Count("pk", filter=~Q(current_status=Commitment.Status.DONE) & Q(committed_date__lt=today)),
             )
         context.update(
-            rows=rows, measured_count=len(measured), colors=colors,
-            total_activities=sum(row["activity_count"] for row in rows),
-            average=sum(result.total for result in measured) / len(measured) if measured else None,
-            expected_average=sum(result.expected_percentage for result in measured) / len(measured) if measured else None,
-            commitments=commitments, closed=closed,
+            rows=rows, commitments=commitments, closed=closed, **summarize_team(results),
         )
         return render(request, "analytics/delegation_performance.html", context)
 
@@ -359,7 +317,7 @@ class PositionPerformanceView(TeamPerformanceView):
         if period is None:
             return render(request, "analytics/position_performance.html", context)
         selected_delegations = delegations.filter(pk=delegation.pk) if delegation else delegations
-        results = self.team_results(period, today, selected_delegations.order_by())
+        results = team_results(period, today, selected_delegations.order_by())
         grouped = defaultdict(list)
         for result in results:
             position = result.position
