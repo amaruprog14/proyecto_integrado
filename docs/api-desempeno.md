@@ -28,6 +28,19 @@ Al cambiar o recuperar la contraseña, los tokens de acceso y renovación anteri
 rechaza los tokens emitidos antes de habilitar la revocación por cambio de contraseña, por lo
 que al actualizar el servicio los clientes de la API deben volver a autenticarse.
 
+## Reconciliar el resultado final
+
+`GET /api/v1/mi-desempeno/` mantiene todos sus campos anteriores (`total_ponderado` sigue siendo el resultado final) y agrega estos para explicar la cifra:
+
+| Campo | Significado |
+| --- | --- |
+| `total_base` | Suma de `resultado_ponderado` de los ítems, sin reclamos ni felicitaciones. |
+| `ajustes_computables` | Suma de `puntos_computables` de los reclamos y felicitaciones aprobados. |
+| `tope_resultado_final` | Tope del resultado final configurado en la versión del plan (`150.00` por defecto). |
+| `ajustes` | Detalle de cada ajuste aprobado: `tipo` (Felicitación o Reclamo), `fecha` del hecho, `puntos_autorizados`, `puntos_computables` y `excluido_por_limite`. |
+
+La regla es `total_ponderado = min(total_base + ajustes_computables, tope_resultado_final)`. Solo computan las tres primeras felicitaciones aprobadas del período; las siguientes aparecen con `excluido_por_limite: true` y `puntos_computables: "0.00"`. Un reclamo tiene puntos negativos. En un corte intermedio solo cuentan los ajustes validados hasta la fecha de corte. En un período congelado `total_ponderado`, `total_base`, `ajustes_computables` y `ajustes` salen del resumen guardado al cierre y no cambian aunque después se modifiquen los ajustes, igual que `tope_resultado_final` (los resúmenes congelados antes de que el tope fuera configurable informan 150, la regla vigente entonces). En resultados congelados antes de existir ese resumen, el total es la suma de los ítems sin ajustes y `tope_resultado_final` es `null`, porque no se aplicó tope. Sin indicadores, `total_base`, `ajustes_computables` y `tope_resultado_final` son `null` y `ajustes` es una lista vacía. Los valores se redondean a dos decimales al mostrarlos, por lo que la suma puede diferir en un centésimo.
+
 ## Actualizar en EC2
 
 Después de incorporar los cambios, ejecuta estos comandos desde la carpeta del proyecto con el mismo entorno virtual que usa el servicio.

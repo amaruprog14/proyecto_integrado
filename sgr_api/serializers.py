@@ -64,11 +64,30 @@ class PerformanceItemSerializer(serializers.Serializer):
     aviso = serializers.CharField(source="notice", allow_blank=True)
 
 
+class ScoreAdjustmentDetailSerializer(serializers.Serializer):
+    tipo = serializers.CharField(source="kind", help_text="Felicitación o Reclamo.")
+    fecha = serializers.DateField(source="date", help_text="Fecha del hecho.")
+    puntos_autorizados = decimal_field("points")
+    puntos_computables = decimal_field("applied_points")
+    excluido_por_limite = serializers.BooleanField(
+        source="excluded", help_text="Felicitación sobre el límite de tres por período: no suma puntos.")
+
+
 class PersonalPerformanceSerializer(serializers.Serializer):
     periodo = PeriodSerializer()
     cargo = serializers.CharField(allow_null=True)
     fecha_corte = serializers.DateField()
-    total_ponderado = decimal_field("total")
+    total_ponderado = serializers.DecimalField(
+        source="total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
+        rounding=ROUND_HALF_UP, help_text="Resultado final: min(total_base + ajustes_computables, tope_resultado_final).")
+    total_base = serializers.DecimalField(
+        source="base_total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
+        rounding=ROUND_HALF_UP, help_text="Suma de los resultados ponderados de los ítems, sin ajustes.")
+    ajustes_computables = serializers.DecimalField(
+        source="adjustment_total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
+        rounding=ROUND_HALF_UP, help_text="Suma de los puntos computables de reclamos y felicitaciones aprobados.")
+    tope_resultado_final = decimal_field("max_final")
+    ajustes = ScoreAdjustmentDetailSerializer(many=True, source="adjustments")
     semaforo = serializers.ChoiceField(choices=TrafficLight.choices, allow_null=True)
     items = PerformanceItemSerializer(many=True)
     aviso = serializers.CharField(allow_null=True)

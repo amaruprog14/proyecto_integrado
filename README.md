@@ -669,7 +669,13 @@ otros datos que no corresponden al detalle general quedan reservados.
 
 La consulta es de solo lectura. Los intentos de escritura se rechazan y quedan en la bitácora.
 Los cambios de reglas, ítems y ajustes individuales de medición quedan registrados junto con la
-cuenta que ejecutó la operación. Los estados de solicitudes ciudadanas y los cambios operativos
+cuenta que ejecutó la operación. Crear un ajuste individual se registra como «Creación de ajuste
+individual», sin valor anterior; editarlo, como «Edición de ajuste individual» con el valor anterior
+real. En los catálogos operativos (delegaciones, cargos, áreas, funciones, territorios, ítems, tipos
+de actividad, servicios, tipos de atención y subatenciones) se muestran el valor anterior y el nuevo
+de todos sus campos, salvo los sensibles (contraseñas, tokens, rutas de archivos, correos,
+teléfonos, RUT y similares). Fuera de los catálogos sigue rigiendo la lista explícita de campos
+operativos. Los estados de solicitudes ciudadanas y los cambios operativos
 del seguimiento de casos y cartas conservan su trazabilidad.
 
 ### Comentarios internos y alertas (RF-035, RF-037)
@@ -739,6 +745,22 @@ Es idempotente: si el período ya tiene `frozen_at` no cambia nada (tampoco si d
 se asigna un cargo con plan a alguien). Mientras no se
 ejecute, el panel avisa que el período cerrado no tiene resultados congelados (no los recalcula).
 
+### Respaldo congelado: «¿Qué respaldó este resultado?»
+
+Al congelar un período (`close_period`, `freeze_period` o `CalculadorDesempenoService.freeze_period`)
+se guarda también, por cada indicador congelado, el registro exacto que aportó a su cifra
+(`IndicatorSupportSnapshot`, una fila por indicador y registro). Desde **Mi desempeño**, el modal del
+tablero de delegación y la vista por cargo se abre en solo lectura, paginado y con el mismo alcance
+que el panel individual: un usuario que no puede ver al funcionario recibe 404. En un período
+congelado todos los enlaces del panel personal llevan a este respaldo, nunca al listado operativo;
+en un período abierto los enlaces no cambian. El resumen (cantidades, numerador y denominador) es
+siempre el del funcionario completo, pero las filas se limitan al alcance de consulta de actividades
+y compromisos de quien consulta, con las mismas reglas que el detalle operativo: una actividad
+archivada después del cierre solo se muestra con el permiso y alcance de archivo, y un compromiso
+archivado no se muestra. Si quedan registros fuera de ese alcance, un aviso indica cuántos. El cierre (`close_period`) toma el bloqueo del
+registro de períodos antes de congelar, igual que las demás rutas de escritura, para que la cifra y
+su respaldo salgan del mismo estado.
+
 `GoalThreshold` y `Weighting` quedan **obsoletos**: el calculador ya no los consulta. Se conservan
 sin migrar ni borrar datos para no perder información; no deben recibir usos nuevos.
 
@@ -782,7 +804,11 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   publicada vigente para el cargo en la fecha del hecho. En un borrador del plan se pueden configurar
   los valores por cargo y período (+10 y −20 por defecto, o un descuento de 30 puntos si corresponde).
   Computan las tres primeras felicitaciones aprobadas por funcionario y período. El resultado suma
-  los ajustes al total ponderado, con tope de 150 puntos. El desglose queda congelado al cerrar.
+  los ajustes al total ponderado, con el tope del resultado final de la versión del plan
+  (`max_final_score`, 150 puntos por defecto, entre 1 y 1000, editable en el borrador del plan y
+  copiado a cada revisión). Es una regla del proyecto, distinta del tope de cumplimiento por ítem de
+  la guía B3 (`max_computable`, 150 % por defecto); el panel muestra la base y el tope cuando recorta. Con tramos de cargo rige el tope de la última versión aplicada. El tope
+  y el desglose quedan congelados al cerrar; los cierres anteriores a este campo usaron 150.
 - **Pendientes en tubo (A2, documentación prevalece).** La matriz SGR del trimestre 2026 (archivo
   de la institución, no incluido en el repositorio), hoja `SALON`, celdas C23/G23, define el
   indicador y su fórmula: cumplimiento 100 % si pendientes ≤ 10 %, 50 % si
@@ -814,6 +840,21 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   inicio del primer período abierto conocido, sin extenderlo a períodos ya congelados. Los datos
   anteriores sin historial conservan el comportamiento previo. Un intervalo sin cargo histórico
   se informa y no inventa un plan. La institución debe confirmar la regla de no prorrateo por tramo.
+- **Respaldo de resultados congelados.** Qué se guarda: en los ítems de cantidad, cada actividad
+  computada (código, fecha, ítem y, con cambio de cargo, el tramo y el cargo); en «Soluciones de
+  ingresos al tubo» y «Pendientes en tubo», cada compromiso del denominador con su estado al corte y
+  si cuenta en el numerador (Realizado, o no Realizado en pendientes). Criterio: el mismo que la
+  cifra, con las mismas funciones (`computable_activities`, `commitments_at_cutoff` y
+  `pending_commitments`) y el mismo corte al día de término; no hay un recálculo aparte. Por eso la
+  cantidad del respaldo coincide con el avance congelado y numerador/denominador con el porcentaje
+  (con tramos, por tramo: el porcentaje integrado pondera cada tramo por sus días, y un tramo sin
+  días computables no guarda compromisos). Si una actividad se edita o archiva después, se muestra el valor
+  congelado e «Archivada» o «Modificada después del cierre». Un resultado sin días computables no
+  se evalúa ni aporta al total: no guarda respaldo. **Limitación de períodos antiguos:** los
+  períodos congelados antes de esta versión muestran «Sin respaldo disponible (período congelado
+  antes de esta versión)». No se reconstruye: `freeze_period` es idempotente y no tiene opción de
+  reemplazo, y reabrir y volver a cerrar recalcularía el resultado oficial con los datos actuales
+  (RN-013), por lo que no se recomienda para obtener el respaldo.
 - **Gestión y planificación.** El Excel suma 85 % (falta una fila); se normaliza proporcionalmente
   a 100 %: 17,65 / 35,29 / 5,88 / 41,18. El Delegado usa la misma tabla.
 - **Gestor de compras y proyectos.** El Excel no trae su hoja: se asume Reunión semanal 50 % / meta 12

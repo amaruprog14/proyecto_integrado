@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import Permission, User
@@ -14,6 +15,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from accounts.models import Delegation, Official, Role
 from accounts.views import recovery_token_generator
 from activities.models import EvidenceBatch, EvidenceValidation
+from analytics.models import ScoreAdjustment
 from analytics.queries import TEAM_PERFORMANCE, VIEW_PERFORMANCE
 from analytics.services import q2
 from analytics.test_performance_calculator import CalculatorFixture
@@ -259,6 +261,70 @@ class PerformanceAPITests(CalculatorFixture, TestCase):
         personal = self.api.get(PERSONAL).json()
         self.assertEqual(personal["fecha_corte"], "2026-09-30")
         self.assertEqual(next(row for row in personal["items"] if row["nombre"] == "Visita terreno")["avance"], "1.00")
+
+    def adjustment(self, kind, points, day=date(2026, 8, 1)):
+        return ScoreAdjustment.objects.create(
+            official=self.worker, period=self.period, occurred_on=day, kind=kind,
+            channel=ScoreAdjustment.Channel.EMAIL, reason="Motivo ficticio", written_support="Correo ficticio",
+            recorded_by=self.verifier.user, reviewed_by=self.verifier.user,
+            reviewed_at=timezone.make_aware(datetime.combine(day + timedelta(days=1), time(10))),
+            status=ScoreAdjustment.Status.APPROVED, points=Decimal(points))
+
+    def assert_reconciles(self, data):
+        base, adjustments = Decimal(data["total_base"]), Decimal(data["ajustes_computables"])
+        self.assertEqual(Decimal(data["total_ponderado"]), min(base + adjustments, Decimal(data["tope_resultado_final"])))
+        self.assertEqual(adjustments, sum((Decimal(row["puntos_computables"]) for row in data["ajustes"]), Decimal(0)))
+        self.assertEqual(base, sum((Decimal(row["resultado_ponderado"]) for row in data["items"]), Decimal(0)))
+
+    def test_total_reconciles_with_base_and_score_adjustments(self):
+        self.authorize(self.worker)
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_ponderado"], data["total_base"], data["ajustes_computables"], data["ajustes"]),
+                         ("0.00", "0.00", "0.00", []))
+        self.assertEqual(data["tope_resultado_final"], "150.00")
+        self.assert_reconciles(data)
+
+        # Una felicitación aprobada: el total es 10 aunque los ítems sumen 0, y ahora se explica.
+        self.adjustment(ScoreAdjustment.Kind.CONGRATULATION, "10")
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_ponderado"], data["total_base"], data["ajustes_computables"]), ("10.00", "0.00", "10.00"))
+        self.assertEqual(data["ajustes"], [{"tipo": "Felicitación", "fecha": "2026-08-01", "puntos_autorizados": "10.00",
+                                            "puntos_computables": "10.00", "excluido_por_limite": False}])
+        self.assert_reconciles(data)
+
+        # Más de tres felicitaciones: la cuarta queda informada pero excluida por el límite.
+        for _ in range(3):
+            self.adjustment(ScoreAdjustment.Kind.CONGRATULATION, "10")
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual(data["ajustes_computables"], "30.00")
+        self.assertEqual([row["excluido_por_limite"] for row in data["ajustes"]], [False, False, False, True])
+        self.assertEqual((data["ajustes"][-1]["puntos_autorizados"], data["ajustes"][-1]["puntos_computables"]), ("10.00", "0.00"))
+        self.assert_reconciles(data)
+
+        # Un reclamo descuenta: base + ajustes negativos, sin cambiar los campos existentes.
+        self.record(self.worker, "Visita terreno", 12)
+        self.adjustment(ScoreAdjustment.Kind.COMPLAINT, "-20")
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_base"], data["ajustes_computables"], data["total_ponderado"]), ("20.00", "10.00", "30.00"))
+        self.assertEqual(data["ajustes"][-1]["tipo"], "Reclamo")
+        self.assert_reconciles(data)
+        live = data
+
+        # Período congelado: los mismos valores salen del resumen guardado al cierre.
+        self.period.close_period()
+        ScoreAdjustment.objects.filter(official=self.worker).update(points=Decimal("1"))
+        frozen = self.api.get(PERSONAL).json()
+        for key in ("total_ponderado", "total_base", "ajustes_computables", "ajustes", "tope_resultado_final"):
+            self.assertEqual(frozen[key], live[key], key)
+        self.assert_reconciles(frozen)
+
+    def test_final_score_cap_comes_from_the_plan_version(self):
+        self.plans["Gestor social"].versions.update(max_final_score=Decimal("15"))
+        self.record(self.worker, "Visita terreno", 12)  # 20 puntos base
+        self.authorize(self.worker)
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_base"], data["tope_resultado_final"], data["total_ponderado"]), ("20.00", "15.00", "15.00"))
+        self.assert_reconciles(data)
 
     @override_settings(DEBUG=False, SGR_API_DOCS_ENABLED=False)
     def test_documentation_requires_an_enabled_environment_and_web_session(self):

@@ -121,6 +121,7 @@
                                             {% else %}
                                                 {{ member.result.official.full_name }}
                                             {% endif %}
+                                            {% if member.support_url %}<a class="performance-note auth-text-link" href="{{ member.support_url }}" data-support-link>¿Qué respaldó este resultado?</a>{% endif %}
                                             {% if member.result.notice %}<span class="performance-note">{{ member.result.notice }}</span>{% endif %}
                                             {% if member.result.segments|length > 1 %}
                                                 <ul class="performance-note mb-0" data-performance-segments>

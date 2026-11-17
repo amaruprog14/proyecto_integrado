@@ -70,7 +70,7 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         self.assertEqual(self.write(
             "measurement_version_edit", self.period.pk, plan.pk, version.pk,
             max_computable="150", amber_threshold="60", green_threshold="100",
-            collective_threshold="80", congratulation_points="10", complaint_points="30",
+            collective_threshold="80", congratulation_points="10", complaint_points="30", max_final_score="120",
         ).status_code, 204)
         event = AuditLog.objects.get(action="Edición de reglas de medición", affected_record_id=version.pk)
         self.assertEqual(event.actor_username, self.admin.username)
@@ -79,6 +79,10 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         response = self.management.get(reverse("audit_detail", args=[event.pk]))
         self.assertContains(response, "Puntos a descontar por reclamo: 20")
         self.assertContains(response, "Puntos a descontar por reclamo: 30")
+        self.assertContains(response, "Tope del resultado final (puntos): 150")
+        self.assertContains(response, "Tope del resultado final (puntos): 120")
+        version.refresh_from_db()
+        self.assertEqual(version.max_final_score, 120)
 
     def test_stale_rules_do_not_overwrite_another_edit(self):
         plan, version = self.new_plan()
@@ -89,7 +93,8 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         first_revision = revision_from_form(self.management, url)
         stale_revision = revision_from_form(other_client, url)
         values = dict(max_computable="150", amber_threshold="60", green_threshold="100",
-                      collective_threshold="80", congratulation_points="10", complaint_points="20")
+                      collective_threshold="80", congratulation_points="10", complaint_points="20",
+                      max_final_score="150")
         response = self.management.post(url, {
             **values, "complaint_points": "30", "edit_revision": first_revision,
         }, HTTP_X_MODAL_REQUEST="true")
@@ -342,3 +347,23 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
             self.assertFalse(version.items.exists(), weight)
         self.add_item(version, self.item, "100")
 
+
+    def test_individual_adjustment_audit_distinguishes_creation_and_edition(self):
+        plan, version = self.new_plan()
+        line = self.add_item(version, self.item, "100", goal="10")
+        args = (self.period.pk, plan.pk, version.pk, line.pk)
+        self.assertEqual(self.write("measurement_adjustment_create", *args, official=self.official.pk,
+                                    weight="", goal="20").status_code, 204)
+        adjustment = line.adjustments.get()
+        self.assertEqual(self.write("measurement_adjustment_edit", *args, adjustment.pk, official=self.official.pk,
+                                    weight="", goal="25").status_code, 204)
+
+        created = AuditLog.objects.get(action="Creación de ajuste individual")
+        # Sin valor anterior inventado: no toma la meta ni el ítem de la línea del plan como «anterior».
+        self.assertEqual(created.previous_value, "")
+        self.assertIn("Meta individual: 20", created.new_value)
+        self.assertEqual((created.affected_table, created.affected_record_id), ("analytics_measurementadjustment", adjustment.pk))
+        edited = AuditLog.objects.get(action="Edición de ajuste individual")
+        self.assertEqual((edited.previous_value, edited.new_value), ("Meta individual: 20", "Meta individual: 25"))
+        self.assertEqual(edited.affected_record_id, adjustment.pk)
+        self.assertFalse(AuditLog.objects.filter(action="Edición de ajuste individual", previous_value__contains="Tipo de meta").exists())

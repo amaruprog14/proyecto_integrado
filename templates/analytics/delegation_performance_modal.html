@@ -10,6 +10,7 @@
                 {% include "analytics/segments.html" with result=selected.result %}
                 {% if can_open_personal %}
                     <p><a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ selected.result.official.pk }}">Abrir desempeño individual</a></p>
+                    {% if support_url %}<p><a class="auth-text-link" href="{{ support_url }}" data-support-link>¿Qué respaldó este resultado?</a></p>{% endif %}
                 {% endif %}
                 {% if selected_items %}
                     <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-label="Resultados por ítem">
@@ -24,7 +25,7 @@
                                         <tr>
                                             <th scope="row">
                                                 {% if entry.activity_link %}
-                                                    <a class="auth-text-link" href="{{ entry.activity_link }}" title="Ver actividades de origen">{{ item.item }}</a>
+                                                    <a class="auth-text-link" href="{{ entry.activity_link }}" title="{% if support_url %}Ver el respaldo congelado{% else %}Ver actividades de origen{% endif %}">{{ item.item }}</a>
                                                     {% if entry.hidden %}<span class="performance-note">{{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} fuera de tu alcance de consulta.</span>{% endif %}
                                                 {% else %}
                                                     {{ item.item }}

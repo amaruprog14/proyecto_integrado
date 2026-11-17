@@ -59,9 +59,10 @@
                     {% endif %}
                     {% if result.version %}
                         <dt class="col-sm-4">Meta esperada al día</dt><dd class="col-sm-8">{{ result.expected_percentage|floatformat:2 }} %</dd>
-                        {% if result.score_adjustments %}
-                            <dt class="col-sm-4">Total ponderado base</dt><dd class="col-sm-8">{{ result.base_total|floatformat:2 }} puntos</dd>
-                            <dt class="col-sm-4">Ajustes computables</dt><dd class="col-sm-8">{% if result.score_adjustment_total > 0 %}+{% endif %}{{ result.score_adjustment_total|floatformat:2 }} puntos</dd>
+                        {% if result.score_adjustments or result.base_total > result.total %}
+                            <dt class="col-sm-4">Total ponderado base</dt><dd class="col-sm-8" data-performance-base>{{ result.base_total|floatformat:2 }} puntos</dd>
+                            {% if result.score_adjustments %}<dt class="col-sm-4">Ajustes computables</dt><dd class="col-sm-8">{% if result.score_adjustment_total > 0 %}+{% endif %}{{ result.score_adjustment_total|floatformat:2 }} puntos</dd>{% endif %}
+                            {% if result.max_final_score is not None %}<dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8" data-performance-cap>{{ result.max_final_score|floatformat:"-2" }} puntos</dd>{% endif %}
                         {% endif %}
                         <dt class="col-sm-4">Resultado final</dt>
                         <dd class="col-sm-8"><strong data-performance-total>{{ result.total|floatformat:2 }} puntos</strong> {% include "analytics/traffic_light.html" with light=total_light %}</dd>
@@ -75,7 +76,7 @@
                                 <li>{{ entry.kind }} · {{ entry.date }} · {% if entry.excluded %}Fuera del límite de tres felicitaciones{% else %}{% if entry.positive %}+{% endif %}{{ entry.applied_points|floatformat:2 }} puntos{% endif %}</li>
                             {% endfor %}
                         </ul>
-                        <p class="performance-note mt-2 mb-0">Tope del resultado final: 150 puntos.</p>
+                        <p class="performance-note mt-2 mb-0">Tope del resultado final: {{ result.max_final_score|floatformat:"-2" }} puntos.</p>
                     </details>
                 {% endif %}
                 {% if result.notice %}<p class="alert alert-warning mt-3 mb-0" role="status">{{ result.notice }}</p>{% endif %}
@@ -117,7 +118,7 @@
                                 {% with row=entry.row %}
                                 <tr>
                                     <th scope="row">
-                                        {% if entry.link %}<a class="auth-text-link" href="{{ entry.link }}" title="Ver actividades de origen">{{ row.item }}</a>{% else %}{{ row.item }}{% endif %}
+                                        {% if entry.link %}<a class="auth-text-link" href="{{ entry.link }}" title="{% if result.frozen %}Ver el respaldo congelado{% else %}Ver actividades de origen{% endif %}"{% if result.frozen %} data-frozen-support{% endif %}>{{ row.item }}</a>{% else %}{{ row.item }}{% endif %}
                                         {% if row.individual %}<span class="performance-note">Meta o ponderador individual</span>{% endif %}
                                         {% if row.notice %}<span class="performance-note">{{ row.notice }}</span>{% endif %}
                                         {% if entry.hidden %}<span class="performance-note" data-hidden-activities="{{ entry.hidden }}">Incluye {{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} de otra delegación que no puedes ver.</span>{% endif %}
@@ -136,7 +137,8 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="maintainer-record-count mt-2">Tope computable por ítem: {{ result.max_computable|floatformat:"-2" }} %. Solo suma la evidencia aprobada; el enlace de cada ítem abre esas mismas actividades.</p>
+                    <p class="maintainer-record-count mt-2">Tope computable por ítem: {{ result.max_computable|floatformat:"-2" }} %. Solo suma la evidencia aprobada; {% if result.frozen %}el enlace de cada ítem abre el respaldo guardado al congelar el período.{% else %}el enlace de cada ítem abre esas mismas actividades.{% endif %}</p>
+                    {% if support_url %}<p class="mb-0"><a class="auth-text-link" href="{{ support_url }}" data-support-link>¿Qué respaldó este resultado?</a></p>{% endif %}
                 </section>
             {% endif %}
 

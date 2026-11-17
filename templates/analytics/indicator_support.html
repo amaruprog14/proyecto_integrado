@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Respaldo del resultado · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="support-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">
+                    Desempeño <span aria-hidden="true">/</span>
+                    <a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ official.pk }}">Desempeño de {{ official.full_name }}</a>
+                </p>
+                <h1 id="support-title">¿Qué respaldó este resultado?</h1>
+                <p class="text-muted mb-0">{{ official.full_name }} · {{ period.start_date|date:"d-m-Y" }} al {{ period.end_date|date:"d-m-Y" }} · congelado el {{ period.frozen_at|date:"d-m-Y H:i" }}</p>
+            </div>
+        </header>
+
+        {% if not captured %}
+            <p class="alert alert-info" role="status" data-support-missing>{{ pre_support_notice }}</p>
+        {% elif not evaluated %}
+            <p class="alert alert-info" role="status" data-support-not-evaluated>Sin días computables: el período no se evaluó y no hay registros que respalden el resultado.</p>
+        {% endif %}
+
+        <section class="attention-entry-card mb-3" aria-labelledby="support-summary">
+            <h2 class="h5" id="support-summary">Indicadores congelados</h2>
+            <ul class="mb-0">
+                {% for entry in summaries %}
+                    {% with snapshot=entry.snapshot %}
+                    <li data-support-summary="{{ snapshot.item_id }}">
+                        <strong>{{ snapshot.item }}</strong> · avance congelado
+                        {% if snapshot.progress is None %}—{% else %}{{ snapshot.progress|floatformat:"-2" }}{% if entry.is_percentage %} %{% endif %}{% endif %}
+                        {% if captured %}
+                            ·
+                            {% if entry.is_percentage and entry.segments %}
+                                porcentaje integrado por días de cada tramo:
+                                <ul class="mb-0">
+                                    {% for segment in entry.segments %}
+                                        <li data-support-segment>{{ segment.position_name }} · {{ segment.segment_start|date:"d-m-Y" }} al {{ segment.segment_end|date:"d-m-Y" }}: {{ segment.numerator }} de {{ segment.total }} compromiso{{ segment.total|pluralize }} {% if entry.is_pending %}pendiente{{ segment.total|pluralize }}{% else %}realizado{{ segment.total|pluralize }}{% endif %}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% elif entry.is_percentage %}
+                                {{ entry.numerator }} de {{ entry.total }} compromiso{{ entry.total|pluralize }} {% if entry.is_pending %}pendiente{{ entry.total|pluralize }}{% else %}realizado{{ entry.total|pluralize }}{% endif %}
+                            {% else %}
+                                {{ entry.total }} actividad{{ entry.total|pluralize:"es" }} computada{{ entry.total|pluralize }}
+                            {% endif %}
+                        {% endif %}
+                    </li>
+                    {% endwith %}
+                {% endfor %}
+            </ul>
+        </section>
+
+        {% if captured %}
+        <section class="attention-entry-card" aria-labelledby="support-records">
+            <h2 class="h5" id="support-records">Registros al cierre que puedes consultar ({{ page_obj.paginator.count }})</h2>
+            <p class="text-muted">Se muestran los valores guardados al congelar el período, aunque el registro se haya editado o archivado después.</p>
+            {% if hidden %}<p class="alert alert-info" role="status" data-support-hidden="{{ hidden }}">{{ hidden }} registro{{ hidden|pluralize }} del respaldo {{ hidden|pluralize:"queda,quedan" }} fuera de tu alcance de consulta: se {{ hidden|pluralize:"cuenta,cuentan" }} en el resumen, pero no se {{ hidden|pluralize:"muestra,muestran" }} aquí.</p>{% endif %}
+            {% if supports %}
+                <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="support-records">
+                    <table class="table maintainer-table">
+                        <thead>
+                            <tr><th scope="col">Registro</th><th scope="col">Fecha</th><th scope="col">Indicador</th>
+                                <th scope="col">Tramo de cargo</th><th scope="col">Estado al corte</th><th scope="col">Situación actual</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in supports %}
+                                {% with record=row.record %}
+                                    <tr data-support-record="{% if record.activity_id %}activity-{{ record.activity_id }}{% else %}commitment-{{ record.commitment_id }}{% endif %}">
+                                        <th scope="row">
+                                            {% if record.activity_id %}
+                                                {% if row.can_open %}<a class="auth-text-link" href="{% url 'activity_detail' record.activity_id %}">{{ record.code }}</a>{% else %}{{ record.code }}{% endif %}
+                                            {% else %}
+                                                {% if row.can_open %}<a class="auth-text-link" href="{% url 'commitment_detail' record.commitment_id %}">Compromiso {{ record.code }}</a>{% else %}Compromiso {{ record.code }}{% endif %}
+                                            {% endif %}
+                                        </th>
+                                        <td>{{ record.date|date:"d-m-Y" }}</td>
+                                        <td>{{ record.snapshot.item }}{% if record.item_name and record.item_name != record.snapshot.item.item_name %} ({{ record.item_name }}){% endif %}</td>
+                                        <td>{% if record.position_name %}{{ record.position_name }} · {{ record.segment_start|date:"d-m-Y" }} al {{ record.segment_end|date:"d-m-Y" }}{% else %}—{% endif %}</td>
+                                        <td>{% if record.commitment_id %}{{ row.status }}{% if record.in_numerator %} · cuenta en el numerador{% endif %}{% else %}Computada{% endif %}</td>
+                                        <td>{% if row.archived %}<span data-support-archived>{% if record.activity_id %}Archivada{% else %}Archivado{% endif %}</span>{% elif row.modified %}<span data-support-modified>Modificada después del cierre</span>{% else %}Sin cambios{% endif %}</td>
+                                    </tr>
+                                {% endwith %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if page_obj.has_other_pages %}
+                    <nav class="mt-3" aria-label="Páginas del respaldo">
+                        <ul class="pagination maintainer-pagination">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item"><a class="page-link" href="?{% if item_id %}item={{ item_id }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a></li>
+                            {% endif %}
+                            <li class="page-item active"><span class="page-link" aria-current="page">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+                            {% if page_obj.has_next %}
+                                <li class="page-item"><a class="page-link" href="?{% if item_id %}item={{ item_id }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Siguiente</a></li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+            {% else %}
+                <p class="text-muted mb-0">{% if hidden %}No hay registros del respaldo dentro de tu alcance de consulta.{% else %}No hay registros que respalden este resultado.{% endif %}</p>
+            {% endif %}
+        </section>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
