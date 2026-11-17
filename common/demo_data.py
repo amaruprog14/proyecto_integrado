@@ -16,6 +16,8 @@ OPERATOR_PERMISSIONS = [
 CONSULTA_PERMISSIONS = [
     "activities.view_activity", "accounts.view_official", "configuration.view_item",
 ]
+VIEW_LETTERS = ["activities.view_officeletter"]
+MANAGE_LETTERS = VIEW_LETTERS + ["activities.add_officeletter", "activities.change_officeletter"]
 
 # Versiones anteriores del seed daban permisos por estos grupos. Se quita a los usuarios de
 # demostración de ellos (los grupos no se eliminan, por si se usan para otra cosa).

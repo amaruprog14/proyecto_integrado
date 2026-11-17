@@ -18,16 +18,23 @@
                 <option value="RESOLVED"{% if selected_status == 'RESOLVED' %} selected{% endif %}>Resuelta / Cerrada</option>
                 <option value="RECORDED"{% if selected_status == 'RECORDED' %} selected{% endif %}>Gestión registrada</option>
             </select>
+        </div>
+        <div class="attention-entry-grid w-100">
+            {% for field in filters %}{% include 'activities/attention_field.html' with field=field %}{% endfor %}
+        </div>
+        <div class="attention-entry-actions">
             <button class="btn btn-primary" type="submit">Buscar</button>
+            <a class="btn attention-entry-cancel" href="{% url 'attention_cases' %}">Limpiar filtros</a>
         </div>
     </form>
     <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-label="Tabla de casos sociales">
         <table class="table maintainer-table">
-            <thead><tr><th scope="col">Código</th><th scope="col">Asunto</th><th scope="col">Responsable</th><th scope="col">Próximo paso</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+            <thead><tr><th scope="col">Código</th><th scope="col">Ingreso</th><th scope="col">Asunto</th><th scope="col">Responsable</th><th scope="col">Próximo paso</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
             <tbody>
                 {% for item in page_obj %}
                     <tr>
                         <td>{{ item.identifier }}</td>
+                        <td>{{ item.entry_date|date:"d/m/Y" }}</td>
                         <td class="text-break">{{ item.subject }}<small class="d-block">{{ item.recipient.full_name }} · {{ item.delegation }}</small></td>
                         <td>{{ item.responsible.full_name|default:'Sin asignar' }}</td>
                         <td class="text-break">{{ item.next_step|default:'—' }}{% if item.next_step_date %}<small class="d-block">{{ item.next_step_date|date:'d/m/Y' }}</small>{% endif %}</td>
@@ -35,7 +42,7 @@
                         <td class="maintainer-actions"><a class="action-icon action-icon--view delegation-action" href="{% url 'attention_case_detail' item.pk %}" aria-label="Ver {{ item.identifier }}" data-tooltip="Ver seguimiento">{% include 'includes/action_icon.html' with action='Ver' %}</a></td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6">No hay casos disponibles para esta búsqueda.</td></tr>
+                    <tr><td colspan="7">No hay casos disponibles para esta búsqueda.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

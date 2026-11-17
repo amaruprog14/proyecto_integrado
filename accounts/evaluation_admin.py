@@ -4,7 +4,7 @@ from django.core.management.base import CommandError
 from django.db import transaction
 
 from accounts.models import Official, Role
-from common.demo_data import OPERATOR_PERMISSIONS, demo_rut, require_seed_password
+from common.demo_data import MANAGE_LETTERS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
 
 USERNAME = "adminEvalA"
 ROLE_NAME = "Administrador evaluación A"
@@ -45,13 +45,14 @@ def provision_evaluation_admin(*, reset_password=False):
     legacy_permissions = set(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"])
     performance_permission = {"analytics.view_indicatorsnapshot"}
     agenda_permissions = {"agenda.view_commitment", "agenda.add_commitment", "agenda.change_commitment"}
+    with_agenda = legacy_permissions | performance_permission | agenda_permissions
     legacy = (official.user_id is None and len(existing_roles) == 1
               and existing_roles[0].role_name == "Funcionario"
               and existing_roles[0].scope == Role.Scope.DELEGATION
               and existing_roles[0].is_active and not existing_roles[0].deleted_at
               and {f"{p.content_type.app_label}.{p.codename}" for p in existing_roles[0].permissions.select_related("content_type")}
-              in (legacy_permissions, legacy_permissions | performance_permission,
-                  legacy_permissions | performance_permission | agenda_permissions))
+              in (legacy_permissions, legacy_permissions | performance_permission, with_agenda,
+                  with_agenda | set(MANAGE_LETTERS)))
     if existing_roles and {r.pk for r in existing_roles} != {role.pk} and not legacy:
         raise CommandError("El funcionario de evaluación tiene otros roles; no se reemplazan.")
     email = "adminevala@sgr.example.invalid"

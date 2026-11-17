@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, router, transaction
 from django.utils import timezone
 
-from accounts.models import Delegation, Official, ServiceRecipient
+from accounts.models import Area, Delegation, Official, ServiceRecipient
 from common.mixins import BaseModel
 from common.codes import AutoCodeMixin
 from configuration.models import AttentionType, Item, SubattentionType
@@ -75,6 +75,11 @@ class AttentionCase(BaseModel):
     next_step_date = models.DateField(null=True, blank=True)
     public_next_step = models.CharField(max_length=200, blank=True)
     public_response = models.TextField(max_length=500, blank=True)
+    requires_visit = models.BooleanField(null=True, blank=True, verbose_name="Requiere visita")
+    scheduled_visit_on = models.DateField(null=True, blank=True, verbose_name="Visita programada")
+    visited_on = models.DateField(null=True, blank=True, verbose_name="Visita realizada")
+    report_delivered_on = models.DateField(null=True, blank=True, verbose_name="Entrega de informe")
+    benefit_delivered_on = models.DateField(null=True, blank=True, verbose_name="Entrega de beneficio")
 
     class Meta:
         ordering = ["-updated_at", "-pk"]
@@ -113,6 +118,77 @@ class AttentionCaseEvent(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-pk"]
+
+
+class OfficeLetter(BaseModel):
+    class Status(models.TextChoices):
+        IN_PROGRESS = "IN_PROGRESS", "En proceso"
+        APPROVED = "APPROVED", "Aprobada"
+        FINALIZED = "FINALIZED", "Finalizada"
+        NOT_APPLICABLE = "NOT_APPLICABLE", "No aplica"
+
+    delegation = models.ForeignKey(Delegation, on_delete=models.PROTECT, verbose_name="Delegación")
+    received_on = models.DateField(verbose_name="Fecha de recepción")
+    received_year = models.PositiveSmallIntegerField(editable=False)
+    external_number = models.CharField(max_length=60, null=True, blank=True, verbose_name="Número externo")
+    addressee = models.CharField(max_length=200, verbose_name="Destinatario")
+    sender = models.CharField(max_length=200, verbose_name="Remitente")
+    phone = models.CharField(max_length=40, blank=True, verbose_name="Teléfono de contacto")
+    subject = models.CharField(max_length=250, verbose_name="Actividad o tema")
+    activity_on = models.DateField(null=True, blank=True, verbose_name="Fecha de la actividad")
+    responsible = models.ForeignKey(Official, null=True, blank=True, on_delete=models.PROTECT,
+                                    verbose_name="Funcionario encargado")
+    responsible_area = models.ForeignKey(Area, null=True, blank=True, on_delete=models.PROTECT,
+                                         verbose_name="Área encargada")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.IN_PROGRESS,
+                              verbose_name="Estado")
+    decision = models.TextField(max_length=1000, blank=True, verbose_name="Pronunciamiento")
+    referred_to = models.CharField(max_length=200, blank=True, verbose_name="Derivada a")
+    notes = models.TextField(max_length=2000, blank=True, verbose_name="Observaciones")
+    created_by = models.ForeignKey(Official, null=True, editable=False, on_delete=models.PROTECT,
+                                   related_name="registered_office_letters")
+    case = models.ForeignKey(AttentionCase, null=True, blank=True, on_delete=models.PROTECT,
+                             related_name="office_letters")
+
+    class Meta:
+        verbose_name = "Carta de Oficina de Partes"
+        verbose_name_plural = "Cartas de Oficina de Partes"
+        default_permissions = ("add", "change", "view")
+        ordering = ["-received_on", "-pk"]
+        indexes = [models.Index(fields=["delegation", "received_on"], name="letter_delegation_received")]
+        constraints = [
+            models.UniqueConstraint(fields=["delegation", "received_year", "external_number"],
+                                    name="letter_unique_external_number"),
+            models.CheckConstraint(condition=models.Q(responsible__isnull=True) |
+                                    models.Q(responsible_area__isnull=True), name="letter_one_responsible"),
+        ]
+
+    @property
+    def identifier(self):
+        return f"CAR-{self.pk:06d}"
+
+    def __str__(self):
+        return f"{self.identifier} · {self.subject}"
+
+    def save(self, *args, **kwargs):
+        self.received_year = self.received_on.year
+        self.external_number = (self.external_number or "").strip().upper() or None
+        if kwargs.get("update_fields") and "received_on" in kwargs["update_fields"]:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "received_year"}
+        return super().save(*args, **kwargs)
+
+
+class OfficeLetterEvent(models.Model):
+    letter = models.ForeignKey(OfficeLetter, on_delete=models.PROTECT, related_name="events")
+    actor = models.ForeignKey(Official, null=True, on_delete=models.PROTECT)
+    actor_username = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    title = models.CharField(max_length=100)
+    changes = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        default_permissions = ()
 
 
 class PortalInvitation(models.Model):

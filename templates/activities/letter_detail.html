@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% block title %}{{ letter.identifier }} · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="office_letter_list" %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="office-letter-title">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'office_letter_list' %}">Cartas de Oficina de Partes</a> / {{ letter.identifier }}</p>
+        <h1 id="office-letter-title" class="text-break">{{ letter.subject }}</h1>
+    </header>
+    <section class="attention-entry-card" aria-labelledby="office-letter-summary">
+        <h2 class="h5" id="office-letter-summary">Detalle de la carta</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-4">Número externo</dt><dd class="col-sm-8 text-break">{{ letter.external_number|default:"—" }}</dd>
+            <dt class="col-sm-4">Delegación</dt><dd class="col-sm-8">{{ letter.delegation }}</dd>
+            <dt class="col-sm-4">Fecha de recepción</dt><dd class="col-sm-8">{{ letter.received_on|date:"d/m/Y" }}</dd>
+            <dt class="col-sm-4">Destinatario</dt><dd class="col-sm-8 text-break">{{ letter.addressee }}</dd>
+            <dt class="col-sm-4">Remitente</dt><dd class="col-sm-8 text-break">{{ letter.sender }}</dd>
+            <dt class="col-sm-4">Teléfono de contacto</dt><dd class="col-sm-8 text-break">{{ letter.phone|default:"—" }}</dd>
+            <dt class="col-sm-4">Fecha de la actividad</dt><dd class="col-sm-8">{{ letter.activity_on|date:"d/m/Y"|default:"—" }}</dd>
+            <dt class="col-sm-4">Encargado</dt><dd class="col-sm-8">{{ letter.responsible|default:letter.responsible_area|default:"Sin asignar" }}</dd>
+            <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{% include "activities/letter_status.html" %}</dd>
+            <dt class="col-sm-4">Pronunciamiento</dt><dd class="col-sm-8 text-break">{{ letter.decision|default:"—"|linebreaksbr }}</dd>
+            <dt class="col-sm-4">Derivada a</dt><dd class="col-sm-8 text-break">{{ letter.referred_to|default:"—" }}</dd>
+            <dt class="col-sm-4">Observaciones</dt><dd class="col-sm-8 text-break">{{ letter.notes|default:"—"|linebreaksbr }}</dd>
+        </dl>
+        <div class="attention-entry-actions">
+            {% if can_edit %}<a class="btn btn-primary" href="{% url 'office_letter_edit' letter.pk %}">Editar carta</a>{% endif %}
+            <a class="btn attention-entry-cancel" href="{% url 'office_letter_list' %}">Volver al listado</a>
+        </div>
+    </section>
+    {% if case or case_form %}
+        <section class="attention-entry-card mt-3" aria-labelledby="office-letter-case">
+            <h2 class="h5" id="office-letter-case">Caso social</h2>
+            {% if case %}<p><a class="auth-text-link" href="{% url 'attention_case_detail' case.pk %}">{{ case.identifier }} · {{ case.subject }}</a></p>{% endif %}
+            {% if case_form %}
+                <form method="post" action="{% url 'office_letter_case' letter.pk %}">
+                    {% csrf_token %}
+                    {% bootstrap_form case_form %}
+                    <div class="attention-entry-actions">
+                        <button class="btn btn-primary" type="submit">{% if case %}Cambiar vínculo{% else %}Vincular caso{% endif %}</button>
+                    </div>
+                </form>
+                {% if case %}
+                    <form method="post" class="mt-2" action="{% url 'office_letter_case' letter.pk %}"
+                          data-swal-confirm="Se quitará el vínculo con el caso social." data-swal-title="Desvincular caso"
+                          data-swal-confirm-text="Sí, desvincular">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="unlink">
+                        <button class="btn attention-entry-cancel" type="submit">Desvincular caso</button>
+                    </form>
+                {% endif %}
+            {% endif %}
+        </section>
+    {% endif %}
+    <section class="attention-entry-card mt-3" aria-labelledby="office-letter-history">
+        <h2 class="h5" id="office-letter-history">Historial de la carta</h2>
+        <ul class="list-group list-group-flush">
+            {% for event in events %}
+                <li class="list-group-item px-0">
+                    <strong>{{ event.title }}</strong>
+                    <p class="mb-1">{{ event.created_at|date:"d/m/Y H:i" }} · {{ event.actor|default:event.actor_username }}</p>
+                    {% if event.changes %}
+                        <ul>
+                            {% for change in event.changes %}
+                                <li class="text-break">{{ change.field }}{% if change.before %} · Antes: {{ change.before }}{% endif %} · Actual: {{ change.after|default:"—" }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    </section>
+</section>
+{% endblock %}
