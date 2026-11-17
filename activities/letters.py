@@ -7,6 +7,7 @@ from django.views.generic import TemplateView, View
 
 from accounts.models import Area, Delegation, Official, Role
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
+from common.edit_concurrency import edit_is_current, edit_revision
 from common.list_state import positive
 from common.pagination import ClampedPaginationMixin
 from common.scopes import delegation_ids, permission_scope
@@ -197,15 +198,21 @@ class LetterFormView(ProtectedViewMixin, View):
 
     def form_response(self, request, pk):
         letter = None
+        revision = None
+        conflict = False
+        submitting = request.method == "POST"
         if pk is not None:
             visible = scoped_letters(request.user).values("pk")
             allowed = scoped_letters(request.user, CHANGE).filter(pk__in=visible)
-            if request.method == "POST":
+            if submitting:
                 allowed = allowed.select_for_update()
             letter = get_scoped_object_or_404(request, allowed, pk=pk)
-        form = LetterForm(request.POST if request.method == "POST" else None, user=request.user, instance=letter)
+            current = edit_revision(letter)
+            revision = request.POST.get("edit_revision") if submitting else current
+            conflict = submitting and not edit_is_current(request, current)
+        form = LetterForm(request.POST if submitting else None, user=request.user, instance=letter)
         before = letter_values(letter) if letter else {}
-        if request.method == "POST" and form.is_valid():
+        if submitting and not conflict and form.is_valid():
             record = form.save(commit=False)
             if letter is None:
                 record.created_by = getattr(request.user, "official", None)
@@ -227,7 +234,9 @@ class LetterFormView(ProtectedViewMixin, View):
                 if scoped_letters(request.user).filter(pk=record.pk).exists():
                     return redirect("office_letter_detail", pk=record.pk)
                 return redirect("office_letter_list")
-        return render(request, "activities/letter_form.html", {"form": form, "letter": letter})
+        return render(request, "activities/letter_form.html", {
+            "form": form, "letter": letter, "edit_revision": revision, "edit_conflict": conflict,
+        }, status=409 if conflict else 200)
 
 
 class LetterCaseForm(forms.Form):
@@ -248,7 +257,7 @@ class LetterCaseForm(forms.Form):
         return case
 
 
-def render_letter(request, letter, form=None):
+def render_letter(request, letter, form=None, *, conflict=False):
     user = request.user
     can_edit = scoped_letters(user, CHANGE).filter(pk=letter.pk).exists()
     case = None
@@ -258,7 +267,10 @@ def render_letter(request, letter, form=None):
     return render(request, "activities/letter_detail.html", {
         "letter": letter, "events": letter.events.select_related("actor"), "case": case, "can_edit": can_edit,
         "case_form": (form if form is not None else LetterCaseForm(cases=None)) if can_link else None,
-    })
+        "edit_revision": (request.POST.get("edit_revision") if request.method == "POST"
+                          else edit_revision(letter)) if can_link else None,
+        "edit_conflict": conflict,
+    }, status=409 if conflict else 200)
 
 
 class LetterDetailView(ProtectedViewMixin, View):
@@ -283,9 +295,11 @@ class LetterCaseView(ProtectedViewMixin, View):
         previous = cases.filter(pk=letter.case_id).first()
         if letter.case_id and previous is None:
             return self.handle_no_permission()
+        form = None if request.POST.get("action") == "unlink" else LetterCaseForm(request.POST, cases=cases)
+        if not edit_is_current(request, edit_revision(letter)):
+            return render_letter(request, letter, form, conflict=True)
         case = None
-        if request.POST.get("action") != "unlink":
-            form = LetterCaseForm(request.POST, cases=cases)
+        if form is not None:
             if not form.is_valid():
                 return render_letter(request, letter, form)
             case = form.cleaned_data["folio"]

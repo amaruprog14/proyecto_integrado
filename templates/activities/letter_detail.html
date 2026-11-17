@@ -33,12 +33,17 @@
         <section class="attention-entry-card mt-3" aria-labelledby="office-letter-case">
             <h2 class="h5" id="office-letter-case">Caso social</h2>
             {% if case %}<p><a class="auth-text-link" href="{% url 'attention_case_detail' case.pk %}">{{ case.identifier }} · {{ case.subject }}</a></p>{% endif %}
+            {% if edit_conflict %}
+                {% url 'office_letter_detail' letter.pk as current_url %}
+                {% include "includes/edit_conflict.html" with current_edit_url=current_url only %}
+            {% endif %}
             {% if case_form %}
                 <form method="post" action="{% url 'office_letter_case' letter.pk %}">
                     {% csrf_token %}
+                    <input type="hidden" name="edit_revision" value="{{ edit_revision|default:'' }}">
                     {% bootstrap_form case_form %}
                     <div class="attention-entry-actions">
-                        <button class="btn btn-primary" type="submit">{% if case %}Cambiar vínculo{% else %}Vincular caso{% endif %}</button>
+                        <button class="btn btn-primary" type="submit"{% if edit_conflict %} disabled{% endif %}>{% if case %}Cambiar vínculo{% else %}Vincular caso{% endif %}</button>
                     </div>
                 </form>
                 {% if case %}
@@ -46,8 +51,9 @@
                           data-swal-confirm="Se quitará el vínculo con el caso social." data-swal-title="Desvincular caso"
                           data-swal-confirm-text="Sí, desvincular">
                         {% csrf_token %}
+                        <input type="hidden" name="edit_revision" value="{{ edit_revision|default:'' }}">
                         <input type="hidden" name="action" value="unlink">
-                        <button class="btn attention-entry-cancel" type="submit">Desvincular caso</button>
+                        <button class="btn attention-entry-cancel" type="submit"{% if edit_conflict %} disabled{% endif %}>Desvincular caso</button>
                     </form>
                 {% endif %}
             {% endif %}
