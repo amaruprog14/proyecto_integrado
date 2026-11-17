@@ -27,6 +27,7 @@
                 data-loading
             >
                 {% csrf_token %}
+                {% if edit_revision %}<input type="hidden" name="edit_revision" value="{{ edit_revision }}">{% endif %}
                 {% if form.account_type %}<div class="attention-entry-field"><label for="id_account_type">Tipo de usuario *</label>{{ form.account_type }}{{ form.account_type.errors }}</div>{% endif %}
 
                 {% if form.non_field_errors %}
@@ -128,6 +129,7 @@
                     <div class="attention-entry-field">
                         <label for="{{ form.position.id_for_label }}">Cargo</label>
                         {{ form.position }}
+                        {{ form.position_effective_from.label_tag }}{{ form.position_effective_from }}{{ form.position_effective_from.errors }}
                         {% for error in form.position.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                     </div>
 

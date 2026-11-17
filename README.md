@@ -538,6 +538,7 @@ La exportación usa el permiso de consulta.
 | Roles | `accounts.view_role` | `accounts.add_role` | `accounts.change_role` |
 | Usuarios | `auth.view_user` | `auth.add_user` | `auth.change_user` |
 | Funcionarios | `accounts.view_official` | `accounts.add_official` | `accounts.change_official` para editar; `accounts.archive_official` para archivar |
+| Ausencias (licencias, vacaciones, emergencias, compensatorios) | `accounts.view_officialabsence` | `accounts.manage_absence` (más el de consulta) | `accounts.manage_absence` para editar y archivar; solo funcionarios visibles y gestionables por el alcance del rol; bloqueado en períodos cerrados o congelados |
 | Actividades | `activities.view_activity` (Excel de actividades sin archivar) | `activities.add_activity` | `activities.change_activity` para editar; `activities.archive_activity` para archivar, consultar historial y restaurar |
 | Ítems y metas | `configuration.view_item` | `configuration.add_item` | `configuration.change_item` |
 | Tipo de Atención | `configuration.view_attentiontype` | `configuration.add_attentiontype` | `configuration.change_attentiontype` |
@@ -728,24 +729,63 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
     ensayo propuesto por el plan de pruebas, no una regla institucional, por lo que el sistema usa
     el ejemplo de la guía y deja el modo inclusivo disponible y probado: `calculate(...,
     include_start_day=True)` reproduce CAL-D completo con el resultado del funcionario.
+  - RF-005 (guía, tabla de requisitos funcionales): «Configurar períodos de medición. El sistema
+    deberá definir fecha de inicio, fecha de término, estado y días computables de cada período. El
+    período calcula sus días y rechaza una fecha de término anterior al inicio».
+    Los días del período no cambian; las ausencias (A1) solo descuentan los días de cada funcionario.
   - La guía nombra los días computables (RF-005, RN-007) sin definir qué se descuenta; el Excel
     descuenta licencias, vacaciones, emergencias y compensatorios. No se descuentan festivos. Las
-    fechas se toman en la zona horaria del proyecto (`timezone.localdate`). El parámetro `official`
-    queda reservado para esos descuentos.
+    fechas se toman en la zona horaria del proyecto (`timezone.localdate`). Con `official` se
+    descuentan licencias, vacaciones, emergencias y compensatorios registrados en `OfficialAbsence`.
+    **Supuesto A1:** los rangos incluyen ambas fechas, se recortan al intervalo contado y no se
+    superponen. En la convención de 91 días el primer día ya está excluido y no se descuenta otra
+    vez. Las ausencias reducen los días del denominador y los días transcurridos del esperado;
+    no prorratean las metas del plan. No se encontró una instrucción de prorrateo en las fuentes
+    consultadas. Un funcionario sin días computables no tiene semáforo ni participa del promedio.
+    Altas, ediciones y archivo de ausencias están bloqueados si el rango anterior o nuevo afecta
+    períodos cerrados o congelados. Los días usados se conservan en `IndicatorSnapshot`.
 - **Ítems porcentuales.** «Soluciones de ingresos al tubo» tiene meta 80 % y su avance es el % de
   compromisos del funcionario con fecha comprometida en el período que están Realizados (CAL-C y
   CAL-F: 8 de 10 realizados con meta 80 % = 100 %). Sin compromisos no hay denominador: el ítem
   muestra un aviso y no aporta. Al calcular a una fecha pasada solo cuentan los compromisos creados
   hasta ese día, cada uno con el estado que tenía según su historial. El semáforo compara ese
   cumplimiento con la meta esperada del día.
-- **Felicitaciones y reclamos (pendiente de aprobación institucional).** Se propone felicitación =
+- **Felicitaciones y reclamos (parámetros sujetos a aprobación institucional).** Se propone felicitación =
   +10 puntos sobre el total ponderado (máximo 3 por funcionario y período) y reclamo = −20 puntos
   (el Excel usa −0,2 y −0,3 según la hoja). La guía pide no fijar automáticamente esos valores y
   aplicarlos solo con reglas parametrizadas aprobadas: serán parámetros de la versión del plan y
   los valores +10/−20 son solo los propuestos por defecto hasta que la institución los apruebe.
-- **Cambio de cargo a mitad de período (limitación conocida).** Las metas y ponderadores son los
-  del plan del cargo actual, pero cada actividad cuenta según el plan del cargo con que se registró.
-  Si ambos planes comparten un ítem, ese ítem suma el avance de los dos cargos.
+- **Pendientes en tubo (A2, documentación prevalece).** La matriz SGR del trimestre 2026 (archivo
+  de la institución, no incluido en el repositorio), hoja `SALON`, celdas C23/G23, define el
+  indicador y su fórmula: cumplimiento 100 % si pendientes ≤ 10 %, 50 % si
+  10 % < pendientes ≤ 50 %, y 0 % sobre 50 %. Esto reemplaza el supuesto proporcional 10/valor.
+  `MAX_PERCENTAGE` permite definir la meta máxima sin cambiar los planes publicados ni sus pesos;
+  para este indicador se configura meta 10. El semáforo compara esos escalones contra 100 %.
+  **Supuesto del denominador:** compromisos del funcionario con fecha comprometida en el período
+  y creados al corte; pendientes son los no realizados, excluyendo del denominador los cancelados
+  con justificación. Sin compromisos computables no se evalúa. El estado al corte usa su historial.
+- **Cambio de cargo por tramos (A3).** `OfficialPositionPeriod` conserva fechas inclusivas y sin
+  superposición. Los mantenedores de funcionarios y usuarios registran el cambio con su fecha y
+  auditan el cierre del tramo anterior y el nuevo. El cargo histórico rige por fecha de actividad;
+  cada tramo usa la versión publicada del plan de su cargo vigente al corte del tramo (el mismo
+  criterio que el cálculo sin historial aplica a todo el período, así un único tramo da el mismo
+  resultado) y sus ausencias. El total es la media de los resultados de los tramos ponderada por
+  sus días computables; las metas de cada plan no se prorratean. El cumplimiento de un ítem que
+  solo existe en un tramo se mide en ese tramo, y su aporte al total se pondera por los días de
+  ese tramo sobre los del período. El formulario de actividades ofrece los ítems del cargo
+  vigente en la fecha de la actividad. Se muestra y congela el detalle por tramo.
+  Si la meta de un ítem difiere entre tramos, la fila integrada no muestra una meta única (queda
+  vacía también al congelar) y el detalle por tramo conserva cada meta. El semáforo de esa fila
+  compara contra el esperado de los tramos donde el ítem se evaluó.
+  **Limitación de rendimiento:** con historial de cargo, los compromisos de los ítems porcentuales
+  se consultan por funcionario y tramo (el resto de los datos se carga en bloque).
+  **Reversión de `analytics/0006`:** antes de achicar las columnas convierte `MAX_PERCENTAGE` en
+  `PERCENTAGE` y las metas nulas de snapshots por tramos en 0 (el esquema anterior no las admite);
+  esa conversión no se deshace al volver a migrar.
+  **Supuesto de inicio:** al primer cambio sin historial se registra el cargo anterior desde el
+  inicio del primer período abierto conocido, sin extenderlo a períodos ya congelados. Los datos
+  anteriores sin historial conservan el comportamiento previo. Un intervalo sin cargo histórico
+  se informa y no inventa un plan. La institución debe confirmar la regla de no prorrateo por tramo.
 - **Gestión y planificación.** El Excel suma 85 % (falta una fila); se normaliza proporcionalmente
   a 100 %: 17,65 / 35,29 / 5,88 / 41,18. El Delegado usa la misma tabla.
 - **Gestor de compras y proyectos.** El Excel no trae su hoja: se asume Reunión semanal 50 % / meta 12

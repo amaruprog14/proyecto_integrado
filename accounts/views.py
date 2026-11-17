@@ -43,6 +43,7 @@ from common.edit_concurrency import edit_conflict, edit_is_current, edit_revisio
 from common.modal_forms import ModalFormOnlyMixin, add_form_error, add_form_success
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
+from configuration.period_services import lock_period_registry
 from configuration.services import AuditoriaService
 
 from .backends import SGRAuthBackend, find_account_by_email
@@ -60,7 +61,7 @@ from .forms import (
     profile_snapshot,
 )
 from . import login_security
-from .models import Delegation, Official, Role
+from .models import Delegation, Official, Role, ServiceRecipient
 from .role_forms import (
     active_officials,
     last_global_administrator,
@@ -388,7 +389,9 @@ class OfficialArchiveView(ProtectedViewMixin, View):
     def post(self, request, pk):
         get_scoped_object_or_404(request, scoped_officials(request.user), pk=pk)
         with transaction.atomic():
-            # Serializa archivados simultáneos antes de comprobar al último administrador.
+            # Serializa archivados simultáneos antes de comprobar al último administrador. El registro de
+            # períodos va primero, como en toda ruta que bloquea funcionarios (sin ciclos de bloqueo).
+            lock_period_registry()
             list(Official.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
             official = get_scoped_object_or_404(request, scoped_officials(request.user), pk=pk)
             if is_same_identity(request.user, target_official=official):
@@ -996,6 +999,9 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
 
     def post(self, request, *args, **kwargs):
         with transaction.atomic():
+            # El cambio de cargo toma el registro de períodos: se bloquea antes que al funcionario
+            # para mantener el mismo orden que ausencias y cierre de período (sin deadlocks).
+            lock_period_registry()
             self._official = get_scoped_object_or_404(
                 request, scoped_officials(request.user).select_for_update(), pk=kwargs["pk"]
             )
@@ -1005,7 +1011,12 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             ))
             if not edit_is_current(request, revision):
                 return edit_conflict()
-            return super().post(request, *args, **kwargs)
+            try:
+                return super().post(request, *args, **kwargs)
+            except PermissionDenied as error:
+                # El rechazo se audita antes de guardar nada: se confirma ese registro y luego se rechaza.
+                denied = error
+        raise denied
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1326,13 +1337,51 @@ class UserUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
         kwargs["active_delegation"] = get_active_delegation(self.request)
         return kwargs
 
+    def user_revision(self, user):
+        """Versión de la cuenta, de su funcionario (cargo, roles y delegaciones) o de su perfil de cliente.
+
+        `last_login` se excluye: iniciar sesión no es una edición y no debe invalidar un borrador.
+        """
+        official = getattr(user, "official", None)
+        recipient = getattr(user, "service_recipient", None)
+        revision = edit_revision(user, memberships=(user.groups.values_list("pk", flat=True),), exclude=("last_login",))
+        if recipient is not None:
+            revision += edit_revision(recipient)
+        if official is not None:
+            revision += edit_revision(official, memberships=(
+                official.authorized_delegations.values_list("pk", flat=True),
+                official.roles.values_list("pk", flat=True),
+            ))
+        return revision
+
+    def post(self, request, *args, **kwargs):
+        with transaction.atomic():
+            # Mismo orden de bloqueos que el cambio de cargo: registro de períodos, funcionario, cuenta.
+            lock_period_registry()
+            edited = self.get_edited_user()
+            Official.objects.select_for_update().filter(user=edited).first()
+            ServiceRecipient.objects.select_for_update().filter(user=edited).first()
+            self._edited_user = get_scoped_object_or_404(
+                request, scoped_users(request.user).select_for_update(), pk=edited.pk
+            )
+            if not edit_is_current(request, self.user_revision(self._edited_user)):
+                return edit_conflict()
+            try:
+                return super().post(request, *args, **kwargs)
+            except PermissionDenied as error:
+                # El rechazo se audita antes de guardar nada: se confirma ese registro y luego se rechaza.
+                denied = error
+        raise denied
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         edited_user = self.get_edited_user()
+        revision = self.request.POST.get("edit_revision") if self.request.method == "POST" else self.user_revision(edited_user)
         context.update(
             maintainer_title=f"Editar usuario {edited_user.username}",
             form_mode="edit",
             edited_user=edited_user,
+            edit_revision=revision,
         )
         return context
 
@@ -1381,6 +1430,10 @@ class UserDeactivateView(ProtectedViewMixin, View):
             return redirect("user_maintainer")
         previous_status = Official.Status(display_status(target)).label
         with transaction.atomic():
+            # Mismo orden que la edición de usuario (registro de períodos, funcionario, perfil y cuenta).
+            lock_period_registry()
+            Official.objects.select_for_update().filter(user_id=target.pk).first()
+            ServiceRecipient.objects.select_for_update().filter(user_id=target.pk).first()
             target = get_scoped_object_or_404(request, scoped_users(request.user).select_for_update(), pk=target.pk)
             recipient = getattr(target, "service_recipient", None)
             if recipient:
@@ -1416,6 +1469,10 @@ class UserActivateView(ProtectedViewMixin, View):
             return redirect("user_maintainer")
         previous_status = Official.Status(display_status(target)).label
         with transaction.atomic():
+            # Mismo orden que la edición de usuario (registro de períodos, funcionario, perfil y cuenta).
+            lock_period_registry()
+            Official.objects.select_for_update().filter(user_id=target.pk).first()
+            ServiceRecipient.objects.select_for_update().filter(user_id=target.pk).first()
             target = get_scoped_object_or_404(request, scoped_users(request.user).select_for_update(), pk=target.pk)
             recipient = getattr(target, "service_recipient", None)
             if recipient:

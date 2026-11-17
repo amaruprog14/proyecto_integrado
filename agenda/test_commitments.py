@@ -74,6 +74,27 @@ class CommitmentWorkflowTests(CaseFixture, TestCase):
         self.assertEqual(self.client.get(details).status_code, 404)
         self.assertEqual(self.client.post(status_url, {"status": "DONE", "observation": "Fuera de ámbito"}).status_code, 404)
 
+    def test_cancelling_with_justification_closes_the_commitment_and_its_alert(self):
+        self.client.post(reverse("attention_entry"), self.attention_data())
+        attention = SocialAttention.objects.get()
+        self.client.post(reverse("commitment_from_case", args=[attention.case_id]), self.data())
+        record = Commitment.objects.get()
+        alert = Alert.objects.get(commitment=record)
+        status_url = reverse("commitment_status", args=[record.pk])
+        self.client.post(status_url, {"status": "CANCELLED", "observation": "Corto"})
+        record.refresh_from_db()
+        self.assertNotEqual(record.current_status, Commitment.Status.CANCELLED)  # exige justificación
+        self.client.post(status_url, {"status": "CANCELLED", "observation": "El vecino desistió de la solicitud."})
+        record.refresh_from_db()
+        alert.refresh_from_db()
+        self.assertEqual(record.current_status, Commitment.Status.CANCELLED)
+        self.assertIsNotNone(alert.resolved_at)
+        Commitment.objects.filter(pk=record.pk).update(committed_date=timezone.localdate() - timedelta(days=5))
+        record.refresh_from_db()
+        self.assertFalse(record.is_overdue())
+        refresh_commitment_alerts()
+        self.assertFalse(Alert.objects.filter(commitment=record, resolved_at__isnull=True).exists())
+
     def test_internal_creation_validates_catalog_scope_and_reassignment_is_audited(self):
         url = reverse("commitment_create")
         response = self.client.post(url, self.data(territory_ref=self.other_territory.pk))

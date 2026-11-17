@@ -61,6 +61,8 @@
                     {% endif %}
                 </dl>
                 {% if result.notice %}<p class="alert alert-warning mt-3 mb-0" role="status">{{ result.notice }}</p>{% endif %}
+                <p>Días computables: {{ result.computable_days|default_if_none:'Sin registro histórico' }}</p>
+                {% include "analytics/segments.html" %}
             </section>
 
             <section class="attention-entry-card mb-3{% if total_light == 'RED' or recent.attention %} performance-deviation{% endif %}" aria-labelledby="recent-activity-title">
@@ -102,7 +104,7 @@
                                         {% if row.notice %}<span class="performance-note">{{ row.notice }}</span>{% endif %}
                                         {% if entry.hidden %}<span class="performance-note" data-hidden-activities="{{ entry.hidden }}">Incluye {{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} de otra delegación que no puedes ver.</span>{% endif %}
                                     </th>
-                                    <td>{{ row.goal|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}</td>
+                                    <td>{% if row.goal is None %}—{% else %}{{ row.goal|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}{% endif %}</td>
                                     <td>{% if row.progress is None %}—{% else %}{{ row.progress|floatformat:"-2" }}{% if row.is_percentage %} %{% endif %}{% endif %}</td>
                                     <td>{{ row.compliance|floatformat:2 }} %</td>
                                     <td>{{ row.weight|floatformat:"-2" }} %</td>

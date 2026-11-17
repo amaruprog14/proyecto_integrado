@@ -48,9 +48,13 @@ def computable_activities(queryset):
         plan__period__deleted_at__isnull=True, deleted_at__isnull=True, published_at__isnull=False,
         effective_from__lte=OuterRef("date"),
     ).order_by("-effective_from", "-pk").values("pk")[:1]
+    from accounts.models import OfficialPositionPeriod
+    historical = OfficialPositionPeriod.objects.filter(official_id=OuterRef("official_id"),
+        start_date__lte=OuterRef("date"), deleted_at__isnull=True).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=OuterRef("date"))).order_by("-start_date").values("position_id")[:1]
     return queryset.alias(
-        _measure_position=Case(When(registration_position_captured=True, then=F("registration_position_id")),
-                               default=F("official__position_id")),
+        _measure_position=Coalesce(Subquery(historical), Case(When(registration_position_captured=True, then=F("registration_position_id")),
+                               default=F("official__position_id"))),
     ).alias(_ruling_version=Subquery(ruling)).filter(
         Exists(approved),
         Exists(MeasurementItem.objects.filter(version_id=OuterRef("_ruling_version"), item_id=OuterRef("item_id"))),
@@ -66,19 +70,36 @@ def computable_days(period, official=None, until=None, include_start_day=False):
       91 días y el 26/08 da 56 (61,54 %).
     - include_start_day=True (lote de ensayo CAL-D): conteo inclusivo. 1–30/10 da 30 días y el
       15/10 da 15 (50 %); el día de inicio ya cuenta 1.
-    `official` queda reservado para descontar licencias, vacaciones, emergencias o compensatorios.
+    Con funcionario se descuentan sus rangos de ausencia, recortados al intervalo contado.
     """
     extra = 1 if include_start_day else 0
     if until is not None and until < period.start_date:
         return 0
     end = period.end_date if until is None else min(until, period.end_date)
-    return max(0, (end - period.start_date).days + extra)
+    days = max(0, (end - period.start_date).days + extra)
+    if official is not None and days:
+        from accounts.models import OfficialAbsence
+        absences = getattr(official, "_measurement_absences", None)
+        if absences is None:
+            absences = OfficialAbsence.objects.filter(official=official, deleted_at__isnull=True,
+                start_date__lte=period.end_date, end_date__gte=period.start_date)
+        start = period.start_date + timedelta(days=0 if include_start_day else 1)
+        # La unión evita descuentos duplicados incluso ante datos legados superpuestos.
+        intervals = sorted((max(start, a.start_date), min(end, a.end_date)) for a in absences
+                           if a.start_date <= end and a.end_date >= start)
+        last = start - timedelta(days=1)
+        for first, final in intervals:
+            first = max(first, last + timedelta(days=1))
+            if final >= first:
+                days -= (final - first).days + 1
+                last = final
+    return max(0, days)
 
 
 def expected_percentage(period, on_date, official=None, include_start_day=False):
     total = computable_days(period, official, include_start_day=include_start_day)
     if total <= 0:
-        return HUNDRED
+        return None if official is not None else HUNDRED
     elapsed = computable_days(period, official, on_date, include_start_day=include_start_day)
     return Decimal(elapsed) / Decimal(total) * HUNDRED
 
@@ -86,7 +107,7 @@ def expected_percentage(period, on_date, official=None, include_start_day=False)
 def traffic_light(compliance, expected, version):
     """RN-008 con los umbrales de la versión: verde desde green_threshold % de lo esperado,
     ámbar desde amber_threshold % de lo esperado y rojo bajo ese límite. Ambos valores en %."""
-    if compliance is None:
+    if compliance is None or expected is None:
         return None
     if compliance >= expected * version.green_threshold / HUNDRED:
         return TrafficLight.GREEN
@@ -113,7 +134,7 @@ class ItemResult:
 
     @property
     def is_percentage(self):
-        return self.goal_type == MeasurementItem.GoalType.PERCENTAGE
+        return self.goal_type in (MeasurementItem.GoalType.PERCENTAGE, MeasurementItem.GoalType.MAX_PERCENTAGE)
 
     @property
     def traffic_light_label(self):
@@ -133,6 +154,9 @@ class PerformanceResult:
     calculated_at: object = None
     frozen_total_light: str | None = None
     closing_delegation: object | None = None
+    computable_days: int | None = None
+    elapsed_days: int | None = None
+    segments: list = field(default_factory=list)
 
     @property
     def position(self):
@@ -182,9 +206,9 @@ class CalculadorDesempenoService:
         return cls.approved_activities(official, period).filter(item=item).count()
 
     @staticmethod
-    def calculate_expected_goal_to_date(period, on_date=None, include_start_day=False):
+    def calculate_expected_goal_to_date(period, on_date=None, include_start_day=False, official=None):
         """Meta esperada al día (RN-007) en %, con dos decimales."""
-        return q2(expected_percentage(period, on_date or timezone.localdate(), include_start_day=include_start_day))
+        return q2(expected_percentage(period, on_date or timezone.localdate(), official, include_start_day=include_start_day))
 
     @classmethod
     def percentage_progress(cls, official, period, until=None):
@@ -260,6 +284,18 @@ class CalculadorDesempenoService:
     def calculate_many(cls, officials, period, on_date=None, include_start_day=False):
         """Carga los datos de todo el equipo en bloque y usa el mismo cálculo para cada funcionario."""
         officials = list(officials)
+        from accounts.models import OfficialAbsence, OfficialPositionPeriod
+        absences = defaultdict(list)
+        histories = defaultdict(list)
+        ids = [official.pk for official in officials]
+        for absence in OfficialAbsence.objects.filter(official_id__in=ids, deleted_at__isnull=True,
+                start_date__lte=period.end_date, end_date__gte=period.start_date):
+            absences[absence.official_id].append(absence)
+        for history in OfficialPositionPeriod.objects.filter(official_id__in=ids, deleted_at__isnull=True,
+                start_date__lte=period.end_date).filter(Q(end_date__isnull=True) | Q(end_date__gte=period.start_date)).select_related("position"):
+            histories[history.official_id].append(history)
+        for official in officials:
+            official._measurement_absences = absences[official.pk]
         on_date = on_date or timezone.localdate()
         reference = min(max(on_date, period.start_date), period.end_date)
         position_ids = {official.position_id for official in officials if official.position_id is not None}
@@ -283,26 +319,39 @@ class CalculadorDesempenoService:
         counted = cls._counted_progress_by_official(official_ids, period, on_date)
         percentage_versions = {
             version_id for version_id, lines in lines_by_version.items()
-            if any(line.goal_type == MeasurementItem.GoalType.PERCENTAGE for line in lines)
+            if any(line.goal_type in (MeasurementItem.GoalType.PERCENTAGE, MeasurementItem.GoalType.MAX_PERCENTAGE) for line in lines)
         }
         percentage = cls._percentage_progress_by_official(
             [official.pk for official in measured if versions[official.position_id].pk in percentage_versions],
             period, on_date,
         )
+        from analytics.segments import pending_percentages, segmented_results
+        pending = pending_percentages(official_ids, period, on_date) if any(
+            line.goal_type == MeasurementItem.GoalType.MAX_PERCENTAGE
+            for lines in lines_by_version.values() for line in lines) else {}
+        segmented = segmented_results(cls, [official for official in officials if histories[official.pk]],
+                                      period, on_date, include_start_day, histories)
         results = []
         for official in officials:
+            if official.pk in segmented:
+                results.append(segmented[official.pk])
+                continue
             version = versions.get(official.position_id)
             lines = lines_by_version[version.pk] if version else ()
             results.append(cls._build_result(
                 official, period, on_date, include_start_day, version, lines,
-                adjustments_by_official[official.pk], counted.get(official.pk, {}), percentage.get(official.pk),
+                adjustments_by_official[official.pk], counted.get(official.pk, {}), percentage.get(official.pk), pending.get(official.pk),
             ))
         return results
 
     @staticmethod
-    def _build_result(official, period, on_date, include_start_day, version, lines, adjustments, counted, percentage):
+    def _build_result(official, period, on_date, include_start_day, version, lines, adjustments, counted, percentage, pending=None):
         expected = expected_percentage(period, on_date, official, include_start_day=include_start_day)
         result = PerformanceResult(official, period, on_date, version, expected)
+        result.computable_days = computable_days(period, official, include_start_day=include_start_day)
+        result.elapsed_days = computable_days(period, official, on_date, include_start_day=include_start_day)
+        if result.computable_days == 0:
+            result.notice = "Sin días computables: el período no se evalúa."
         if official.position_id is None:
             result.notice = "El funcionario no tiene cargo asignado."
             return result
@@ -315,7 +364,9 @@ class CalculadorDesempenoService:
             goal = adjustment.goal if adjustment and adjustment.goal is not None else line.goal
             weight = adjustment.weight if adjustment and adjustment.weight is not None else line.weight
             weight = weight or Decimal("0")
-            if line.goal_type == MeasurementItem.GoalType.PERCENTAGE:
+            if line.goal_type == MeasurementItem.GoalType.MAX_PERCENTAGE:
+                progress = pending
+            elif line.goal_type == MeasurementItem.GoalType.PERCENTAGE:
                 progress = percentage
             else:
                 progress = Decimal(counted.get(line.item_id, 0))
@@ -324,18 +375,24 @@ class CalculadorDesempenoService:
                 compliance=Decimal("0"), weighted=Decimal("0"), expected_units=None, difference=None,
                 traffic_light=None, individual=adjustment is not None,
             )
-            if goal is None or goal <= 0:
+            if result.computable_days == 0:
+                row.notice = "Sin días computables: el ítem no se evalúa."
+            elif goal is None or goal <= 0:
                 row.notice = "Meta no válida: el ítem no se calcula."
             elif progress is None:
                 row.notice = "Sin compromisos en el período: el ítem no aporta."
-                row.expected_units = goal * expected / HUNDRED
+                row.expected_units = goal if row.is_percentage else goal * expected / HUNDRED
             else:
-                row.raw_compliance = progress / goal * HUNDRED
+                # Matriz SGR, SALON!G23: escalones 100/50/0; prevalece sobre el supuesto proporcional.
+                if line.goal_type == MeasurementItem.GoalType.MAX_PERCENTAGE:
+                    row.raw_compliance = HUNDRED if progress <= goal else Decimal("50") if progress <= 50 else Decimal("0")
+                else:
+                    row.raw_compliance = progress / goal * HUNDRED
                 row.compliance = min(row.raw_compliance, version.max_computable)
                 row.weighted = weight * row.compliance / HUNDRED
-                row.expected_units = goal * expected / HUNDRED
+                row.expected_units = goal if line.goal_type == MeasurementItem.GoalType.MAX_PERCENTAGE else goal * expected / HUNDRED
                 row.difference = progress - row.expected_units
-                row.traffic_light = traffic_light(row.raw_compliance, expected, version)
+                row.traffic_light = traffic_light(row.raw_compliance, HUNDRED if line.goal_type == MeasurementItem.GoalType.MAX_PERCENTAGE else expected, version)
             result.items.append(row)
         return result
 
@@ -345,12 +402,14 @@ class CalculadorDesempenoService:
         return IndicatorSnapshot(
             official=result.official, item=row.item, period=result.period, version=result.version,
             closing_delegation_id=result.official.delegation_id if frozen else None,
-            goal_type=row.goal_type, goal=q2(row.goal or 0), progress=row.progress,
+            goal_type=row.goal_type, goal=q2(row.goal) if row.goal is not None else None, progress=row.progress,
             raw_compliance=row.raw_compliance, compliance=q2(row.compliance), applied_weighting=q2(row.weight),
             weighted=row.weighted, expected_percentage=result.expected_percentage,
             expected_units=row.expected_units, difference=row.difference, individual=row.individual,
             notice=row.notice, traffic_light=row.traffic_light or "", is_frozen=frozen,
             total_traffic_light=result.total_traffic_light or "", calculated_at=calculated_at,
+            computable_days=result.computable_days, elapsed_days=result.elapsed_days,
+            segments=result.segments, result_notice=result.notice,
         )
 
     @classmethod
@@ -392,6 +451,12 @@ class CalculadorDesempenoService:
                                    calculated_at=snapshots[0].calculated_at if snapshots else period.frozen_at,
                                    frozen_total_light=(snapshots[0].total_traffic_light or None) if snapshots else None,
                                    closing_delegation=snapshots[0].closing_delegation if snapshots else None)
+        if snapshots:
+            result.expected_percentage = snapshots[0].expected_percentage
+            result.computable_days = snapshots[0].computable_days
+            result.elapsed_days = snapshots[0].elapsed_days
+            result.segments = snapshots[0].segments
+            result.notice = snapshots[0].result_notice
         if not snapshots:
             result.notice = "El funcionario no tenía un plan de medición aplicable al cerrar el período."
         for snapshot in snapshots:
@@ -428,7 +493,7 @@ class CalculadorDesempenoService:
         cierre tras una reapertura), que archiva los snapshots anteriores y congela de nuevo.
         Los funcionarios archivados no se congelan. Devuelve la cantidad de snapshots creados.
         """
-        from accounts.models import Official
+        from accounts.models import Official, OfficialPositionPeriod
 
         if period.frozen_at is not None and not replace:
             return 0
@@ -437,8 +502,12 @@ class CalculadorDesempenoService:
         officials = Official.objects.filter(
             Q(position__measurementplan__period=period, position__measurementplan__deleted_at__isnull=True)
             | Q(activities__date__range=(period.start_date, period.end_date)),
+            # Incluye cargos anteriores que ya no coinciden con el cargo actual.
             deleted_at__isnull=True,
         ).distinct().order_by("pk")
+        historical_ids = OfficialPositionPeriod.objects.filter(start_date__lte=period.end_date,
+            deleted_at__isnull=True).filter(Q(end_date__isnull=True) | Q(end_date__gte=period.start_date)).values("official_id")
+        officials = Official.objects.filter(Q(pk__in=officials.values("pk")) | Q(pk__in=historical_ids), deleted_at__isnull=True)
         snapshots = []
         for official in officials:
             result = cls.calculate(official, period, period.end_date)

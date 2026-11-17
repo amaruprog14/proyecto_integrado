@@ -15,6 +15,10 @@ class Commitment(BaseModel):
         PENDING = "PENDING", "Pendiente"
         IN_PROGRESS = "IN_PROGRESS", "En proceso"
         DONE = "DONE", "Realizado"
+        CANCELLED = "CANCELLED", "Cancelado con justificación"
+
+    # Estados terminales: un compromiso realizado o cancelado con justificación ya no está abierto.
+    CLOSED_STATUSES = (Status.DONE, Status.CANCELLED)
 
     responsible = models.ForeignKey(
         Official,
@@ -34,6 +38,7 @@ class Commitment(BaseModel):
                                     related_name="originated_commitments")
     description = models.TextField(blank=True, max_length=500, verbose_name="Descripción del compromiso")
     completed_on = models.DateField(null=True, blank=True, editable=False, verbose_name="Fecha de realización")
+    cancellation_reason = models.TextField(blank=True, max_length=500, verbose_name="Justificación de cancelación")
     submission_token = models.UUIDField(unique=True, null=True, editable=False)
     committed_date = models.DateField(verbose_name="Fecha comprometida")
     creation_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de creación")
@@ -60,12 +65,14 @@ class Commitment(BaseModel):
 
     @property
     def next_statuses(self):
-        return {
+        choices = {
             self.Status.ENTERED: (self.Status.PENDING, self.Status.IN_PROGRESS, self.Status.DONE),
             self.Status.PENDING: (self.Status.IN_PROGRESS, self.Status.DONE),
             self.Status.IN_PROGRESS: (self.Status.PENDING, self.Status.DONE),
             self.Status.DONE: (),
+            self.Status.CANCELLED: (),
         }[self.current_status]
+        return (*choices, self.Status.CANCELLED) if self.current_status not in (self.Status.DONE, self.Status.CANCELLED) else choices
 
     def __str__(self):
         return f"Compromiso {self.pk} - {self.requester}"
@@ -78,10 +85,14 @@ class Commitment(BaseModel):
             return None
         if new_status not in self.next_statuses:
             raise ValidationError("El cambio de estado no está permitido.")
+        if new_status == self.Status.CANCELLED:
+            if len(observation.strip()) < 10:
+                raise ValidationError("Para cancelar indica una justificación de al menos 10 caracteres.")
+            self.cancellation_reason = observation.strip()
         self.current_status = new_status
         if new_status == self.Status.DONE:
             self.completed_on = timezone.localdate()
-        self.save(update_fields=["current_status", "completed_on", "updated_at"])
+        self.save(update_fields=["current_status", "completed_on", "cancellation_reason", "updated_at"])
         return CommitmentStatusHistory.objects.create(
             commitment=self,
             author=author,
@@ -96,7 +107,7 @@ class Commitment(BaseModel):
 
     def is_overdue(self):
         """Vencido: fecha comprometida pasada y no realizado."""
-        return self.current_status != self.Status.DONE and self.committed_date < timezone.localdate()
+        return self.current_status not in self.CLOSED_STATUSES and self.committed_date < timezone.localdate()
 
 
 class CommitmentStatusHistory(BaseModel):

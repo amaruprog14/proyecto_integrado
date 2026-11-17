@@ -5,6 +5,7 @@ from django.urls import reverse
 
 from accounts.models import Delegation, Official, Role
 from configuration.models import AuditLog
+from common.testing_edit import post_with_revision
 
 
 User = get_user_model()
@@ -162,6 +163,20 @@ class AdministrativeAuthorizationTests(TestCase):
         self.assertTrue(self.manager.is_active)
         self.assertContains(response, "No puedes cambiar el estado de tu propia cuenta")
 
+    def test_official_update_keeps_the_denied_role_audit(self):
+        role = Role.objects.create(role_name="Rol No Asignable En Ficha", scope=Role.Scope.ALL)
+        role.permissions.add(Permission.objects.get(content_type__app_label="auth", codename="change_user"))
+        official = Official.objects.create(full_name="Ficha Propia", national_id="RUT-FICHA-SEG",
+                                           email="ficha@example.test", delegation=self.own)
+        response = post_with_revision(self.client, reverse("official_update", args=[official.pk]), {
+            "full_name": official.full_name, "national_id": official.national_id, "email": official.email,
+            "status": Official.Status.ACTIVE, "delegation": self.own.pk, "roles": [role.pk],
+        })
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(official.roles.filter(pk=role.pk).exists())
+        # El rechazo queda auditado aunque la edición se revierta.
+        self.assertTrue(AuditLog.objects.filter(action="Acceso denegado").exists())
+
     def test_role_privilege_is_not_assignable_without_role_permission(self):
         role = Role.objects.create(
             role_name="Rol Administrativo No Autorizado",
@@ -179,7 +194,7 @@ class AdministrativeAuthorizationTests(TestCase):
             delegation=self.own,
         )
 
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[target.pk]),
             {
                 "username": target.username,

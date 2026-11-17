@@ -2,11 +2,15 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 
 from common.chilean_rut import validate_chilean_rut
 from common.codes import AutoCodeMixin
 from common.mixins import BaseModel
+
+# Reexportados para mantener la entrada pública accounts.models.
+from .measurement_models import OfficialAbsence, OfficialPositionPeriod
 
 
 class Position(BaseModel):

@@ -62,6 +62,8 @@ def deadline_labels(record, today=None):
         if record.completed_on and record.completed_on > record.committed_date:
             return "Realizado fuera de plazo"
         return ""
+    if record.current_status == Commitment.Status.CANCELLED:
+        return ""
     if record.committed_date < today:
         return "Vencido"
     if record.committed_date == today:

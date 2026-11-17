@@ -10,6 +10,7 @@ from django.urls import reverse
 from accounts.models import Territory, Delegation, Official, ServiceRecipient
 from activities.models import ClientRequest
 from openpyxl import load_workbook
+from common.testing_edit import post_with_revision
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
@@ -42,6 +43,19 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         self.assertEqual(response.status_code, 302, getattr(response, 'context', None))
         return User.objects.get(username='cliente.nuevo')
 
+    def test_stale_client_profile_edit_gets_conflict(self):
+        user = self.create_client()
+        url = reverse('user_update', args=[user.pk])
+        revision = self.client.get(url, HTTP_X_MODAL_REQUEST='true').context['edit_revision']
+        first = self.payload(address='Dirección Primera 1', password1='', password2='', edit_revision=revision)
+        self.assertEqual(self.client.post(url, first).status_code, 302)
+        stale = self.payload(address='Calle de Prueba 123', phone='56987654321', password1='', password2='',
+                             edit_revision=revision)
+        response = self.client.post(url, stale, HTTP_X_MODAL_REQUEST='true')
+        self.assertEqual(response.status_code, 409)
+        user.service_recipient.refresh_from_db()
+        self.assertEqual(user.service_recipient.address, 'Dirección Primera 1')
+
     def test_create_edit_details_export_and_immutable_type(self):
         user = self.create_client()
         self.assertFalse(hasattr(user, 'official'))
@@ -51,10 +65,10 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         self.assertContains(response, 'Perfil del cliente')
         self.assertContains(response, 'Calle de Prueba 123')
         data = self.payload(address='Calle Editada 456', password1='', password2='')
-        self.assertEqual(self.client.post(reverse('user_update', args=[user.pk]), data).status_code, 302)
+        self.assertEqual(post_with_revision(self.client, reverse('user_update', args=[user.pk]), data).status_code, 302)
         user.refresh_from_db()
         self.assertEqual(user.service_recipient.address, 'Calle Editada 456')
-        response = self.client.post(reverse('user_update', args=[user.pk]), data | {'account_type': 'OFFICIAL'})
+        response = post_with_revision(self.client, reverse('user_update', args=[user.pk]), data | {'account_type': 'OFFICIAL'})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['form'].errors)
         session = self.client.session
@@ -97,7 +111,7 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         person.save(update_fields=["phone"])
         data = self.payload(first_name=user.first_name, phone=person.phone, password1="", password2="",
                             address="Calle Editada 456")
-        response = self.client.post(reverse("user_update", args=[user.pk]), data)
+        response = post_with_revision(self.client, reverse("user_update", args=[user.pk]), data)
         self.assertEqual(response.status_code, 302)
         person.refresh_from_db()
         self.assertEqual(person.phone, "+56 9 1234 5678")

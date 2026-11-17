@@ -61,11 +61,12 @@ class MeasurementItem(models.Model):
     class GoalType(models.TextChoices):
         QUANTITY = "QUANTITY", "Cantidad"
         PERCENTAGE = "PERCENTAGE", "Porcentaje"
+        MAX_PERCENTAGE = "MAX_PERCENTAGE", "Porcentaje máximo"
 
     version = models.ForeignKey(MeasurementVersion, on_delete=models.CASCADE, related_name="items")
     function = models.ForeignKey(Function, on_delete=models.PROTECT, verbose_name="Función")
     item = models.ForeignKey(Item, on_delete=models.PROTECT, verbose_name="Ítem")
-    goal_type = models.CharField(max_length=10, choices=GoalType.choices, verbose_name="Tipo de meta")
+    goal_type = models.CharField(max_length=16, choices=GoalType.choices, verbose_name="Tipo de meta")
     goal = models.DecimalField(
         max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Meta",
         validators=[MinValueValidator(Decimal("0.01"))],
@@ -104,7 +105,7 @@ class MeasurementAdjustment(models.Model):
 
 
 class GoalThreshold(BaseModel):
-    """Tabla maestra versionada: meta y umbrales por ítem (MetaUmbral)."""
+    """OBSOLETO: se conserva como referencia; usar MeasurementVersion/Item."""
 
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="goal_thresholds", verbose_name="Ítem"
@@ -237,9 +238,11 @@ class IndicatorSnapshot(BaseModel):
         MeasurementVersion, on_delete=models.PROTECT, null=True, blank=True, related_name="snapshots",
         verbose_name="Versión del plan",
     )
-    goal_type = models.CharField(max_length=10, choices=MeasurementItem.GoalType.choices, blank=True,
+    goal_type = models.CharField(max_length=16, choices=MeasurementItem.GoalType.choices, blank=True,
                                  verbose_name="Tipo de meta")
-    goal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"), verbose_name="Meta")
+    # Nula cuando la meta difiere entre tramos de cargo (A3): no se congela una meta 0 engañosa.
+    goal = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, default=Decimal("0"),
+                               verbose_name="Meta")
     progress = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, default=Decimal("0"),
                                    verbose_name="Avance")
     compliance = models.DecimalField(
@@ -272,6 +275,10 @@ class IndicatorSnapshot(BaseModel):
         help_text="Semáforo del total ponderado del funcionario al congelar; no se recalcula.",
     )
     calculated_at = models.DateTimeField(default=timezone.now, verbose_name="Fecha de cálculo")
+    computable_days = models.PositiveIntegerField(null=True, editable=False)
+    elapsed_days = models.PositiveIntegerField(null=True, editable=False)
+    segments = models.JSONField(default=list, blank=True, editable=False)
+    result_notice = models.CharField(max_length=500, blank=True, editable=False)
 
     class Meta:
         verbose_name = "Indicador (snapshot)"
@@ -311,7 +318,9 @@ class DelegationActivitySnapshot(models.Model):
 
 
 class IncentiveApplication(BaseModel):
-    """Tabla operativa: incentivo o penalización aplicado a un indicador."""
+    """OBSOLETO: diseño anterior ligado al indicador; usar ScoreAdjustment por período.
+    Se conserva sin borrar ni migrar sus datos. No agregar usos nuevos.
+    """
 
     class Kind(models.TextChoices):
         CONGRATULATION = "CONGRATULATION", "Felicitación"

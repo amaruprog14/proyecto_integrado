@@ -77,6 +77,9 @@ def personal_performance(request):
         "total": result.total if result.items else None,
         "semaforo": result.total_traffic_light,
         "items": result.items,
+        "computable_days": result.computable_days,
+        "expected_percentage": result.expected_percentage,
+        "segments": result.segments,
         "aviso": result.notice or ("Sin indicadores para el funcionario en este período." if not result.items else None),
     }
     return Response(PersonalPerformanceSerializer(data).data)

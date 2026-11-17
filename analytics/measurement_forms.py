@@ -60,8 +60,13 @@ class VersionForm(MaintainerForm):
 
 def check_percentage_goal(form, goal_type):
     goal = form.cleaned_data.get("goal")
-    if goal_type == MeasurementItem.GoalType.PERCENTAGE and goal is not None and goal > 100:
+    if goal_type in (MeasurementItem.GoalType.PERCENTAGE, MeasurementItem.GoalType.MAX_PERCENTAGE) and goal is not None and goal > 100:
         form.add_error("goal", "La meta porcentual debe ser como máximo 100 %.")
+
+
+# Origen: matriz SGR (MATRIZ_SGR, hoja SALON, celdas C23/G23), «Pendientes en tubo menor a 10 %».
+MAX_PERCENTAGE_RULE = ("Porcentaje máximo (p. ej. «Pendientes en tubo», meta 10): cumple 100 % si el valor es "
+                       "menor o igual a la meta, 50 % hasta 50 % y 0 % sobre 50 %. Fuente: matriz SGR, hoja SALON, G23.")
 
 
 class MeasurementItemForm(MaintainerForm):
@@ -75,6 +80,7 @@ class MeasurementItemForm(MaintainerForm):
         self.fields["function"].queryset = position.functions.filter(
             Q(is_active=True, deleted_at__isnull=True) | Q(pk=self.instance.function_id),
         )
+        self.fields["goal_type"].help_text = MAX_PERCENTAGE_RULE
         used = version.items.exclude(pk=self.instance.pk).values("item_id")
         self.fields["item"].queryset = Item.objects.filter(
             Q(is_active=True, deleted_at__isnull=True) | Q(pk=self.instance.item_id),
@@ -83,7 +89,7 @@ class MeasurementItemForm(MaintainerForm):
     def clean(self):
         data = super().clean()
         check_percentage_goal(self, data.get("goal_type"))
-        if data.get("goal_type") == MeasurementItem.GoalType.PERCENTAGE and self.instance.pk and self.instance.adjustments.filter(goal__gt=100).exists():
+        if data.get("goal_type") in (MeasurementItem.GoalType.PERCENTAGE, MeasurementItem.GoalType.MAX_PERCENTAGE) and self.instance.pk and self.instance.adjustments.filter(goal__gt=100).exists():
             self.add_error("goal_type", "Corrige las metas individuales que superan el 100 %.")
         return data
 

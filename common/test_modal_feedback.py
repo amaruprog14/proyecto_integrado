@@ -109,7 +109,7 @@ class ModalFeedbackTests(TestCase):
                 if route == "user":
                     update.update(password1="", password2="")
                 edit = reverse(f"{route}_update", args=[record.pk])
-                if route in ("activity", "official"):
+                if route in ("activity", "official", "user"):
                     update["edit_revision"] = revision_from_form(self.client, edit)
                 self.assert_modal_saved(self.client.post(edit, update, **INLINE_MODAL))
                 self.assertTrue(model.objects.filter(pk=record.pk, **{field: edited_value}).exists())

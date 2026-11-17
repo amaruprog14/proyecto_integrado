@@ -17,7 +17,7 @@ from configuration.models import ActivityType, Item, Period, ServiceType
 from activities.models import Activity
 from activities.classification import CLASSIFICATION, classification_choices
 from activities.territorial import registration_delegations
-from analytics.measurement import eligible_items
+from analytics.measurement import eligible_items, historical_position_id
 
 
 class MaintainerForm(LimitedTextFieldsMixin, forms.ModelForm):
@@ -298,6 +298,8 @@ def activity_item_choices(official, date, activity):
     position_id = official.position_id if official else None
     if same_official and activity.registration_position_captured:
         position_id = activity.registration_position_id
+    # Con historial fechado (A3) manda el cargo vigente en la fecha de la actividad, igual que el cálculo.
+    position_id = historical_position_id(official.pk if official else None, date) or position_id
     items = eligible_items(position_id, date)
     if activity.pk and same_official and date == activity.date:
         items = Item.objects.filter(Q(pk__in=items.values("pk")) | Q(pk=activity.item_id))

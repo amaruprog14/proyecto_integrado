@@ -7,6 +7,7 @@
                 <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
+                {% include "analytics/segments.html" with result=selected.result %}
                 {% if can_open_personal %}
                     <p><a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ selected.result.official.pk }}">Abrir desempeño individual</a></p>
                 {% endif %}
