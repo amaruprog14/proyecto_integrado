@@ -33,6 +33,7 @@ urlpatterns = [
     path('activities/', include('activities.urls')),
     path('agenda/', include('agenda.urls')),
     path('analytics/', include('analytics.urls')),
+    path('api/', include('sgr_api.urls')),
     path('configuration/', include('configuration.urls'))
 ]
 

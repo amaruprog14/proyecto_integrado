@@ -220,6 +220,7 @@ __marimo__/
 # Documentos de la asignatura (requisitos, plan de pruebas): no se versionan
 docs/*
 !docs/datos_demostracion.docx
+!docs/api-desempeno.md
 /Requisitos_y_Plan_Pruebas_*.pdf
 
 

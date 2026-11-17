@@ -1,0 +1,46 @@
+# API REST de desempeño del SGR
+
+La API devuelve los indicadores de los tableros del SGR. Las consultas usan el período vigente cuando se omite `periodo` y entregan el resultado congelado cuando el período está cerrado. El JSON representa los decimales con dos posiciones. Un aviso y valores `null` indican que faltan datos para calcular el resultado.
+
+## Puesta en marcha local
+
+Activa el entorno virtual del proyecto, configura la base en `.env` y usa `DEBUG=True` para abrir la documentación en local.
+
+```powershell
+python -m pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver --noreload
+```
+
+## Probar en Swagger o Postman
+
+1. Inicia sesión en la web del SGR con una cuenta que tenga permiso de desempeño. En el mismo navegador abre `http://127.0.0.1:8000/api/swagger/`. ReDoc está en `/api/redoc/` y el esquema en `/api/schema/`.
+2. En Swagger abre **Obtener tokens del SGR** y pulsa **Try it out**. Envía tu usuario o correo en `username` y tu contraseña en `password`. La respuesta contiene `access` y `refresh`.
+3. Pulsa **Authorize** y pega solo el valor de `access`. Si usas Postman, envía `Authorization: Bearer <access>` en cada consulta.
+4. Ejecuta `GET /api/v1/periodos/`. Usa un ID devuelto para probar `GET /api/v1/mi-desempeno/?periodo=3`, reemplazando `3` por el ID correspondiente.
+5. Con un supervisor autorizado, prueba `GET /api/v1/delegaciones/2/desempeno/?periodo=3`, reemplazando ambos identificadores. Puedes obtener el ID de la delegación desde su detalle en el mantenedor. Compara los datos con el tablero de esa delegación y período.
+6. Para renovar el acceso, envía `{"refresh":"…"}` a `POST /api/token/refresh/`. Conserva el token de renovación en el cliente y reemplaza el de acceso por el que devuelve la respuesta.
+
+El acceso dura 5 minutos y la renovación 1 día. Los permisos actuales se consultan al recibir cada solicitud. La API responde `401` por falta de autenticación, `403` por permiso insuficiente y `404` si la delegación queda fuera del alcance o el período no está disponible. Un parámetro de período inválido devuelve `400`.
+
+## Actualizar en EC2
+
+Después de incorporar los cambios, ejecuta estos comandos desde la carpeta del proyecto con el mismo entorno virtual que usa el servicio.
+
+```sh
+python -m pip install -r requirements.txt
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+python manage.py check
+```
+
+Mantén `DEBUG=False`. Para servir Swagger, ReDoc y el esquema, configura `SGR_API_DOCS_ENABLED=True` en el entorno del servicio. Simple JWT usa `SECRET_KEY` por defecto. Puedes configurar una clave de firma independiente mediante `SGR_API_JWT_SIGNING_KEY`. Aplica las variables y reinicia el servicio existente.
+
+Comprueba por HTTPS que el proxy dirija `/api/` a Django, entregue el encabezado `Authorization` y sirva los estáticos recopilados. Abre Swagger con una sesión web autorizada, ejecuta las tres consultas y compara los resultados con la web usando el mismo período. Usa las cuentas y datos disponibles en esa instancia.
+
+## Verificación automatizada
+
+```sh
+python manage.py spectacular --validate --fail-on-warn
+python manage.py test sgr_api analytics.test_performance_panel
+```
