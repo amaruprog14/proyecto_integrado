@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% block title %}{% if letter %}Editar carta{% else %}Registrar carta{% endif %} · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="office_letter_list" %}{% endblock %}
+{% block content %}
+<section class="attention-entry" aria-labelledby="office-letter-title">
+    <header class="attention-entry-heading">
+        <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'office_letter_list' %}">Cartas de Oficina de Partes</a>{% if letter %} / {{ letter.identifier }}{% endif %}</p>
+        <h1 id="office-letter-title">{% if letter %}Editar carta{% else %}Registrar carta{% endif %}</h1>
+    </header>
+    <form method="post" class="attention-entry-card">
+        {% csrf_token %}
+        {% bootstrap_form_errors form %}
+        <div class="attention-entry-grid">
+            {% for field in form %}{% bootstrap_field field %}{% endfor %}
+        </div>
+        <div class="attention-entry-actions">
+            <button class="btn btn-primary" type="submit">Guardar carta</button>
+            <a class="btn attention-entry-cancel" href="{% if letter %}{% url 'office_letter_detail' letter.pk %}{% else %}{% url 'office_letter_list' %}{% endif %}">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

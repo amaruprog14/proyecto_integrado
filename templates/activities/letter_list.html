@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% block title %}Cartas de Oficina de Partes · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="office_letter_list" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content" aria-labelledby="office-letters-title">
+    <header class="maintainer-heading">
+        <div><p class="maintainer-breadcrumb">Gestión municipal / Actividades</p><h1 id="office-letters-title">Cartas de Oficina de Partes</h1></div>
+        {% if perms.activities.add_officeletter %}<a class="btn btn-primary" href="{% url 'office_letter_create' %}">Registrar carta</a>{% endif %}
+    </header>
+    <form class="maintainer-tools" method="get" aria-label="Filtrar cartas">
+        {% bootstrap_form_errors filter_form %}
+        <div class="attention-entry-grid w-100">
+            {% for field in filter_form %}{% bootstrap_field field %}{% endfor %}
+        </div>
+        <div class="attention-entry-actions">
+            <button class="btn btn-primary" type="submit">Buscar</button>
+            <a class="btn attention-entry-cancel" href="{% url 'office_letter_list' %}">Limpiar filtros</a>
+        </div>
+    </form>
+    <dl class="d-flex flex-wrap gap-3 mt-3">
+        <div><dt>Total</dt><dd>{{ total }}</dd></div>
+        <div><dt>Aplicables</dt><dd>{{ applicable }}</dd></div>
+        {% for label, count in status_counts %}<div><dt>{{ label }}</dt><dd>{{ count }}</dd></div>{% endfor %}
+    </dl>
+    <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-label="Tabla de cartas">
+        <table class="table maintainer-table">
+            <thead><tr><th scope="col">Código / Nº externo</th><th scope="col">Recepción</th><th scope="col">Tema / Remitente</th><th scope="col">Encargado</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+            <tbody>
+                {% for letter in page_obj %}
+                    <tr>
+                        <td>{{ letter.identifier }}{% if letter.external_number %}<small class="d-block text-break">Nº {{ letter.external_number }}</small>{% endif %}</td>
+                        <td>{{ letter.received_on|date:"d/m/Y" }}<small class="d-block">{{ letter.delegation }}</small></td>
+                        <td class="text-break">{{ letter.subject }}<small class="d-block">{{ letter.sender }}</small></td>
+                        <td>{{ letter.responsible|default:letter.responsible_area|default:"Sin asignar" }}</td>
+                        <td>{% include "activities/letter_status.html" %}</td>
+                        <td class="maintainer-actions"><a class="action-icon action-icon--view delegation-action" href="{% url 'office_letter_detail' letter.pk %}" aria-label="Ver carta {{ letter.identifier }}" data-tooltip="Ver carta">{% include 'includes/action_icon.html' with action='Ver' %}</a></td>
+                    </tr>
+                {% empty %}<tr><td colspan="6">No hay cartas para esta búsqueda.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="maintainer-table-footer"><p>Mostrando {{ page_obj.start_index }} a {{ page_obj.end_index }} de {{ total }} cartas</p>{% include 'client/pagination.html' with page_label="Páginas de cartas" %}</div>
+</section>
+{% endblock %}

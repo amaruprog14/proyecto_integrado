@@ -19,6 +19,7 @@
                         {% if can_add %}<a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>+ Nueva actividad</a>{% endif %}
                         {% if perms.activities.add_socialattention %}<a class="btn btn-primary" href="{% url 'attention_entry' %}">Registrar atención</a>{% endif %}
                         {% if perms.activities.view_socialattention %}<a class="btn attention-entry-cancel" href="{% url 'attention_cases' %}">Casos sociales</a>{% endif %}
+                        {% if perms.activities.view_officeletter %}<a class="btn attention-entry-cancel" href="{% url 'office_letter_list' %}">Cartas de Oficina de Partes</a>{% endif %}
                     </div>
                 {% elif can_add %}
                     <a class="btn btn-primary maintainer-new-button" href="{{ create_url }}" data-modal-form>{{ create_label|default:"+ Nuevo registro" }}</a>

@@ -19,7 +19,8 @@ from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan
 from configuration.models import ActivityType, AttentionType, Item, Period, PeriodMutex, SubattentionType
 from configuration.services import AuditoriaService
-from common.demo_data import CONSULTA_PERMISSIONS, OPERATOR_PERMISSIONS, demo_rut, require_seed_password
+from common.demo_data import (CONSULTA_PERMISSIONS, MANAGE_LETTERS, OPERATOR_PERMISSIONS, VIEW_LETTERS,
+                              demo_rut, require_seed_password)
 from common.sgr_seed_data import (
     ATTENTION_CATALOG, GEOGRAPHY, PERCENTAGE_ITEM, POSITIONS, POSITION_ITEMS, POSITION_PLANS, fictional_name,
 )
@@ -36,7 +37,7 @@ MANAGE_AGENDA = OPERATE_AGENDA + ["agenda.assign_commitment"]
 # siempre que al rol de demostración solo le falten permisos de esta lista.
 UPGRADE_PERMISSIONS = [
     "accounts.archive_official", "activities.archive_activity", *MEASUREMENT_PLAN_PERMISSIONS,
-    "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE, *MANAGE_AGENDA,
+    "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE, *MANAGE_AGENDA, *MANAGE_LETTERS,
 ]
 DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
 DEMO_REVISION_DATE = date(2026, 10, 15)
@@ -234,9 +235,9 @@ class Command(BaseCommand):
 
         roles = {
             "adminA": self.role("Administrador", "ALL", get_administrator_permissions()),
-            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"] + VIEW_PERFORMANCE + OPERATE_AGENDA)),
+            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"] + VIEW_PERFORMANCE + OPERATE_AGENDA + MANAGE_LETTERS)),
             # Solo el desempeño propio: el rol debe seguir siendo asignable por editorA, que no tiene permisos de equipo.
-            "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + VIEW_PERFORMANCE + VIEW_AGENDA)),
+            "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + VIEW_PERFORMANCE + VIEW_AGENDA + VIEW_LETTERS)),
         }
         # Panel de desempeño: funcionarios, lectores y verificadores ven lo suyo; Delegado, Coordinador y
         # Administrador eligen funcionarios dentro de su alcance.

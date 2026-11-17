@@ -20,6 +20,7 @@ from agenda.comments import InternalCommentView
 from .case_views import CaseActionView, CaseDetailView, CaseListView
 from .eligible_items import ActivityEligibleItemsView
 from .evidence import EvidenceImageView, EvidenceReviewView, EvidenceUploadView
+from .letters import LetterCaseView, LetterDetailView, LetterFormView, LetterListView
 from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
 urlpatterns = []
@@ -33,6 +34,11 @@ urlpatterns += [
     path('atenciones/nueva/', AttentionEntryView.as_view(), name='attention_entry'),
     path('atenciones/buscar-solicitudes/', AttentionRequestLookupView.as_view(), name='attention_request_lookup'),
     path('atenciones/<int:pk>/', AttentionDetailView.as_view(), name='attention_detail'),
+    path('cartas/', LetterListView.as_view(), name='office_letter_list'),
+    path('cartas/nueva/', LetterFormView.as_view(), name='office_letter_create'),
+    path('cartas/<int:pk>/', LetterDetailView.as_view(), name='office_letter_detail'),
+    path('cartas/<int:pk>/editar/', LetterFormView.as_view(), name='office_letter_edit'),
+    path('cartas/<int:pk>/caso/', LetterCaseView.as_view(), name='office_letter_case'),
     path('casos/', CaseListView.as_view(), name='attention_cases'),
     path('casos/<int:pk>/', CaseDetailView.as_view(), name='attention_case_detail'),
     path('casos/<int:pk>/comentarios/', InternalCommentView.as_view(target="case"), name="case_internal_comment"),

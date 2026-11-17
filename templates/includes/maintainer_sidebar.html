@@ -23,7 +23,7 @@
             </nav>
         </div>
     {% endif %}
-    {% if perms.activities.add_socialattention or perms.activities.view_activity or perms.activities.view_socialattention or perms.agenda.view_commitment or user.official.is_enabled %}
+    {% if perms.activities.add_socialattention or perms.activities.view_activity or perms.activities.view_officeletter or perms.activities.view_socialattention or perms.agenda.view_commitment or user.official.is_enabled %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-operacion">Operación</p>
             <nav aria-labelledby="menu-operacion">
@@ -32,6 +32,7 @@
                 {% endif %}
                 {% if perms.activities.add_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_entry' %} is-active{% endif %}" href="{% url 'attention_entry' %}"{% if active == 'attention_entry' %} aria-current="page"{% endif %}>Ingreso de atención</a>{% endif %}
                 {% if perms.activities.view_activity %}<a class="maintainer-sidebar-link{% if active == 'activities' %} is-active{% endif %}" href="{% url 'activity_maintainer' %}"{% if active == 'activities' %} aria-current="page"{% endif %}>Actividades</a>{% endif %}
+                {% if perms.activities.view_officeletter %}<a class="maintainer-sidebar-link{% if active == 'office_letter_list' %} is-active{% endif %}" href="{% url 'office_letter_list' %}"{% if active == 'office_letter_list' %} aria-current="page"{% endif %}>Cartas de Oficina de Partes</a>{% endif %}
                 {% if perms.activities.view_socialattention %}<a class="maintainer-sidebar-link{% if active == 'attention_cases' %} is-active{% endif %}" href="{% url 'attention_cases' %}"{% if active == 'attention_cases' %} aria-current="page"{% endif %}>Casos sociales</a>{% endif %}
                 {% if perms.agenda.view_commitment %}<a class="maintainer-sidebar-link{% if active == 'commitment_list' %} is-active{% endif %}" href="{% url 'commitment_list' %}"{% if active == 'commitment_list' %} aria-current="page"{% endif %}>Agenda colectiva</a>{% endif %}
                 {% if user.official.is_enabled %}<a class="maintainer-sidebar-link{% if active == 'alert_list' %} is-active{% endif %}" href="{% url 'alert_list' %}"{% if active == 'alert_list' %} aria-current="page"{% endif %}>Alertas</a>{% endif %}
