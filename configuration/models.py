@@ -82,8 +82,13 @@ class Period(BaseModel):
     def close_period(self):
         """Cierra el período y congela sus resultados (RN-013) en la misma transacción."""
         from analytics.services import CalculadorDesempenoService
+        from configuration.period_services import lock_period_registry
 
         with transaction.atomic():
+            # Mismo orden de bloqueos que las demás rutas de escritura (registro de períodos →
+            # período → funcionario...): un cambio concurrente (reasignar compromisos, cambiar de
+            # cargo o ausencias) no se cuela entre el cálculo congelado y su respaldo.
+            lock_period_registry()
             # Se relee bloqueado: cerrar dos veces nunca reemplaza el resultado oficial congelado.
             # Se trabaja con la fila bloqueada (fechas y estado actuales), no con la copia recibida.
             locked = type(self).objects.select_for_update().get(pk=self.pk)

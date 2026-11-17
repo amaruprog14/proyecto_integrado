@@ -41,7 +41,7 @@ class VersionForm(MaintainerForm):
         model = MeasurementVersion
         fields = (
             "effective_from", "max_computable", "amber_threshold", "green_threshold", "collective_threshold",
-            "congratulation_points", "complaint_points",
+            "congratulation_points", "complaint_points", "max_final_score",
         )
 
     def __init__(self, *args, **kwargs):

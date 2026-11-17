@@ -76,3 +76,59 @@ class AuditViewTests(TestCase):
         self.client.force_login(self.local_user)
         self.assertEqual(self.client.get(self.list_url).status_code, 403)
         self.assertNotContains(self.client.get(self.detail_url), self.event.action, status_code=403)
+
+    def test_catalog_changes_show_names_and_keep_sensitive_fields_reserved(self):
+        delegation = AuditLog.objects.create(
+            actor_username="coordinacion-original", action="Edición de delegación",
+            affected_table="accounts_delegation", affected_record_id=7,
+            previous_value="Nombre de la delegación: Centro",
+            new_value="\n".join([
+                "Nombre de la delegación: Centro Histórico", "Correo electrónico: oficina@example.test",
+                "Contraseña: clave-secreta", "Ruta del archivo: privado/acta.pdf",
+                "RUT o RUN chileno: 11.111.111-1", "Token de acceso: abc123",
+            ]),
+        )
+        position = AuditLog.objects.create(
+            actor_username="coordinacion-original", action="Cargos: update", affected_table="accounts_position",
+            affected_record_id=8, previous_value="Nombre del cargo: Gestor social",
+            new_value="Nombre del cargo: Gestor social territorial",
+        )
+        official = AuditLog.objects.create(
+            actor_username="coordinacion-original", action="Edición de funcionario", affected_table="accounts_official",
+            affected_record_id=9, previous_value="Nombre completo: Persona Ficticia",
+            new_value="Nombre completo: Persona Ficticia Editada",
+        )
+        self.client.force_login(self.auditor)
+        detail = self.client.get(reverse("audit_detail", args=[delegation.pk]))
+        self.assertContains(detail, "Nombre de la delegación: Centro")
+        self.assertContains(detail, "Nombre de la delegación: Centro Histórico")
+        for secret in ("oficina@example.test", "clave-secreta", "privado/acta.pdf", "11.111.111-1", "abc123"):
+            self.assertNotContains(detail, secret)
+        detail = self.client.get(reverse("audit_detail", args=[position.pk]))
+        self.assertContains(detail, "Nombre del cargo: Gestor social territorial")
+        # Fuera de los catálogos rige la lista explícita: los datos personales siguen reservados.
+        detail = self.client.get(reverse("audit_detail", args=[official.pk]))
+        self.assertNotContains(detail, "Persona Ficticia")
+        self.assertContains(detail, "Detalle reservado")
+        # Con el formato real de los mantenedores (snapshot + describe_changes).
+        from accounts.models import Delegation, Position
+        from accounts.views import delegation_snapshot
+        from common.maintainers import snapshot
+        from common.text import describe_changes
+        office = Delegation.objects.create(delegation_name="Oriente", address="Calle 5", commune="La Serena")
+        before = delegation_snapshot(office)
+        office.delegation_name = "Oriente Alto"
+        cargo = Position.objects.create(position_name="Encargado de bodega")
+        cargo_before = snapshot(cargo)
+        cargo.position_name = "Encargado de bodega municipal"
+        for table, values, expected in (
+            ("accounts_delegation", describe_changes(before, delegation_snapshot(office)), "Nombre: Oriente Alto"),
+            ("accounts_position", describe_changes(cargo_before, snapshot(cargo)), "Nombre del cargo: Encargado de bodega municipal"),
+        ):
+            event = AuditLog.objects.create(actor_username="coordinacion-original", action="Actualización de catálogo",
+                                            affected_table=table, affected_record_id=1,
+                                            previous_value=values[0], new_value=values[1])
+            self.assertContains(self.client.get(reverse("audit_detail", args=[event.pk])), expected)
+        # El alcance no cambia: una cuenta con alcance de delegación no ve la bitácora.
+        self.client.force_login(self.local_user)
+        self.assertEqual(self.client.get(reverse("audit_detail", args=[delegation.pk])).status_code, 403)

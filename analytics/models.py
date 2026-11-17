@@ -55,6 +55,13 @@ class MeasurementVersion(BaseModel):
         max_digits=5, decimal_places=2, default=Decimal("20"),
         validators=[MinValueValidator(0), MaxValueValidator(150)], verbose_name="Puntos a descontar por reclamo",
     )
+    # Tope del resultado final (total ponderado + reclamos y felicitaciones). Regla del proyecto,
+    # configurable como los demás parámetros del plan; el tope de la guía B3 es `max_computable` (por ítem).
+    max_final_score = models.DecimalField(
+        max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope del resultado final (puntos)",
+        validators=[MinValueValidator(Decimal("1")), MaxValueValidator(Decimal("1000"))],
+        help_text="Máximo del resultado final, ya sumados reclamos y felicitaciones (150 por defecto).",
+    )
 
     class Meta:
         ordering = ["-number"]
@@ -289,6 +296,9 @@ class IndicatorSnapshot(BaseModel):
     segments = models.JSONField(default=list, blank=True, editable=False)
     result_notice = models.CharField(max_length=500, blank=True, editable=False)
     score_summary = models.JSONField(default=dict, blank=True, editable=False)
+    # Verdadero cuando el congelamiento guardó el respaldo exacto (IndicatorSupportSnapshot). Los
+    # snapshots congelados antes de existir el respaldo quedan en falso: no se inventa su detalle.
+    support_captured = models.BooleanField(default=False, editable=False)
 
     class Meta:
         verbose_name = "Indicador (snapshot)"
@@ -301,6 +311,40 @@ class IndicatorSnapshot(BaseModel):
 
     def __str__(self):
         return f"{self.official} / {self.item} / {self.period}"
+
+
+class IndicatorSupportSnapshot(models.Model):
+    """Registro que respaldó un indicador congelado, con sus valores al cierre.
+
+    Actividades computadas en los ítems de cantidad; en los porcentuales («Soluciones de ingresos
+    al tubo», «Pendientes en tubo») los compromisos del denominador con su estado al corte y si
+    cuentan en el numerador. Sale del mismo criterio que la cifra (computable_activities y
+    commitments_at_cutoff), nunca de un recálculo aparte.
+    """
+
+    snapshot = models.ForeignKey(IndicatorSnapshot, on_delete=models.PROTECT, related_name="supports")
+    activity = models.ForeignKey("activities.Activity", on_delete=models.PROTECT, null=True, related_name="+")
+    commitment = models.ForeignKey("agenda.Commitment", on_delete=models.PROTECT, null=True, related_name="+")
+    code = models.CharField(max_length=32, blank=True)
+    date = models.DateField()
+    item_name = models.CharField(max_length=150, blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    in_numerator = models.BooleanField(default=False)
+    segment_start = models.DateField(null=True)
+    segment_end = models.DateField(null=True)
+    position_name = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["date", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["snapshot", "activity"], name="unique_support_snapshot_activity"),
+            models.UniqueConstraint(fields=["snapshot", "commitment"], name="unique_support_snapshot_commitment"),
+            models.CheckConstraint(
+                condition=models.Q(activity__isnull=False, commitment__isnull=True)
+                | models.Q(activity__isnull=True, commitment__isnull=False),
+                name="support_has_one_record",
+            ),
+        ]
 
 
 class DelegationActivityFreeze(models.Model):

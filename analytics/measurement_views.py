@@ -192,7 +192,8 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
                 return edit_conflict()
             if self.operation == "revision" and not self.plan.versions.first().is_published:
                 raise PermissionDenied("Ya existe un borrador para este plan.")
-            current = self.adjustment or self.line
+            # Lo que se edita: un ajuste nuevo no tiene valor anterior (no se toma el ítem del plan).
+            current = self.line if self.operation in ("item", "remove_item") else self.adjustment
             if self.operation in ("version", "publish"):
                 current = self.version
             previous = self.audit_snapshot(current)
@@ -273,6 +274,9 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
         elif operation == "publish":
             old = format_snapshot(previous)
             new = format_snapshot({**self.audit_snapshot(target), "Cuenta": self.request.user.get_username()})
+        elif not previous:
+            # Creación: sin valor anterior inventado; el nuevo registra todos los campos.
+            old, new = "", format_snapshot(self.audit_snapshot(target))
         else:
             old, new = describe_changes(previous, self.audit_snapshot(target))
             if old == new == "Sin cambios":

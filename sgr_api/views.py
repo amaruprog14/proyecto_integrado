@@ -53,7 +53,10 @@ def periods(request):
     responses={200: PersonalPerformanceSerializer, **AUTH_ERRORS, **PERIOD_ERRORS},
     examples=[OpenApiExample("Resultado individual", response_only=True, value={
         "periodo": PERIOD_EXAMPLE, "cargo": "Gestor social", "fecha_corte": "2026-11-16",
-        "total_ponderado": "4.17", "semaforo": "RED", "aviso": None,
+        "total_ponderado": "14.17", "total_base": "4.17", "ajustes_computables": "10.00",
+        "tope_resultado_final": "150.00", "semaforo": "RED", "aviso": None,
+        "ajustes": [{"tipo": "Felicitación", "fecha": "2026-10-20", "puntos_autorizados": "10.00",
+                     "puntos_computables": "10.00", "excluido_por_limite": False}],
         "items": [{"id": 12, "nombre": "Visita terreno", "tipo_meta": "QUANTITY", "meta": "12.00",
                    "avance": "1.00", "cumplimiento_pct": "8.33", "ponderador_pct": "50.00",
                    "resultado_ponderado": "4.17", "meta_esperada": "6.07", "diferencia": "-5.07",
@@ -75,6 +78,12 @@ def personal_performance(request):
         "cargo": result.position.position_name if result.position else None,
         "fecha_corte": min(result.on_date, period.end_date),
         "total": result.total if result.items else None,
+        # Reconciliación: total = min(total_base + ajustes_computables, tope). En un período congelado
+        # salen del resumen guardado al cierre (score_summary), nunca de un recálculo.
+        "base_total": result.base_total if result.items else None,
+        "adjustment_total": result.score_adjustment_total if result.items else None,
+        "max_final": result.max_final_score if result.items else None,
+        "adjustments": result.score_adjustments if result.items else [],
         "semaforo": result.total_traffic_light,
         "items": result.items,
         "computable_days": result.computable_days,

@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, time
 
 from django import forms
@@ -26,13 +27,27 @@ OPERATIONAL_FIELDS = {
     "comuna", "delegación", "delegación principal", "delegaciones autorizadas", "estado",
     "fecha", "función", "funcionario", "inicio", "ítem", "meta", "meta individual", "período",
     "permisos", "ponderador (%)", "ponderador individual (%)", "puntos autorizados",
-    "puntos a descontar por reclamo", "puntos por felicitación", "responsable", "roles",
+    "puntos a descontar por reclamo", "puntos por felicitación", "tope del resultado final (puntos)", "responsable", "roles",
     "respuesta actualizada", "término", "tipo de atención", "tipo de meta", "tope computable (%)",
     "umbral colectivo (%)", "umbral naranjo (%)", "umbral verde (%)", "versión", "vigente", "vigente desde",
     "próximo paso registrado", "fecha de próximo paso", "requiere visita", "visita programada",
     "visita realizada", "entrega de informe", "entrega de beneficio", "recepción", "fecha de recepción",
     "fecha de actividad", "área responsable", "caso", "atención", "subatención",
 }
+# Catálogos operativos: se muestran todos sus campos (nombre, código, descripción, vigencia...)
+# salvo los sensibles. Fuera de estas tablas rige la lista explícita de arriba.
+CATALOG_TABLES = {
+    "accounts_delegation", "accounts_position", "accounts_area", "accounts_function", "accounts_territory",
+    "configuration_item", "configuration_activitytype", "configuration_servicetype",
+    "configuration_attentiontype", "configuration_subattentiontype",
+}
+# Palabras que reservan un campo aunque sea de un catálogo: credenciales, rutas de archivos privados
+# y datos personales o de contacto.
+SENSITIVE_FIELD_WORDS = {
+    "contraseña", "password", "clave", "token", "secreto", "secret", "correo", "email", "teléfono",
+    "telefono", "celular", "rut", "run", "archivo", "ruta", "foto", "url", "ip",
+}
+TECHNICAL_FIELDS = {"id", "creado en", "actualizado en", "name key"}
 STATUS_EVENTS = {
     "Evidencia revisada": {"PENDING", "APPROVED", "REJECTED", "CORRECTION_REQUESTED"},
     "Aprobación de evidencia anulada": {"Aprobada", "Anulada"},
@@ -44,6 +59,18 @@ STATUS_EVENTS = {
 
 def can_view_audit(user):
     return permission_scope(user, VIEW_AUDIT) == Role.Scope.ALL
+
+
+def is_sensitive_field(label):
+    return bool(set(re.findall(r"\w+", label.casefold())) & SENSITIVE_FIELD_WORDS)
+
+
+def visible_field(event, label):
+    label = label.strip().casefold()
+    if label in OPERATIONAL_FIELDS:
+        return True
+    return (event.affected_table in CATALOG_TABLES and label not in TECHNICAL_FIELDS
+            and not is_sensitive_field(label))
 
 
 def visible_value(event, value):
@@ -60,7 +87,7 @@ def visible_value(event, value):
     if event.affected_table == "activities_attentioncase" and event.action != "Actualización de seguimiento de caso":
         return "Detalle reservado"
     rows = [line for line in value.splitlines()
-            if ": " in line and line.split(": ", 1)[0].casefold() in OPERATIONAL_FIELDS]
+            if ": " in line and visible_field(event, line.split(": ", 1)[0])]
     return "\n".join(rows) or "Detalle reservado"
 
 

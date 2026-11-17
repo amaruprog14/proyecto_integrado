@@ -13,6 +13,8 @@ from analytics.models import MeasurementAdjustment, MeasurementItem
 
 
 def commitments_at_cutoff(official_ids, period, until=None):
+    """Compromisos del funcionario con fecha comprometida en el período, con su estado al corte
+    (`measured_status`). Único criterio para los ítems porcentuales, sus respaldos y el tubo."""
     from agenda.models import Commitment, CommitmentStatusHistory
     rows = Commitment.objects.filter(responsible_id__in=official_ids, deleted_at__isnull=True,
         committed_date__range=(period.start_date, period.end_date))
@@ -28,10 +30,16 @@ def commitments_at_cutoff(official_ids, period, until=None):
     return rows
 
 
+def pending_commitments(official_ids, period, until=None):
+    """Denominador de «Pendientes en tubo»: excluye los cancelados con justificación al corte."""
+    from agenda.models import Commitment
+    return commitments_at_cutoff(official_ids, period, until).exclude(
+        measured_status=Commitment.Status.CANCELLED, cancellation_reason__gt="")
+
+
 def pending_percentages(official_ids, period, until=None):
     from agenda.models import Commitment
-    rows = commitments_at_cutoff(official_ids, period, until).exclude(
-        measured_status=Commitment.Status.CANCELLED, cancellation_reason__gt="")
+    rows = pending_commitments(official_ids, period, until)
     counts = rows.order_by().values("responsible_id").annotate(total=Count("pk"),
         pending=Count("pk", filter=~Q(measured_status=Commitment.Status.DONE)))
     return {row["responsible_id"]: Decimal(row["pending"]) / row["total"] * 100 for row in counts}
@@ -117,12 +125,13 @@ def _segmented_result(calc, official, period, on_date, include_start_day, spans,
                       adjustments, counted_rows):
     from analytics.services import HUNDRED, PerformanceResult, expected_percentage, traffic_light
     segments, aggregate, parts = [], {}, []
-    last_version = None
+    last_version = cap_version = None
     for start, end, history in spans:
         version = versions[(official.pk, start)]
         position_id = history.position_id if history else None
         if start <= min(on_date, period.end_date):
             last_version = version
+            cap_version = version or cap_version
         span = SimpleNamespace(start_date=start, end_date=end)
         inclusive = include_start_day if start == period.start_date else True
         lines = lines_by_version[version.pk] if version else []
@@ -150,7 +159,8 @@ def _segmented_result(calc, official, period, on_date, include_start_day, spans,
     total_days = sum(s["days"] for s in segments)
     result = PerformanceResult(official, period, on_date, last_version,
         expected_percentage(period, on_date, official, include_start_day=include_start_day),
-        computable_days=total_days, elapsed_days=sum(s["elapsed_days"] for s in segments), segments=segments)
+        computable_days=total_days, elapsed_days=sum(s["elapsed_days"] for s in segments), segments=segments,
+        cap_version=cap_version)
     if len(parts) == 1:
         # Un solo tramo: el resultado es el del tramo, sin reagregar (sin regresión).
         result.items = parts[0].items

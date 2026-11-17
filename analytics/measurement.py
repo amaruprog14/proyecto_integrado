@@ -130,6 +130,7 @@ def create_revision(plan, effective_from):
         max_computable=previous.max_computable, amber_threshold=previous.amber_threshold,
         green_threshold=previous.green_threshold, collective_threshold=previous.collective_threshold,
         congratulation_points=previous.congratulation_points, complaint_points=previous.complaint_points,
+        max_final_score=previous.max_final_score,
     )
     for line in previous.items.prefetch_related("adjustments"):
         new_line = MeasurementItem.objects.create(

@@ -135,18 +135,29 @@ def hidden_activity_counts(user, official, period, until):
     return {row["item_id"]: row["total"] for row in rows}
 
 
+def performance_officials(user):
+    """Funcionarios cuyo desempeño puede ver `user`: el propio y, con permiso de equipo, los de su
+    alcance. Lo comparten el panel personal y el respaldo congelado."""
+    own = getattr(user, "official", None)
+    selectable = Q(pk=own.pk) if own else Q(pk__in=[])
+    if user.has_perm(TEAM_PERFORMANCE):
+        scoped = scope_officials(Official.objects.all(), user, TEAM_PERFORMANCE)
+        selectable |= Q(pk__in=scoped.values("pk"))
+    return Official.objects.filter(selectable, deleted_at__isnull=True)
+
+
+def support_link(official, period, item=None):
+    """Respaldo congelado de un indicador (o de todo el resultado si no se indica el ítem)."""
+    url = reverse("indicator_support", args=[period.pk, official.pk])
+    return f"{url}?item={item.pk}" if item is not None else url
+
+
 class MyPerformanceView(ProtectedViewMixin, View):
     permission_required = (VIEW_PERFORMANCE,)
 
     def officials(self):
         """Funcionarios elegibles: el propio y, con permiso de equipo, los de su alcance."""
-        user = self.request.user
-        own = getattr(user, "official", None)
-        selectable = Q(pk=own.pk) if own else Q(pk__in=[])
-        if user.has_perm(TEAM_PERFORMANCE):
-            scoped = scope_officials(Official.objects.all(), user, TEAM_PERFORMANCE)
-            selectable |= Q(pk__in=scoped.values("pk"))
-        return (Official.objects.filter(selectable, deleted_at__isnull=True)
+        return (performance_officials(self.request.user)
                 .select_related("position", "delegation").prefetch_related("authorized_delegations"))
 
     def get(self, request):
@@ -179,11 +190,14 @@ class MyPerformanceView(ProtectedViewMixin, View):
             show_links = request.user.has_perm(VIEW_ACTIVITY)
             # Mismo corte que el avance: hasta hoy en un período abierto, hasta el término si está cerrado.
             until = period.end_date if result.frozen else min(max(today, period.start_date), period.end_date)
-            hidden = hidden_activity_counts(request.user, subject, period, until) if show_links else {}
+            # Un período congelado enlaza siempre a su respaldo congelado, nunca al listado operativo.
+            hidden = hidden_activity_counts(request.user, subject, period, until) if show_links and not result.frozen else {}
             rows = []
             for row in result.items:
                 link = None
-                if show_links and not row.is_percentage:
+                if result.frozen:
+                    link = support_link(subject, period, row.item)
+                elif show_links and not row.is_percentage:
                     link = activity_list_link(subject, row.item, period, until)
                 rows.append({"row": row, "link": link, "hidden": 0 if row.is_percentage else hidden.get(row.item.pk, 0)})
             total_light = result.total_traffic_light
@@ -191,6 +205,7 @@ class MyPerformanceView(ProtectedViewMixin, View):
                               else activity_queryset(request.user, TEAM_PERFORMANCE))
             context.update(
                 result=result, rows=rows, total_light=total_light,
+                support_url=support_link(subject, period) if result.frozen and result.items else None,
                 evidence=evidence_counts(subject, period), commitments=commitment_counts(subject, period, today),
                 recent=recent_activity([subject.pk], period, today, activity_scope)[subject.pk],
                 activity_cutoff=min(today, period.end_date),
@@ -292,13 +307,18 @@ class DelegationPerformanceView(TeamPerformanceView):
         cutoff = min(today, period.end_date)
         can_open_activities = not result.frozen and cutoff >= period.start_date and user.has_perm(VIEW_ACTIVITY)
         hidden = hidden_activity_counts(user, official, period, cutoff) if can_open_activities else {}
+        # Respaldo congelado: mismo alcance que el panel individual del funcionario.
+        can_open_support = result.frozen and bool(result.items) and can_open_personal
         context.update(
             selected=selected, can_open_personal=can_open_personal,
+            support_url=support_link(official, period) if can_open_support else None,
             selected_items=[
                 {
                     "item": item,
-                    "activity_link": activity_list_link(official, item.item, period, cutoff)
-                    if can_open_activities and item.goal_type == MeasurementItem.GoalType.QUANTITY and item.progress else None,
+                    "activity_link": support_link(official, period, item.item) if can_open_support
+                    else (activity_list_link(official, item.item, period, cutoff)
+                          if can_open_activities and item.goal_type == MeasurementItem.GoalType.QUANTITY
+                          and item.progress else None),
                     "hidden": hidden.get(item.item.pk, 0),
                 }
                 for item in result.items
@@ -417,5 +437,7 @@ class PositionPerformanceView(TeamPerformanceView):
                 "result": member, "recent": recent[member.official.pk],
                 "delegation": member.closing_delegation if member.frozen else member.official.delegation,
                 "can_open_personal": member.official.pk in can_open,
+                "support_url": support_link(member.official, period)
+                if member.frozen and member.items and member.official.pk in can_open else None,
             } for member in members],
         )

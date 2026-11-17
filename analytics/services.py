@@ -22,6 +22,7 @@ from analytics.models import IndicatorSnapshot, MeasurementAdjustment, Measureme
 
 HUNDRED = Decimal("100")
 CENT = Decimal("0.01")
+# Tope por defecto del resultado final; cada versión del plan puede configurar el suyo.
 MAX_FINAL_SCORE = Decimal("150")
 MAX_CONGRATULATIONS = 3
 TrafficLight = IndicatorSnapshot.TrafficLight
@@ -161,6 +162,8 @@ class PerformanceResult:
     segments: list = field(default_factory=list)
     score_adjustments: list = field(default_factory=list)
     frozen_score_summary: dict = field(default_factory=dict)
+    # Con tramos: última versión aplicada hasta el corte, aunque el último tramo no tenga plan.
+    cap_version: MeasurementVersion | None = None
 
     @property
     def position(self):
@@ -182,7 +185,18 @@ class PerformanceResult:
     def total(self):
         if self.frozen:
             return Decimal(self.frozen_score_summary["total"]) if self.frozen_score_summary else self.base_total
-        return min(self.base_total + self.score_adjustment_total, MAX_FINAL_SCORE)
+        return min(self.base_total + self.score_adjustment_total, self.max_final_score or MAX_FINAL_SCORE)
+
+    @property
+    def max_final_score(self):
+        """Tope del resultado final. Congelado: el guardado al cierre (los resúmenes anteriores a este
+        campo se calcularon con 150 fijo); sin resumen congelado no hubo ajustes ni tope aplicado."""
+        if self.frozen:
+            if not self.frozen_score_summary:
+                return None
+            return Decimal(self.frozen_score_summary.get("max_final", MAX_FINAL_SCORE))
+        version = self.cap_version or self.version
+        return version.max_final_score if version else MAX_FINAL_SCORE
 
     @property
     def activity_count(self):
@@ -238,30 +252,13 @@ class CalculadorDesempenoService:
         Con `until`, solo cuentan los compromisos creados hasta ese día y cada uno con el estado
         que tenía al cierre de ese día según su historial. Sin compromisos no hay denominador:
         devuelve None y el ítem no aporta."""
-        from agenda.models import Commitment, CommitmentStatusHistory
+        from agenda.models import Commitment
+        from analytics.segments import commitments_at_cutoff
 
-        commitments = Commitment.objects.filter(
-            responsible_id__in=official_ids, deleted_at__isnull=True,
-            committed_date__range=(period.start_date, period.end_date),
-        )
-        status = "current_status"
-        if until is not None:
-            # Se acota al término: un período terminado no cambia según el día de la consulta.
-            until = min(until, period.end_date)
-            cutoff = timezone.make_aware(datetime.combine(until + timedelta(days=1), time.min))
-            # Estado al corte: el del último cambio anterior al corte; si todos los cambios son
-            # posteriores, el estado previo al primero de ellos; sin historial, el estado actual.
-            history = CommitmentStatusHistory.objects.filter(
-                commitment_id=OuterRef("pk"), deleted_at__isnull=True,
-            )
-            later = history.filter(date__gte=cutoff).order_by("date", "pk").values("previous_status")[:1]
-            earlier = history.filter(date__lt=cutoff).order_by("-date", "-pk").values("new_status")[:1]
-            status = "status_at_cutoff"
-            commitments = commitments.filter(creation_date__lt=cutoff).alias(
-                status_at_cutoff=Coalesce(Subquery(later), Subquery(earlier), F("current_status")),
-            )
-        rows = commitments.order_by().values("responsible_id").annotate(
-            total=Count("pk"), done=Count("pk", filter=Q(**{status: Commitment.Status.DONE})),
+        # Se acota al término dentro de commitments_at_cutoff: un período terminado no cambia
+        # según el día de la consulta. Sin historial, el estado al corte es el actual.
+        rows = commitments_at_cutoff(official_ids, period, until).order_by().values("responsible_id").annotate(
+            total=Count("pk"), done=Count("pk", filter=Q(measured_status=Commitment.Status.DONE)),
         )
         return {row["responsible_id"]: Decimal(row["done"]) / row["total"] * HUNDRED for row in rows}
 
@@ -461,6 +458,7 @@ class CalculadorDesempenoService:
             segments=result.segments, result_notice=result.notice,
             score_summary={
                 "base": str(result.base_total), "total": str(result.total),
+                "max_final": str(result.max_final_score),
                 "adjustments": result.score_adjustments,
             },
         )
@@ -563,11 +561,23 @@ class CalculadorDesempenoService:
         historical_ids = OfficialPositionPeriod.objects.filter(start_date__lte=period.end_date,
             deleted_at__isnull=True).filter(Q(end_date__isnull=True) | Q(end_date__gte=period.start_date)).values("official_id")
         officials = Official.objects.filter(Q(pk__in=officials.values("pk")) | Q(pk__in=historical_ids), deleted_at__isnull=True)
-        snapshots = []
+        from analytics.support import save_supports, support_rows
+
+        snapshots, supports = [], {}
         for official in officials:
             result = cls.calculate(official, period, period.end_date)
-            snapshots.extend(cls.build_snapshot(result, row, now, frozen=True) for row in result.items)
+            for row in result.items:
+                snapshot = cls.build_snapshot(result, row, now, frozen=True)
+                snapshot.support_captured = True
+                snapshots.append(snapshot)
+            # Respaldo exacto con el mismo criterio y corte que la cifra congelada.
+            for (item_id, goal_type), rows in support_rows(result, period.end_date).items():
+                supports[official.pk, item_id, goal_type] = rows
         IndicatorSnapshot.objects.bulk_create(snapshots, batch_size=500)
+        if supports:
+            # En MySQL bulk_create no devuelve las PK: se leen los congelados recién creados (los
+            # anteriores ya quedaron archivados arriba).
+            save_supports(cls.frozen_snapshots(period).only("pk", "official_id", "item_id", "goal_type"), supports)
         from analytics.territorial import freeze_territorial_activities
 
         freeze_territorial_activities(period, now)
