@@ -16,7 +16,7 @@ from accounts.models import (
 )
 from activities.models import Activity, AttentionCase, ClientRequest, ClientRequestEvent, SocialAttention
 from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN, create_revision, publish_version
-from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan
+from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan, ScoreAdjustment
 from configuration.models import ActivityType, AttentionType, Item, Period, PeriodMutex, SubattentionType
 from configuration.services import AuditoriaService
 from common.demo_data import (CONSULTA_PERMISSIONS, MANAGE_LETTERS, OPERATOR_PERMISSIONS, VIEW_LETTERS,
@@ -33,11 +33,14 @@ TEAM_PERFORMANCE = VIEW_PERFORMANCE + ["analytics.view_team_performance"]
 VIEW_AGENDA = ["agenda.view_commitment"]
 OPERATE_AGENDA = VIEW_AGENDA + ["agenda.add_commitment", "agenda.change_commitment"]
 MANAGE_AGENDA = OPERATE_AGENDA + ["agenda.assign_commitment"]
+REGISTER_SCORE_ADJUSTMENTS = [ScoreAdjustment.VIEW_PERMISSION, ScoreAdjustment.ADD_PERMISSION]
+MANAGE_SCORE_ADJUSTMENTS = [*REGISTER_SCORE_ADJUSTMENTS, ScoreAdjustment.REVIEW_PERMISSION]
 # Permisos agregados después de la primera semilla: una base ya cargada los recibe sin abortar,
 # siempre que al rol de demostración solo le falten permisos de esta lista.
 UPGRADE_PERMISSIONS = [
     "accounts.archive_official", "activities.archive_activity", *MEASUREMENT_PLAN_PERMISSIONS,
     "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE, *MANAGE_AGENDA, *MANAGE_LETTERS,
+    *MANAGE_SCORE_ADJUSTMENTS,
 ]
 DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
 DEMO_REVISION_DATE = date(2026, 10, 15)
@@ -63,6 +66,7 @@ def get_administrator_permissions():
         | Q(pk__in=get_permissions(MEASUREMENT_PLAN_PERMISSIONS))
         | Q(pk__in=get_permissions(TEAM_PERFORMANCE))
         | Q(pk__in=get_permissions(MANAGE_AGENDA))
+        | Q(pk__in=get_permissions(MANAGE_SCORE_ADJUSTMENTS))
     ).exclude(codename__startswith="delete_").exclude(
         codename__in=["add_auditlog", "change_auditlog"]
     )
@@ -235,14 +239,14 @@ class Command(BaseCommand):
 
         roles = {
             "adminA": self.role("Administrador", "ALL", get_administrator_permissions()),
-            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"] + VIEW_PERFORMANCE + OPERATE_AGENDA + MANAGE_LETTERS)),
+            "editorA": self.role("Funcionario", "DELEGATION", get_permissions(OPERATOR_PERMISSIONS + ["accounts.add_official", "accounts.change_official"] + VIEW_PERFORMANCE + OPERATE_AGENDA + MANAGE_LETTERS + REGISTER_SCORE_ADJUSTMENTS)),
             # Solo el desempeño propio: el rol debe seguir siendo asignable por editorA, que no tiene permisos de equipo.
             "readerA": self.role("Usuario consulta", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + VIEW_PERFORMANCE + VIEW_AGENDA + VIEW_LETTERS)),
         }
         # Panel de desempeño: funcionarios, lectores y verificadores ven lo suyo; Delegado, Coordinador y
         # Administrador eligen funcionarios dentro de su alcance.
-        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA))
-        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA))
+        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + MANAGE_SCORE_ADJUSTMENTS))
+        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + REGISTER_SCORE_ADJUSTMENTS))
         self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"] + VIEW_PERFORMANCE))
         # Grupo funcional pequeño: replica la lectura que ya otorga el rol de consulta.
         # El alcance sigue siendo la delegación principal de cada miembro.

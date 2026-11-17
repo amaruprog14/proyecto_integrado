@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.urls import path
 from analytics.measurement_views import MeasurementEdit, MeasurementPlanDetail, MeasurementPlanList
+from configuration.audit_views import AuditDetail, AuditList
 from configuration.period_views import PeriodReopenView
 
 from .item_views import (
@@ -46,6 +47,8 @@ from .views import (
 
 urlpatterns = []
 urlpatterns += [
+    path("bitacora/", AuditList.as_view(), name="audit_list"),
+    path("bitacora/<int:pk>/", AuditDetail.as_view(), name="audit_detail"),
     path('items/', ItemListView.as_view(), name='item_maintainer'),
     path('items/exportar/', ItemExportView.as_view(), name='item_export'),
     path('items/nuevo/', ItemCreateView.as_view(), name='item_create'),

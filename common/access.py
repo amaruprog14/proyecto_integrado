@@ -18,6 +18,7 @@ def register_denied_access(request, required_permissions):
         entity=_denied_entity(request),
         new_value=f"{request.method} {request.path} · requiere: {', '.join(required_permissions)}",
         origin_ip=request.META.get("REMOTE_ADDR") or None,
+        actor=request.user,
     )
 
 
@@ -43,6 +44,7 @@ def get_scoped_object_or_404(request, scoped_queryset, **lookup):
                 ),
                 record_id=existing,
                 origin_ip=request.META.get("REMOTE_ADDR") or None,
+                actor=request.user,
             )
         raise Http404("No se encontró el registro solicitado.")
 

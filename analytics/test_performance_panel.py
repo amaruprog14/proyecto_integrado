@@ -4,7 +4,7 @@ RF-008, RF-027, RF-028, RF-038, RN-013, HU-06, HU-16, HU-17, CA-05, CA-10.
 """
 from datetime import date, datetime, time
 from decimal import Decimal
-from io import StringIO
+from io import BytesIO, StringIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import Permission, User
@@ -15,6 +15,7 @@ from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from openpyxl import load_workbook
 
 from accounts.models import Delegation, Function, Role
 from activities.models import (Activity, AttentionCase, Evidence, EvidenceBatch, EvidenceValidation, ServiceRecipient,
@@ -22,9 +23,10 @@ from activities.models import (Activity, AttentionCase, Evidence, EvidenceBatch,
 from agenda.models import Alert, Commitment
 from analytics.measurement import publish_version
 from analytics.models import (DelegationActivityFreeze, DelegationActivitySnapshot, IndicatorSnapshot, MeasurementItem,
-                              MeasurementPlan, MeasurementVersion)
+                              MeasurementPlan, MeasurementVersion, ScoreAdjustment)
 from analytics.services import CalculadorDesempenoService as Calc
 from analytics.test_performance_calculator import END, CalculatorFixture
+from common.exports import XLSX_CONTENT_TYPE
 from common.sgr_seed_data import PERCENTAGE_ITEM
 from configuration.models import AttentionType, AuditLog, Period, SubattentionType
 
@@ -85,6 +87,94 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
             EvidenceValidation.objects.create(evidence=image, verifier=self.verifier, status=status,
                                               observation="Motivo")
         return batch
+
+    def export(self, url, **params):
+        response = self.client.get(url, {"export": "xlsx", "period": self.period.pk, **params})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], XLSX_CONTENT_TYPE)
+        self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        return load_workbook(BytesIO(response.content))
+
+    def test_personal_export_preserves_calculation_and_excludes_private_support(self, _today):
+        self.record(self.worker, "Visita terreno", 1)
+        ScoreAdjustment.objects.create(
+            official=self.worker, period=self.period, occurred_on=TODAY, recorded_by=self.delegate.user,
+            reviewed_by=self.coordinator.user, reviewed_at=timezone.make_aware(datetime.combine(TODAY, time(10))),
+            kind=ScoreAdjustment.Kind.CONGRATULATION, channel=ScoreAdjustment.Channel.EMAIL,
+            status=ScoreAdjustment.Status.APPROVED, points=Decimal("10"),
+            reason="Motivo privado", written_support="Respaldo privado",
+        )
+        panel = self.view(self.worker)
+        self.assertContains(panel, f"export=xlsx&amp;period={self.period.pk}&amp;official={self.worker.pk}")
+        result = panel.context["result"]
+        workbook = self.export(URL, official=self.worker.pk)
+        summary = dict(workbook["Resumen"].values)
+        self.assertEqual(summary["Funcionario"], self.worker.full_name)
+        self.assertEqual(summary["Fecha de corte"].date(), TODAY)
+        self.assertIsInstance(summary["Fecha de generación"], datetime)
+        self.assertAlmostEqual(summary["Resultado final (puntos)"], float(result.total))
+        self.assertEqual(summary["Ajustes computables (puntos)"], 10)
+        self.assertIn(("Felicitación", datetime.combine(TODAY, time.min), 10, 10, None),
+                      list(workbook["Ajustes aprobados"].values))
+        self.assertNotIn("Respaldo privado", str(list(workbook["Ajustes aprobados"].values)))
+        self.assertEqual(self.client.get(URL, {"export": "xlsx", "official": self.colleague.pk}).status_code, 404)
+        self.assertEqual(self.client.get(TEAM_URL, {"export": "xlsx"}).status_code, 403)
+
+    def test_delegation_export_reconciles_all_authorized_territorial_records(self, _today):
+        local = self.record(self.worker, "Visita terreno", 21)
+        self.record(self.outsider, "Visita terreno", 1)
+        self.record(self.worker, "Visita terreno", 1, status=None)
+        Activity.objects.filter(pk=local[0].pk).update(code="=1+1", delegation_estimated=True)
+        self.client.force_login(self.delegate.user)
+        dashboard = self.client.get(TEAM_URL, {"delegation": self.delegation.pk})
+        workbook = self.export(TEAM_URL, delegation=self.delegation.pk)
+        summary = dict(workbook["Resumen"].values)
+        support = workbook["Actividades válidas"]
+        self.assertEqual(summary["Actividades válidas de la delegación"], dashboard.context["territorial_activity_count"])
+        self.assertEqual(support.max_row - 1, summary["Actividades válidas de la delegación"])
+        code = next(row[0] for row in support.iter_rows(min_row=2) if row[0].value == "=1+1")
+        self.assertEqual(code.data_type, "s")
+        self.assertEqual(support.cell(code.row, 5).value, "Estimada")
+        self.assertAlmostEqual(summary["Resultado del equipo (puntos)"], float(dashboard.context["average"]))
+        self.assertEqual(self.client.get(TEAM_URL, {"export": "xlsx", "delegation": self.other_delegation.pk}).status_code, 404)
+        self.delegate.roles.get().permissions.remove(*permissions("activities.view_activity"))
+        workbook = self.export(TEAM_URL, delegation=self.delegation.pk)
+        self.assertNotIn("Actividades válidas", workbook.sheetnames)
+        self.assertIn("Funcionarios", workbook.sheetnames)
+
+    def test_delegation_export_uses_frozen_result_and_support(self, _today):
+        [activity] = self.record(self.worker, "Visita terreno", 1)
+        self.close()
+        Activity.objects.filter(pk=activity.pk).update(deleted_at=timezone.now(), code="CAMBIADO")
+        self.worker.delegation = self.other_delegation
+        self.worker.save(update_fields=["delegation"])
+        self.client.force_login(self.delegate.user)
+        workbook = self.export(TEAM_URL, delegation=self.delegation.pk)
+        summary = dict(workbook["Resumen"].values)
+        self.assertEqual(summary["Origen de las cifras de desempeño"], "Resultados congelados")
+        self.assertEqual(summary["Fecha de corte"].date(), self.period.end_date)
+        self.assertIsInstance(summary["Fecha de congelamiento"], datetime)
+        self.assertEqual(summary["Actividades válidas de la delegación"], 1)
+        self.assertEqual(workbook["Actividades válidas"]["A2"].value, activity.code)
+        self.assertIn(self.worker.full_name, [row[0] for row in workbook["Funcionarios"].values])
+
+    def test_position_export_respects_applied_delegation_and_position_filters(self, _today):
+        self.record(self.worker, "Visita terreno", 2)
+        self.record(self.outsider, "Visita terreno", 3)
+        self.client.force_login(self.coordinator.user)
+        params = {"position": self.worker.position_id, "delegation": self.delegation.pk}
+        panel = self.client.get(POSITION_URL, params)
+        self.assertContains(panel, f"&amp;position={self.worker.position_id}")
+        workbook = self.export(POSITION_URL, **params)
+        summary = dict(workbook["Resumen"].values)
+        self.assertEqual(summary["Cargo"], "Gestor social")
+        self.assertEqual(summary["Delegación"], self.delegation.delegation_name)
+        self.assertEqual(workbook["Cargos"].max_row, 2)
+        self.assertEqual([row[0] for row in list(workbook["Funcionarios"].values)[1:]], [self.worker.full_name])
+        visit = next(row for row in workbook["Metas por ítem"].values if row[0] == "Visita terreno")
+        self.assertEqual(visit[3], 2)
+        self.assertEqual(self.client.get(POSITION_URL, {"export": "xlsx", "position": "999999"}).status_code, 404)
 
     def test_delegation_dashboard_enforces_team_scope_and_primary_membership(self, _today):
         self.worker.authorized_delegations.add(self.other_delegation)

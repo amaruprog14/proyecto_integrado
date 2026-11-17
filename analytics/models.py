@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models, transaction
@@ -45,6 +46,14 @@ class MeasurementVersion(BaseModel):
     collective_threshold = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal("80"), verbose_name="Umbral colectivo (%)",
         validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    congratulation_points = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("10"),
+        validators=[MinValueValidator(0), MaxValueValidator(150)], verbose_name="Puntos por felicitación",
+    )
+    complaint_points = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("20"),
+        validators=[MinValueValidator(0), MaxValueValidator(150)], verbose_name="Puntos a descontar por reclamo",
     )
 
     class Meta:
@@ -279,6 +288,7 @@ class IndicatorSnapshot(BaseModel):
     elapsed_days = models.PositiveIntegerField(null=True, editable=False)
     segments = models.JSONField(default=list, blank=True, editable=False)
     result_notice = models.CharField(max_length=500, blank=True, editable=False)
+    score_summary = models.JSONField(default=dict, blank=True, editable=False)
 
     class Meta:
         verbose_name = "Indicador (snapshot)"
@@ -315,6 +325,52 @@ class DelegationActivitySnapshot(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["freeze", "activity"], name="unique_frozen_territorial_activity")]
         indexes = [models.Index(fields=["freeze", "delegation"], name="frozen_activity_delegation_idx")]
+
+
+class ScoreAdjustment(BaseModel):
+    VIEW_PERMISSION = "analytics.view_scoreadjustment"
+    ADD_PERMISSION = "analytics.add_scoreadjustment"
+    REVIEW_PERMISSION = "analytics.review_scoreadjustment"
+
+    class Kind(models.TextChoices):
+        CONGRATULATION = "CONGRATULATION", "Felicitación"
+        COMPLAINT = "COMPLAINT", "Reclamo"
+
+    class Channel(models.TextChoices):
+        EMAIL = "EMAIL", "Correo electrónico"
+        WHATSAPP = "WHATSAPP", "WhatsApp"
+        OFFICE_BOOK = "OFFICE_BOOK", "Libro de reclamos y felicitaciones"
+        OTHER = "OTHER", "Otro medio escrito"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pendiente"
+        APPROVED = "APPROVED", "Aprobado"
+        REJECTED = "REJECTED", "Rechazado"
+
+    official = models.ForeignKey(Official, on_delete=models.PROTECT, verbose_name="Funcionario")
+    period = models.ForeignKey(Period, on_delete=models.PROTECT, verbose_name="Período")
+    occurred_on = models.DateField("Fecha del reclamo o felicitación")
+    kind = models.CharField("Tipo", max_length=20, choices=Kind.choices)
+    channel = models.CharField("Medio escrito", max_length=15, choices=Channel.choices)
+    reason = models.CharField("Motivo", max_length=500)
+    written_support = models.TextField("Respaldo escrito", max_length=4000)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", null=True, blank=True,
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.CharField(max_length=500, blank=True)
+    version = models.ForeignKey(MeasurementVersion, on_delete=models.PROTECT, null=True, blank=True)
+    points = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Reclamo o felicitación"
+        verbose_name_plural = "Reclamos y felicitaciones"
+        default_permissions = ("add", "view")
+        permissions = [("review_scoreadjustment", "Puede validar reclamos y felicitaciones")]
+        ordering = ["-occurred_on", "-pk"]
+        indexes = [models.Index(fields=["period", "official", "status"], name="score_adj_period_official_idx")]
 
 
 class IncentiveApplication(BaseModel):

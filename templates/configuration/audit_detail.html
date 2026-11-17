@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Detalle de auditoría · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="audit" %}{% endblock %}
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="audit-event-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb"><a class="auth-text-link" href="{% url 'audit_list' %}{% querystring %}">Bitácora general</a> / Evento {{ event.pk }}</p>
+                <h1 id="audit-event-title">{{ event.action }}</h1>
+            </div>
+        </header>
+        <section class="attention-entry-card mb-3" aria-label="Datos del evento">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Usuario</dt><dd class="col-sm-8">{% include "configuration/audit_actor.html" %}</dd>
+                <dt class="col-sm-4">Fecha y hora</dt><dd class="col-sm-8">{{ event.date|date:"d-m-Y H:i:s T" }}</dd>
+                <dt class="col-sm-4">IP de origen</dt><dd class="col-sm-8">{{ event.origin_ip|default_if_none:"Sin dato registrado" }}</dd>
+                <dt class="col-sm-4">Entidad</dt><dd class="col-sm-8">{{ event.affected_table }}</dd>
+                <dt class="col-sm-4">ID del registro afectado</dt><dd class="col-sm-8">{{ event.affected_record_id|default_if_none:"Sin dato registrado" }}</dd>
+            </dl>
+        </section>
+        <div class="attention-entry-grid">
+            <section class="attention-entry-card" aria-labelledby="audit-before">
+                <h2 class="h5" id="audit-before">Valor anterior</h2>
+                <p class="text-break mb-0">{{ before|default:"Sin dato registrado"|linebreaksbr }}</p>
+            </section>
+            <section class="attention-entry-card" aria-labelledby="audit-after">
+                <h2 class="h5" id="audit-after">Valor nuevo</h2>
+                <p class="text-break mb-0">{{ after|default:"Sin dato registrado"|linebreaksbr }}</p>
+            </section>
+        </div>
+    </section>
+</div>
+{% endblock %}

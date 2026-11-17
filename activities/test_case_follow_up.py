@@ -122,6 +122,13 @@ class CaseFollowUpTests(CaseFixture, TestCase):
         finally:
             unsubscribe(reader.pk, "activity")
 
+        audit = AuditLog.objects.get(action="Estado o respuesta de solicitud ciudadana actualizados",
+                                     affected_record_id=origin.pk, new_value__contains="Resuelta")
+        self.assertIn("Estado: En revisión", audit.previous_value)
+        self.assertIn("Respuesta actualizada: Sí", audit.new_value)
+        self.assertNotIn("Gestión terminada.", audit.new_value)
+        self.assertEqual(audit.actor_username, self.staff.username)
+
         listing = reverse("activity_maintainer")
         mixed = self.client.get(listing, {"status": "RESOLVED"})
         self.assertCountEqual(mixed.context["page_obj"], [direct.activity, linked.activity, origin])

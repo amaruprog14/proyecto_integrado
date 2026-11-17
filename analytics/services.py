@@ -18,10 +18,12 @@ from django.utils import timezone
 
 from activities.models import Activity, EvidenceValidation
 from analytics.measurement import published_versions_on
-from analytics.models import IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion
+from analytics.models import IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion, ScoreAdjustment
 
 HUNDRED = Decimal("100")
 CENT = Decimal("0.01")
+MAX_FINAL_SCORE = Decimal("150")
+MAX_CONGRATULATIONS = 3
 TrafficLight = IndicatorSnapshot.TrafficLight
 
 
@@ -157,6 +159,8 @@ class PerformanceResult:
     computable_days: int | None = None
     elapsed_days: int | None = None
     segments: list = field(default_factory=list)
+    score_adjustments: list = field(default_factory=list)
+    frozen_score_summary: dict = field(default_factory=dict)
 
     @property
     def position(self):
@@ -165,8 +169,20 @@ class PerformanceResult:
         return self.official.position
 
     @property
-    def total(self):
+    def base_total(self):
+        if self.frozen_score_summary:
+            return Decimal(self.frozen_score_summary["base"])
         return sum((row.weighted for row in self.items), Decimal("0"))
+
+    @property
+    def score_adjustment_total(self):
+        return sum((Decimal(entry["applied_points"]) for entry in self.score_adjustments), Decimal("0"))
+
+    @property
+    def total(self):
+        if self.frozen:
+            return Decimal(self.frozen_score_summary["total"]) if self.frozen_score_summary else self.base_total
+        return min(self.base_total + self.score_adjustment_total, MAX_FINAL_SCORE)
 
     @property
     def activity_count(self):
@@ -331,18 +347,51 @@ class CalculadorDesempenoService:
             for lines in lines_by_version.values() for line in lines) else {}
         segmented = segmented_results(cls, [official for official in officials if histories[official.pk]],
                                       period, on_date, include_start_day, histories)
+        scores = cls.approved_score_adjustments(ids, period, on_date)
         results = []
         for official in officials:
-            if official.pk in segmented:
-                results.append(segmented[official.pk])
-                continue
-            version = versions.get(official.position_id)
-            lines = lines_by_version[version.pk] if version else ()
-            results.append(cls._build_result(
-                official, period, on_date, include_start_day, version, lines,
-                adjustments_by_official[official.pk], counted.get(official.pk, {}), percentage.get(official.pk), pending.get(official.pk),
-            ))
+            result = segmented.get(official.pk)
+            if result is None:
+                version = versions.get(official.position_id)
+                lines = lines_by_version[version.pk] if version else ()
+                result = cls._build_result(
+                    official, period, on_date, include_start_day, version, lines,
+                    adjustments_by_official[official.pk], counted.get(official.pk, {}), percentage.get(official.pk),
+                    pending.get(official.pk),
+                )
+            if result.items and result.computable_days:
+                result.score_adjustments = scores.get(official.pk, [])
+            results.append(result)
         return results
+
+    @staticmethod
+    def approved_score_adjustments(official_ids, period, on_date):
+        adjustments = ScoreAdjustment.objects.filter(
+            official_id__in=official_ids, period=period, occurred_on__lte=on_date,
+            status=ScoreAdjustment.Status.APPROVED, deleted_at__isnull=True, points__isnull=False,
+        )
+        if on_date < period.end_date:
+            # Los cortes intermedios muestran solo lo validado hasta ese día.
+            # Al cierre también entran las validaciones tardías de hechos del período.
+            cutoff = timezone.make_aware(datetime.combine(on_date + timedelta(days=1), time.min))
+            adjustments = adjustments.filter(reviewed_at__lt=cutoff)
+        entries = defaultdict(list)
+        congratulations = defaultdict(int)
+        for adjustment in adjustments.only("official", "kind", "occurred_on", "points").order_by("reviewed_at", "pk"):
+            excluded = False
+            if adjustment.kind == ScoreAdjustment.Kind.CONGRATULATION:
+                congratulations[adjustment.official_id] += 1
+                excluded = congratulations[adjustment.official_id] > MAX_CONGRATULATIONS
+            entries[adjustment.official_id].append({
+                "id": adjustment.pk,
+                "kind": adjustment.get_kind_display(),
+                "date": adjustment.occurred_on.isoformat(),
+                "points": str(adjustment.points),
+                "positive": adjustment.points > 0,
+                "applied_points": "0" if excluded else str(adjustment.points),
+                "excluded": excluded,
+            })
+        return entries
 
     @staticmethod
     def _build_result(official, period, on_date, include_start_day, version, lines, adjustments, counted, percentage, pending=None):
@@ -410,6 +459,10 @@ class CalculadorDesempenoService:
             total_traffic_light=result.total_traffic_light or "", calculated_at=calculated_at,
             computable_days=result.computable_days, elapsed_days=result.elapsed_days,
             segments=result.segments, result_notice=result.notice,
+            score_summary={
+                "base": str(result.base_total), "total": str(result.total),
+                "adjustments": result.score_adjustments,
+            },
         )
 
     @classmethod
@@ -457,6 +510,8 @@ class CalculadorDesempenoService:
             result.elapsed_days = snapshots[0].elapsed_days
             result.segments = snapshots[0].segments
             result.notice = snapshots[0].result_notice
+            result.frozen_score_summary = snapshots[0].score_summary
+            result.score_adjustments = result.frozen_score_summary.get("adjustments", [])
         if not snapshots:
             result.notice = "El funcionario no tenía un plan de medición aplicable al cerrar el período."
         for snapshot in snapshots:

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Reclamos y felicitaciones · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="score_adjustments" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content" aria-labelledby="score-title">
+    <header class="maintainer-heading">
+        <div><p class="maintainer-breadcrumb">Gestión municipal / Desempeño</p><h1 id="score-title">Reclamos y felicitaciones</h1></div>
+        {% if can_add %}<a class="btn btn-primary maintainer-new-button" href="{% url 'score_adjustment_create' %}">Nuevo registro</a>{% endif %}
+    </header>
+    <form method="get" class="maintainer-tools performance-filters mb-3" aria-label="Filtrar por estado">
+        <div>
+            <label class="form-label" for="score-status">Estado</label>
+            <select class="form-select" name="estado" id="score-status">
+                <option value="">Todos</option>
+                {% for value, label in statuses %}<option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Filtrar</button>
+    </form>
+    {% if page_obj.object_list %}
+        <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-label="Reclamos y felicitaciones registrados">
+            <table class="table maintainer-table">
+                <thead><tr><th scope="col">Fecha</th><th scope="col">Funcionario</th><th scope="col">Tipo</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+                <tbody>
+                    {% for record in page_obj %}
+                        <tr>
+                            <td>{{ record.occurred_on|date:"d-m-Y" }}</td><td>{{ record.official }}</td>
+                            <td>{{ record.get_kind_display }}</td><td>{{ record.get_status_display }}</td>
+                            <td><a class="auth-text-link" href="{% url 'score_adjustment_detail' record.pk %}">Ver registro</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.has_other_pages %}
+            <nav class="d-flex flex-wrap gap-3 align-items-center mt-3" aria-label="Páginas de reclamos y felicitaciones">
+                {% if page_obj.has_previous %}<a class="auth-text-link" href="{% querystring page=page_obj.previous_page_number %}">Anterior</a>{% endif %}
+                <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}<a class="auth-text-link" href="{% querystring page=page_obj.next_page_number %}">Siguiente</a>{% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <p class="alert alert-info">No hay registros para mostrar.</p>
+    {% endif %}
+</section>
+{% endblock %}

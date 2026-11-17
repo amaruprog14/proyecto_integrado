@@ -1,3 +1,4 @@
+from decimal import Decimal
 from io import BytesIO
 
 from django.http import HttpResponse
@@ -19,18 +20,8 @@ def _cell_value(value):
     return value
 
 
-def build_xlsx(headers, rows, sheet_title="Registros"):
-    """
-    Libro Excel de una hoja: encabezados en negrita, fila de encabezado fija y autofiltro.
-
-    No depende de ningún modelo: recibe los encabezados y las filas ya preparadas para
-    mostrar (solo campos visibles para el usuario, nunca identificadores internos).
-    Los textos se guardan siempre como texto, de modo que un valor que empiece con "="
-    no se interpreta como fórmula al abrir el archivo.
-    """
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = sheet_title[:31]
+def _fill_sheet(sheet, headers, rows, *, format_decimals=False):
+    """Los textos siempre se escriben como texto, aunque comiencen con «=»."""
     widths = [len(str(header)) for header in headers]
 
     sheet.append([_cell_value(header) for header in headers])
@@ -42,6 +33,8 @@ def build_xlsx(headers, rows, sheet_title="Registros"):
             cell = sheet.cell(row=row_number, column=column_number, value=_cell_value(value))
             if isinstance(cell.value, str):
                 cell.data_type = "s"
+            elif format_decimals and isinstance(value, Decimal):
+                cell.number_format = "0.00"
             if column_number <= len(widths):
                 widths[column_number - 1] = max(widths[column_number - 1], len(str(cell.value)))
 
@@ -50,13 +43,38 @@ def build_xlsx(headers, rows, sheet_title="Registros"):
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
 
+
+def _serialize_workbook(workbook):
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
 
 
-def xlsx_response(filename, headers, rows, sheet_title="Registros"):
-    """Respuesta de descarga con el libro generado por build_xlsx (`filename` sin extensión)."""
-    response = HttpResponse(build_xlsx(headers, rows, sheet_title), content_type=XLSX_CONTENT_TYPE)
+def _download_xlsx(filename, content):
+    response = HttpResponse(content, content_type=XLSX_CONTENT_TYPE)
     response["Content-Disposition"] = f'attachment; filename="{filename}.xlsx"'
     return response
+
+
+def build_xlsx(headers, rows, sheet_title="Registros"):
+    """Libro Excel de una hoja con encabezado fijo y autofiltro."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_title[:31]
+    _fill_sheet(sheet, headers, rows)
+    return _serialize_workbook(workbook)
+
+
+def xlsx_response(filename, headers, rows, sheet_title="Registros"):
+    """Respuesta de descarga con el libro generado por build_xlsx (`filename` sin extensión)."""
+    return _download_xlsx(filename, build_xlsx(headers, rows, sheet_title))
+
+
+def xlsx_report_response(filename, tables):
+    """Descarga un informe compuesto por tablas con título, encabezados y filas."""
+    workbook = Workbook()
+    for index, (title, headers, rows) in enumerate(tables):
+        sheet = workbook.create_sheet() if index else workbook.active
+        sheet.title = title[:31]
+        _fill_sheet(sheet, headers, rows, format_decimals=True)
+    return _download_xlsx(filename, _serialize_workbook(workbook))

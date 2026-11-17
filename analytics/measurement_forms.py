@@ -39,7 +39,10 @@ class RevisionForm(forms.Form):
 class VersionForm(MaintainerForm):
     class Meta:
         model = MeasurementVersion
-        fields = ("effective_from", "max_computable", "amber_threshold", "green_threshold", "collective_threshold")
+        fields = (
+            "effective_from", "max_computable", "amber_threshold", "green_threshold", "collective_threshold",
+            "congratulation_points", "complaint_points",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -12,11 +14,13 @@ from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN
 from analytics.measurement_forms import MeasurementAdjustmentForm, MeasurementItemForm, NewPlanForm, RevisionForm, VersionForm
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementVersion
 from common.access import ProtectedViewMixin
+from common.edit_concurrency import edit_conflict, edit_is_current, edit_revision
 from common.exports import xlsx_response
 from common.list_state import ordered, query_params
 from common.modal_forms import ModalFormOnlyMixin, add_form_success, is_modal_request
 from common.pagination import ClampedPaginationMixin
 from common.scopes import permission_scope
+from common.text import describe_changes, format_snapshot
 from configuration.models import Period
 from configuration.period_services import lock_period_registry
 from configuration.services import AuditoriaService
@@ -147,6 +151,17 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
             return reverse("measurement_plan_detail", args=[self.period.pk, self.plan.pk])
         return reverse("measurement_plan_list", args=[self.period.pk])
 
+    def plan_revision(self):
+        if self.plan is None:
+            return None
+        versions = self.plan.versions.all()
+        lines = MeasurementItem.objects.filter(version__plan=self.plan)
+        adjustments = MeasurementAdjustment.objects.filter(line__version__plan=self.plan)
+        revisions = [edit_revision(self.period)]
+        for records in (versions, lines, adjustments):
+            revisions.extend(edit_revision(record) for record in records)
+        return edit_revision(self.plan, memberships=(revisions,))
+
     def render_form(self, form):
         notes = {
             "publish": "La versión publicada conservará sus valores. Cualquier corrección se registrará en una nueva versión.",
@@ -159,6 +174,8 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
             "maintainer_title": "Configuración de medición", "maintainer_kind": "periods",
             "list_url": self.detail_url(), "form_description": notes.get(self.operation),
             "submit_label": labels.get(self.operation, "Guardar configuración"),
+            "edit_revision": (self.request.POST.get("edit_revision") if self.request.method == "POST"
+                              else self.plan_revision()),
         })
 
     def get(self, request, **kwargs):
@@ -171,24 +188,33 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
         with transaction.atomic():
             lock_period_registry()
             self.load(**kwargs, lock=True)
+            if self.plan is not None and not edit_is_current(request, self.plan_revision()):
+                return edit_conflict()
             if self.operation == "revision" and not self.plan.versions.first().is_published:
                 raise PermissionDenied("Ya existe un borrador para este plan.")
+            current = self.adjustment or self.line
+            if self.operation in ("version", "publish"):
+                current = self.version
+            previous = self.audit_snapshot(current)
+            original_id = current.pk if current else None
             form = self.form(request.POST)
             if not form.is_valid():
                 return self.render_form(form)
             try:
-                self.save(form)
+                target = self.save(form)
             except ValidationError as error:
                 for field, errors in getattr(error, "message_dict", {}).items():
                     form.add_error(field if field in form.fields else None, errors)
                 if not hasattr(error, "message_dict"):
                     form.add_error(None, error)
                 return self.render_form(form)
+            self.audit_save(previous, target, original_id)
         add_form_success(request, "Registro guardado correctamente.")
         return HttpResponse(status=204) if is_modal_request(request) else redirect(self.detail_url())
 
     def save(self, form):
         action = self.operation
+        target = self.line if action == "remove_item" else self.adjustment if action == "remove_adjustment" else None
         if action == "plan":
             self.plan = self.period.measurement_plans.create(position=form.cleaned_data["position"])
             self.version = self.plan.versions.create(number=1, effective_from=self.period.start_date)
@@ -204,18 +230,55 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
         elif action == "remove_adjustment":
             self.adjustment.delete()
         else:
-            form.save()
+            target = form.save()
         if action in ("plan", "revision"):
             self.plan.save(update_fields=["updated_at"])
-        if action == "publish":
-            previous = self.plan.versions.filter(number__lt=self.version.number, published_at__isnull=False).first()
-            AuditoriaService.register_change(
-                official=getattr(self.request.user, "official", None),
-                action="Publicación de plan de medición", instance=self.version,
-                previous_value=f"Versión {previous.number} ({previous.effective_from:%d-%m-%Y})" if previous else "",
-                new_value=(
-                    f"{self.plan.position} · Versión {self.version.number} · Vigente desde {self.version.effective_from:%d-%m-%Y}\n"
-                    f"Cuenta {self.request.user.pk} ({self.request.user.get_username()})"
-                ),
-                origin_ip=self.request.META.get("REMOTE_ADDR") or None,
-            )
+        return target or self.version
+
+    @staticmethod
+    def audit_snapshot(subject):
+        def field_value(value):
+            if isinstance(value, Decimal):
+                return format(value.normalize(), "f")
+            return str(value) if value is not None else "Sin valor"
+
+        if isinstance(subject, MeasurementVersion):
+            return {
+                "Cargo": str(subject.plan.position), "Período": str(subject.plan.period),
+                "Versión": str(subject.number), "Estado": "Publicada" if subject.is_published else "Borrador",
+                **{
+                    str(subject._meta.get_field(field).verbose_name): field_value(getattr(subject, field))
+                    for field in VersionForm.Meta.fields
+                },
+            }
+        if isinstance(subject, MeasurementItem):
+            return {"Ítem": str(subject.item), "Función": str(subject.function), "Tipo de meta": subject.get_goal_type_display(),
+                    "Meta": field_value(subject.goal), "Ponderador (%)": field_value(subject.weight)}
+        if isinstance(subject, MeasurementAdjustment):
+            return {"Funcionario": str(subject.official_id), "Ítem": str(subject.line.item),
+                    "Meta individual": field_value(subject.goal), "Ponderador individual (%)": field_value(subject.weight)}
+        return {}
+
+    def audit_save(self, previous, target, record_id):
+        operation = self.operation
+        action = {
+            "plan": "Creación de plan de medición", "revision": "Creación de versión de medición",
+            "publish": "Publicación de plan de medición", "version": "Edición de reglas de medición",
+            "item": "Edición de ítem de medición" if previous else "Creación de ítem de medición",
+            "adjustment": "Edición de ajuste individual" if previous else "Creación de ajuste individual",
+            "remove_item": "Eliminación de ítem de medición", "remove_adjustment": "Eliminación de ajuste individual",
+        }[operation]
+        if operation in ("remove_item", "remove_adjustment"):
+            old, new = format_snapshot(previous), "Eliminado"
+        elif operation == "publish":
+            old = format_snapshot(previous)
+            new = format_snapshot({**self.audit_snapshot(target), "Cuenta": self.request.user.get_username()})
+        else:
+            old, new = describe_changes(previous, self.audit_snapshot(target))
+            if old == new == "Sin cambios":
+                return
+        AuditoriaService.register_event(
+            official=getattr(self.request.user, "official", None), action=action, entity=target._meta.db_table,
+            record_id=target.pk or record_id, previous_value=old, new_value=new,
+            origin_ip=self.request.META.get("REMOTE_ADDR") or None, actor=self.request.user,
+        )

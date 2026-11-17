@@ -418,7 +418,7 @@ class StaffRequestReviewView(StaffRequestDetailMixin, ProtectedViewMixin, FormVi
             if case.status != status or case.response != response:
                 if status == ClientRequest.Status.REVIEW and case.responsible_id is None:
                     case.responsible = actor
-                change_request_status(case, status, actor, response)
+                change_request_status(case, status, actor, response, request=self.request)
                 record_case_event(case, actor, "Respuesta a solicitud ciudadana", case.identifier)
                 case.save(update_fields=["responsible", "updated_at"])
         messages.success(self.request, "Registro guardado correctamente.")

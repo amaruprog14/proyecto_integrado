@@ -565,6 +565,10 @@ individual). `analytics/services.py::CalculadorDesempenoService.calculate(funcio
 devuelve, por ítem, meta, avance, cumplimiento con tope, ponderado, meta esperada en unidades,
 diferencia y semáforo, además del total del funcionario.
 
+- **Edición simultánea.** Los formularios de un plan existente comprueban su versión antes de
+  guardar, publicar o quitar ítems y ajustes. Si otra persona cambió las reglas, los ítems o
+  los ajustes mientras el formulario estaba abierto, se muestra el conflicto y se permite
+  consultar el borrador propio y la versión actual.
 - **Versión aplicada.** Meta, ponderador, umbrales y tope son los de la versión publicada y no archivada vigente a
   la fecha de cálculo para el cargo actual del funcionario. Cada actividad cuenta solo si su ítem
   está en la versión que regía en la fecha de la actividad para el cargo con que se registró; un
@@ -645,6 +649,28 @@ funcionario, y abrir su panel individual cuando el alcance actual lo permite.
 Las cantidades se suman y los porcentajes se promedian por funcionario con dato disponible.
 Los indicadores de actividad reciente se calculan con los registros vigentes dentro del alcance
 de consulta, incluso cuando el resultado ponderado se muestra congelado.
+
+### Exportación de desempeño (RF-033, HU-20)
+
+**Exportar a Excel** descarga el informe del tablero y de los filtros que ya se aplicaron en pantalla.
+La hoja **Resumen** identifica el período, el ámbito, el corte y la fecha de generación. Los períodos
+cerrados utilizan el resultado congelado. La descarga de delegación incluye todas las actividades
+que respaldan el total territorial cuando la cuenta puede consultar ese respaldo. En **Vista por
+cargo**, abrir un cargo antes de exportar incorpora el detalle de sus funcionarios, metas y actividad
+reciente. La actividad reciente mantiene el corte y las reglas de consulta del tablero.
+
+### Bitácora general (HU-30, RF-036, RNF-008)
+
+En **Configuración → Bitácora general**, los perfiles con `configuration.view_auditlog`
+y alcance global pueden filtrar por fechas, usuario, acción, entidad e ID afectado. El detalle
+muestra el origen y los valores operativos registrados antes y después del cambio. Los valores
+históricos ausentes se indican como «Sin dato registrado». Los contactos, notas privadas y
+otros datos que no corresponden al detalle general quedan reservados.
+
+La consulta es de solo lectura. Los intentos de escritura se rechazan y quedan en la bitácora.
+Los cambios de reglas, ítems y ajustes individuales de medición quedan registrados junto con la
+cuenta que ejecutó la operación. Los estados de solicitudes ciudadanas y los cambios operativos
+del seguimiento de casos y cartas conservan su trazabilidad.
 
 ### Comentarios internos y alertas (RF-035, RF-037)
 
@@ -750,11 +776,13 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   muestra un aviso y no aporta. Al calcular a una fecha pasada solo cuentan los compromisos creados
   hasta ese día, cada uno con el estado que tenía según su historial. El semáforo compara ese
   cumplimiento con la meta esperada del día.
-- **Felicitaciones y reclamos (parámetros sujetos a aprobación institucional).** Se propone felicitación =
-  +10 puntos sobre el total ponderado (máximo 3 por funcionario y período) y reclamo = −20 puntos
-  (el Excel usa −0,2 y −0,3 según la hoja). La guía pide no fijar automáticamente esos valores y
-  aplicarlos solo con reglas parametrizadas aprobadas: serán parámetros de la versión del plan y
-  los valores +10/−20 son solo los propuestos por defecto hasta que la institución los apruebe.
+- **Reclamos y felicitaciones.** El personal autorizado puede registrar el motivo y respaldo escrito
+  desde **Desempeño → Reclamos y felicitaciones**. Administrador y Coordinador del sistema
+  pueden validar los registros del período abierto. Al aprobar se conserva el puntaje de la versión
+  publicada vigente para el cargo en la fecha del hecho. En un borrador del plan se pueden configurar
+  los valores por cargo y período (+10 y −20 por defecto, o un descuento de 30 puntos si corresponde).
+  Computan las tres primeras felicitaciones aprobadas por funcionario y período. El resultado suma
+  los ajustes al total ponderado, con tope de 150 puntos. El desglose queda congelado al cerrar.
 - **Pendientes en tubo (A2, documentación prevalece).** La matriz SGR del trimestre 2026 (archivo
   de la institución, no incluido en el repositorio), hoja `SALON`, celdas C23/G23, define el
   indicador y su fórmula: cumplimiento 100 % si pendientes ≤ 10 %, 50 % si

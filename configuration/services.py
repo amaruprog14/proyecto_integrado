@@ -6,7 +6,7 @@ class AuditoriaService:
 
     @staticmethod
     def register_event(
-        official, action, entity, previous_value="", new_value="", record_id=None, origin_ip=None
+        official, action, entity, previous_value="", new_value="", record_id=None, origin_ip=None, *, actor=None,
     ):
         """Crea un AuditLog. `official` puede ser None (eventos del sistema)."""
         return AuditLog.register_event(
@@ -17,12 +17,13 @@ class AuditoriaService:
             new_value=new_value,
             record_id=record_id,
             origin_ip=origin_ip,
+            actor_username=actor.get_username() if getattr(actor, "is_authenticated", False) else "",
         )
 
     @staticmethod
-    def register_change(official, action, instance, previous_value="", new_value="", origin_ip=None):
+    def register_change(official, action, instance, previous_value="", new_value="", origin_ip=None, *, actor=None):
         """Atajo: registra un evento tomando tabla e id desde la instancia afectada."""
-        return AuditLog.register_event(
+        return AuditoriaService.register_event(
             official=official,
             action=action,
             entity=instance._meta.db_table,
@@ -30,4 +31,5 @@ class AuditoriaService:
             new_value=new_value,
             record_id=instance.pk,
             origin_ip=origin_ip,
+            actor=actor,
         )

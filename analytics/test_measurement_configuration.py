@@ -43,7 +43,12 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         self.management.force_login(self.admin)
 
     def write(self, name, *args, **data):
-        return self.management.post(reverse(name, args=args), data, HTTP_X_MODAL_REQUEST="true")
+        url = reverse(name, args=args)
+        if name.startswith("measurement_") and name != "measurement_plan_create" and "edit_revision" not in data:
+            response = self.management.get(url, HTTP_X_MODAL_REQUEST="true")
+            if response.status_code == 200:
+                data["edit_revision"] = response.context["edit_revision"]
+        return self.management.post(url, data, HTTP_X_MODAL_REQUEST="true")
 
     def new_plan(self, position=None):
         position = position or self.position
@@ -59,6 +64,104 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
 
     def publish(self, version):
         return self.write("measurement_version_publish", self.period.pk, version.plan_id, version.pk)
+
+    def test_parameter_changes_are_visible_with_before_after_and_account_in_audit(self):
+        plan, version = self.new_plan()
+        self.assertEqual(self.write(
+            "measurement_version_edit", self.period.pk, plan.pk, version.pk,
+            max_computable="150", amber_threshold="60", green_threshold="100",
+            collective_threshold="80", congratulation_points="10", complaint_points="30",
+        ).status_code, 204)
+        event = AuditLog.objects.get(action="Edición de reglas de medición", affected_record_id=version.pk)
+        self.assertEqual(event.actor_username, self.admin.username)
+        self.assertIn("Puntos a descontar por reclamo: 20", event.previous_value)
+        self.assertIn("Puntos a descontar por reclamo: 30", event.new_value)
+        response = self.management.get(reverse("audit_detail", args=[event.pk]))
+        self.assertContains(response, "Puntos a descontar por reclamo: 20")
+        self.assertContains(response, "Puntos a descontar por reclamo: 30")
+
+    def test_stale_rules_do_not_overwrite_another_edit(self):
+        plan, version = self.new_plan()
+        other_admin = User.objects.create_superuser("otro-admin-medicion", password="Prueba-1234")
+        other_client = Client()
+        other_client.force_login(other_admin)
+        url = reverse("measurement_version_edit", args=[self.period.pk, plan.pk, version.pk])
+        first_revision = revision_from_form(self.management, url)
+        stale_revision = revision_from_form(other_client, url)
+        values = dict(max_computable="150", amber_threshold="60", green_threshold="100",
+                      collective_threshold="80", congratulation_points="10", complaint_points="20")
+        response = self.management.post(url, {
+            **values, "complaint_points": "30", "edit_revision": first_revision,
+        }, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        before = AuditLog.objects.count()
+        response = other_client.post(url, {
+            **values, "green_threshold": "95", "edit_revision": stale_revision,
+        }, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "edit_conflict")
+        version.refresh_from_db()
+        self.assertEqual(version.complaint_points, 30)
+        self.assertEqual(version.green_threshold, 100)
+        self.assertEqual(AuditLog.objects.count(), before)
+        self.assertEqual(other_client.post(url, {
+            **values, "complaint_points": "30", "green_threshold": "95",
+            "edit_revision": revision_from_form(other_client, url),
+        }, HTTP_X_MODAL_REQUEST="true").status_code, 204)
+        version.refresh_from_db()
+        self.assertEqual(version.green_threshold, 95)
+
+    def test_stale_publish_and_removal_detect_changes_in_items_and_adjustments(self):
+        plan, version = self.new_plan()
+        line = self.add_item(version, self.item, "100")
+        args = [self.period.pk, plan.pk, version.pk]
+        publish_url = reverse("measurement_version_publish", args=args)
+        publish_revision = revision_from_form(self.management, publish_url)
+        self.assertEqual(self.write("measurement_item_edit", *args, line.pk,
+                                   function=self.function.pk, item=self.item.pk, goal_type="QUANTITY",
+                                   goal="20", weight="100").status_code, 204)
+        response = self.management.post(publish_url, {"edit_revision": publish_revision},
+                                        HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 409)
+        version.refresh_from_db()
+        self.assertFalse(version.is_published)
+        remove_url = reverse("measurement_item_remove", args=[*args, line.pk])
+        remove_revision = revision_from_form(self.management, remove_url)
+        self.assertEqual(self.write("measurement_adjustment_create", *args, line.pk,
+                                   official=self.official.pk, goal="15", weight="").status_code, 204)
+        response = self.management.post(remove_url, {"edit_revision": remove_revision},
+                                        HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(version.items.filter(pk=line.pk).exists())
+        self.assertTrue(line.adjustments.exists())
+        self.assertEqual(self.publish(version).status_code, 204)
+
+    def test_stale_item_and_adjustment_forms_detect_changes_and_keep_validation_revision(self):
+        plan, version = self.new_plan()
+        line = self.add_item(version, self.item, "100")
+        args = [self.period.pk, plan.pk, version.pk, line.pk]
+        item_url = reverse("measurement_item_edit", args=args)
+        item_values = dict(function=self.function.pk, item=self.item.pk, goal_type="QUANTITY", goal="10", weight="100")
+        revision = revision_from_form(self.management, item_url)
+        invalid = self.management.post(item_url, {**item_values, "goal": "0", "edit_revision": revision},
+                                       HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(invalid.status_code, 200)
+        self.assertEqual(invalid.context["edit_revision"], revision)
+        self.assertEqual(self.write("measurement_adjustment_create", *args,
+                                   official=self.official.pk, goal="15", weight="").status_code, 204)
+        adjustment = line.adjustments.get()
+        adjustment_url = reverse("measurement_adjustment_edit", args=[*args, adjustment.pk])
+        adjustment_revision = revision_from_form(self.management, adjustment_url)
+        self.assertEqual(self.management.post(item_url, {**item_values, "edit_revision": revision},
+                                              HTTP_X_MODAL_REQUEST="true").status_code, 409)
+        self.assertEqual(self.write("measurement_adjustment_edit", *args, adjustment.pk,
+                                   official=self.official.pk, goal="25", weight="").status_code, 204)
+        self.assertEqual(self.management.post(adjustment_url, {
+            "official": self.official.pk, "goal": "16", "weight": "", "edit_revision": adjustment_revision,
+        }, HTTP_X_MODAL_REQUEST="true").status_code, 409)
+        adjustment.refresh_from_db()
+        self.assertEqual(adjustment.goal, 25)
+        self.assertEqual(self.management.post(item_url, item_values, HTTP_X_MODAL_REQUEST="true").status_code, 409)
 
     def activity_data(self, **changes):
         return {
