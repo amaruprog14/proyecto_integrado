@@ -4,6 +4,7 @@
     Las maquetas sin persistencia llevan el distintivo «Demo».
 {% endcomment %}
 <div class="maintainer-sidebar">
+    {% if perms.accounts.view_officialabsence %}<nav aria-label="Ausencias"><a class="maintainer-sidebar-link{% if active == 'absences' %} is-active{% endif %}" href="{% url 'absence_list' %}"{% if active == 'absences' %} aria-current="page"{% endif %}>Ausencias</a></nav>{% endif %}
     <nav aria-label="Inicio">
         <a class="maintainer-sidebar-link{% if active == 'home' %} is-active{% endif %}" href="{% url 'home' %}"{% if active == 'home' %} aria-current="page"{% endif %}>Inicio</a>
     </nav>

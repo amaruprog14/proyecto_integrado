@@ -64,7 +64,7 @@ def team_results(period, today, delegations):
 
 
 def summarize_team(results):
-    measured = [result for result in results if result.items]
+    measured = [result for result in results if result.items and result.computable_days != 0]
     count = len(measured)
     colors = dict.fromkeys(TrafficLight.values, 0)
     for result in results:

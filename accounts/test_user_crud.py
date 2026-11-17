@@ -19,6 +19,7 @@ from accounts.backends import SGRAuthBackend
 from accounts.forms import OfficialUserForm
 from accounts.models import Area, Delegation, Official, Position, Role
 from configuration.models import AuditLog
+from common.testing_edit import post_with_revision
 
 User = get_user_model()
 PASSWORD = "Clave-Segura-123"
@@ -224,7 +225,7 @@ class UserCrudAdminTests(TestCase):
         user = User.objects.create_user("mantener.clave", "mantener.clave@example.test", "Clave-Original-123")
         official = make_official(user, full_name="Mantener Clave", national_id="12345678-5")
 
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[user.pk]),
             {
                 "username": "mantener.clave",
@@ -251,7 +252,7 @@ class UserCrudAdminTests(TestCase):
         user = User.objects.create_user("cambia.clave", "cambia.clave@example.test", "Clave-Original-123")
         make_official(user, national_id="16666666-K")
 
-        self.client.post(
+        post_with_revision(self.client,
             reverse("user_update", args=[user.pk]),
             {
                 "username": "cambia.clave",
@@ -270,11 +271,43 @@ class UserCrudAdminTests(TestCase):
         self.assertTrue(user.check_password("Clave-Nueva-456"))
         self.assertNotEqual(user.password, "Clave-Nueva-456")
 
+    def test_stale_user_edit_gets_conflict_and_keeps_the_first_position_change(self):
+        first_position = Position.objects.create(position_name="Cargo inicial edición")
+        second_position = Position.objects.create(position_name="Cargo nuevo edición")
+        user = User.objects.create_user("edicion.cargo", "edicion.cargo@example.test", PASSWORD)
+        official = make_official(user, national_id="12345678-5")
+        official.position = first_position
+        official.save(update_fields=["position"])
+        url = reverse("user_update", args=[user.pk])
+        revision = self.client.get(url, HTTP_X_MODAL_REQUEST="true").context["edit_revision"]
+        payload = {"username": "edicion.cargo", "first_name": "", "last_name": "", "email": "edicion.cargo@example.test",
+                   "password1": "", "password2": "", "full_name": "Edicion Cargo", "national_id": "12.345.678-5",
+                   "status": Official.Status.ACTIVE, "position": second_position.pk,
+                   "position_effective_from": "2026-11-20", "edit_revision": revision}
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+        # Segunda edición con la misma revisión (abierta antes del primer guardado): conflicto.
+        stale = dict(payload, position=first_position.pk, full_name="Borrador vencido")
+        response = self.client.post(url, stale, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual((response.status_code, response.json()["code"]), (409, "edit_conflict"))
+        official.refresh_from_db()
+        self.assertEqual((official.position, official.full_name), (second_position, "Edicion Cargo"))
+
+    def test_login_of_the_edited_user_does_not_invalidate_the_draft(self):
+        user = User.objects.create_user("inicia.sesion", "inicia.sesion@example.test", PASSWORD)
+        make_official(user, national_id="12345678-5")
+        url = reverse("user_update", args=[user.pk])
+        revision = self.client.get(url, HTTP_X_MODAL_REQUEST="true").context["edit_revision"]
+        self.client_class().force_login(user)  # actualiza last_login en otra sesión
+        payload = {"username": "inicia.sesion", "first_name": "", "last_name": "", "email": "inicia.sesion@example.test",
+                   "password1": "", "password2": "", "full_name": "Inicia Sesion", "national_id": "12.345.678-5",
+                   "status": Official.Status.ACTIVE, "edit_revision": revision}
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+
     def test_status_inactive_deactivates_user_and_profile(self):
         user = User.objects.create_user("sincroniza.uno", "sincroniza.uno@example.test", PASSWORD)
         official = make_official(user, national_id="12345678-5")
 
-        self.client.post(
+        post_with_revision(self.client,
             reverse("user_update", args=[user.pk]),
             {
                 "username": "sincroniza.uno",
@@ -298,7 +331,7 @@ class UserCrudAdminTests(TestCase):
         user = User.objects.create_user("sincroniza.dos", "sincroniza.dos@example.test", PASSWORD)
         make_official(user, national_id="16666666-K")
 
-        self.client.post(
+        post_with_revision(self.client,
             reverse("user_update", args=[user.pk]),
             {
                 "username": "sincroniza.dos",
@@ -320,7 +353,7 @@ class UserCrudAdminTests(TestCase):
         self.assertIsNone(SGRAuthBackend().authenticate(None, username="sincroniza.dos", password=PASSWORD))
 
     def test_admin_cannot_deactivate_own_account_through_form(self):
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[self.admin.pk]),
             {
                 "username": "admin.user",
@@ -559,7 +592,7 @@ class UserCrudAdminTests(TestCase):
         self.assertContains(form_page, f'value="{privileged_role.pk}"')
         self.assertContains(form_page, 'data-role-locked="true"')
 
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[target.pk]),
             user_payload(
                 username=target.username,
@@ -585,7 +618,7 @@ class UserCrudAdminTests(TestCase):
             national_id=target.official.national_id,
             roles=[privileged_role.pk],
         )
-        self.assertEqual(self.client.post(reverse("user_update", args=[target.pk]), invalid).status_code, 403)
+        self.assertEqual(post_with_revision(self.client, reverse("user_update", args=[target.pk]), invalid).status_code, 403)
 
     def test_actor_without_role_management_permission_keeps_existing_privileged_roles(self):
         delegation = Delegation.objects.create(delegation_name="Zona Conserva", address="Calle 9", commune="La Serena")
@@ -600,7 +633,7 @@ class UserCrudAdminTests(TestCase):
         make_official(target, delegation=delegation, national_id="12345678-5").roles.add(privileged_role)
 
         self.client.force_login(manager)
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[target.pk]),
             user_payload(
                 username=target.username,
@@ -814,7 +847,7 @@ class LastGlobalAdministratorAccountTests(TestCase):
     def test_sole_holder_cannot_be_deactivated_or_suspended_through_the_form(self):
         for status in (Official.Status.INACTIVE, Official.Status.SUSPENDED):
             with self.subTest(status=status):
-                response = self.client.post(
+                response = post_with_revision(self.client,
                     reverse("user_update", args=[self.holder.pk]), self.holder_payload(status=status)
                 )
 
@@ -828,7 +861,7 @@ class LastGlobalAdministratorAccountTests(TestCase):
         payload = self.holder_payload()
         payload.pop("roles")
 
-        response = self.client.post(reverse("user_update", args=[self.holder.pk]), payload)
+        response = post_with_revision(self.client, reverse("user_update", args=[self.holder.pk]), payload)
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No se puede quitar el rol Administrador Global Usuarios a Única Administradora")
@@ -878,7 +911,7 @@ class InactiveRoleAssignmentTests(TestCase):
         self.assertNotContains(response, f'name="roles" value="{self.inactive_role.pk}"')
 
     def test_saving_keeps_the_inactive_role(self):
-        response = self.client.post(
+        response = post_with_revision(self.client,
             reverse("user_update", args=[self.target.pk]),
             user_payload(
                 username=self.target.username,

@@ -439,7 +439,8 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         # El caso pequeño queda en rojo y consulta además el último registro (desviación); el
         # grande no puede necesitar más consultas pese a tener 45 registros más.
         self.assertLessEqual(len(large), len(small))
-        self.assertLess(len(large), 40)
+        # Techo fijo: ausencias (A1) y tramos de cargo (A3) suman consultas constantes, no por registro.
+        self.assertLess(len(large), 42)
 
     # --- Congelamiento (RN-013) ---------------------------------------------------------------
 

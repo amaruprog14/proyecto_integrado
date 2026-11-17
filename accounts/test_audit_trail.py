@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
-from common.testing_edit import revision_from_form
+from common.testing_edit import post_with_revision, revision_from_form
 
 from accounts.models import Delegation, Official, Role
 from configuration.models import AuditLog
@@ -57,7 +57,7 @@ class FieldLevelAuditTests(TestCase):
         )
         new_password = "Otra-Clave-456"
 
-        self.client.post(
+        post_with_revision(self.client,
             reverse("user_update", args=[target.pk]),
             {
                 "username": "auditado",

@@ -2,6 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.utils import timezone
 
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementVersion
@@ -31,6 +32,15 @@ def version_for(position_id, date, period=None):
     return published_versions_on(date, period).filter(plan__position_id=position_id).first()
 
 
+def historical_position_id(official_id, date):
+    """Cargo del funcionario en `date` según su historial fechado (A3); None si no hay tramo."""
+    if official_id is None or date is None:
+        return None
+    from accounts.models import OfficialPositionPeriod
+    return (OfficialPositionPeriod.objects.filter(official_id=official_id, deleted_at__isnull=True, start_date__lte=date)
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=date)).values_list("position_id", flat=True).first())
+
+
 def eligible_items(position_id, date):
     items = Item.objects.filter(is_active=True, deleted_at__isnull=True)
     version = version_for(position_id, date)
@@ -39,6 +49,10 @@ def eligible_items(position_id, date):
 
 def activity_measurement(activity):
     position = activity.registration_position if activity.registration_position_captured else activity.official.position
+    historical = historical_position_id(activity.official_id, activity.date)
+    if historical and getattr(position, "pk", None) != historical:
+        from accounts.models import Position
+        position = Position.objects.filter(pk=historical).first()
     version = version_for(position.pk if position else None, activity.date)
     line = version.items.filter(item_id=activity.item_id).first() if version else None
     adjustment = line.adjustments.filter(official_id=activity.official_id).first() if line else None
@@ -50,7 +64,7 @@ def activity_measurement(activity):
         "excluded": version is not None and line is None,
         "goal": adjustment.goal if adjustment and adjustment.goal is not None else line.goal if line else None,
         "weight": adjustment.weight if adjustment and adjustment.weight is not None else line.weight if line else None,
-        "percentage": line is not None and line.goal_type == MeasurementItem.GoalType.PERCENTAGE,
+        "percentage": line is not None and line.goal_type in (MeasurementItem.GoalType.PERCENTAGE, MeasurementItem.GoalType.MAX_PERCENTAGE),
     }
 
 

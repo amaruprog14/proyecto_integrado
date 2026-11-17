@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Ausencias · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="absences" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content">
+    <h1>Ausencias</h1>
+    {% if can_manage %}<a class="btn btn-primary" href="{% url 'absence_create' %}" data-modal-form>Registrar ausencia</a>{% endif %}
+    <form method="get" class="my-3"><label for="absence-official">Funcionario</label><select id="absence-official" name="official" class="form-select"><option value="">Todos los autorizados</option>{% for official in officials %}<option value="{{ official.pk }}"{% if request.GET.official == official.pk|stringformat:'s' %} selected{% endif %}>{{ official }}</option>{% endfor %}</select><button class="btn btn-primary">Filtrar</button></form>
+    <table class="table"><thead><tr><th>Funcionario</th><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Motivo</th><th>Acciones</th></tr></thead><tbody>
+    {% for absence in page_obj %}<tr><td>{{ absence.official }}</td><td>{{ absence.get_kind_display }}</td><td>{{ absence.start_date|date:'d-m-Y' }}</td><td>{{ absence.end_date|date:'d-m-Y' }}</td><td>{{ absence.reason }}</td><td>{% if can_manage %}<a href="{% url 'absence_edit' absence.pk %}" data-modal-form>Editar</a> · <a href="{% url 'absence_archive' absence.pk %}" data-modal-form>Archivar</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="6">No hay ausencias registradas.</td></tr>{% endfor %}
+    </tbody></table>
+    {% include "analytics/simple_pagination.html" %}
+</section>
+{% endblock %}

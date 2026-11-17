@@ -10,6 +10,7 @@ quien consulta y la fila avisa cuántas actividades contadas no puede ver.
 """
 from collections import defaultdict
 from decimal import Decimal
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -73,7 +74,7 @@ def evidence_counts(official, period):
 def commitment_counts(official, period, today):
     """Compromisos del funcionario con fecha comprometida en el período; vencido = abierto y con
     fecha anterior a hoy."""
-    open_commitments = ~Q(current_status=Commitment.Status.DONE)
+    open_commitments = ~Q(current_status__in=Commitment.CLOSED_STATUSES)
     return Commitment.objects.filter(
         responsible=official, deleted_at__isnull=True, committed_date__range=(period.start_date, period.end_date),
     ).aggregate(
@@ -86,9 +87,15 @@ def commitment_counts(official, period, today):
 def recent_activity(official_ids, period, today, activities):
     """RF-030: última actividad computable hasta el corte y frecuencia en el período elegido."""
     reference = min(today, period.end_date)
-    days = computable_days(period, until=reference, include_start_day=True)
+    from accounts.models import OfficialAbsence
+    absences = defaultdict(list)
+    for absence in OfficialAbsence.objects.filter(official_id__in=official_ids, deleted_at__isnull=True,
+            start_date__lte=period.end_date, end_date__gte=period.start_date):
+        absences[absence.official_id].append(absence)
+    # computable_days solo necesita las ausencias precargadas; no se vuelve a leer el funcionario.
+    officials = {pk: SimpleNamespace(pk=pk, _measurement_absences=absences[pk]) for pk in official_ids}
     recorded = {}
-    if days:
+    if reference >= period.start_date:
         qualifying = computable_activities(activities.filter(
             official_id__in=official_ids, date__lte=reference, deleted_at__isnull=True,
         ))
@@ -99,6 +106,7 @@ def recent_activity(official_ids, period, today, activities):
     threshold = settings.PERFORMANCE_INACTIVITY_DAYS
     stats = {}
     for official_id in official_ids:
+        days = computable_days(period, officials.get(official_id), until=reference, include_start_day=True)
         row = recorded.get(official_id, {})
         last = row.get("last_date")
         count = row.get("count", 0)
@@ -256,7 +264,7 @@ class DelegationPerformanceView(TeamPerformanceView):
             ).aggregate(
                 total=Count("pk"),
                 done=Count("pk", filter=Q(current_status=Commitment.Status.DONE)),
-                overdue=Count("pk", filter=~Q(current_status=Commitment.Status.DONE) & Q(committed_date__lt=today)),
+                overdue=Count("pk", filter=~Q(current_status__in=Commitment.CLOSED_STATUSES) & Q(committed_date__lt=today)),
             )
         context.update(
             rows=rows, commitments=commitments, closed=closed,
@@ -363,7 +371,7 @@ class PositionPerformanceView(TeamPerformanceView):
         groups = []
         for key, members in grouped.items():
             position = members[0].position
-            measured = [member for member in members if member.items]
+            measured = [member for member in members if member.items and member.computable_days != 0]
             groups.append({
                 "key": key, "name": position.position_name if position else "Sin cargo",
                 "staff_count": len(members), "measured_count": len(measured),

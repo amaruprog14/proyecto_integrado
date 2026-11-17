@@ -121,6 +121,11 @@
                                                 {{ member.result.official.full_name }}
                                             {% endif %}
                                             {% if member.result.notice %}<span class="performance-note">{{ member.result.notice }}</span>{% endif %}
+                                            {% if member.result.segments|length > 1 %}
+                                                <ul class="performance-note mb-0" data-performance-segments>
+                                                    {% for segment in member.result.segments %}<li>{{ segment.position }} · {{ segment.start_date }} al {{ segment.end_date }} · {{ segment.days }} días · {{ segment.total|floatformat:2 }} puntos</li>{% endfor %}
+                                                </ul>
+                                            {% endif %}
                                         </th>
                                         <td>{{ member.delegation|default:"—" }}</td>
                                         <td>{% if member.result.items %}{{ member.result.total|floatformat:2 }} puntos{% else %}—{% endif %}</td>

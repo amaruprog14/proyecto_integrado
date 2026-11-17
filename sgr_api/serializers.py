@@ -68,6 +68,9 @@ class PersonalPerformanceSerializer(serializers.Serializer):
     semaforo = serializers.ChoiceField(choices=TrafficLight.choices, allow_null=True)
     items = PerformanceItemSerializer(many=True)
     aviso = serializers.CharField(allow_null=True)
+    dias_computables = serializers.IntegerField(source="computable_days", allow_null=True)
+    porcentaje_esperado = decimal_field("expected_percentage")
+    tramos = serializers.JSONField(source="segments")
 
 
 class DelegationSerializer(serializers.Serializer):

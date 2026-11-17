@@ -8,6 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Prefetch, Q
+from django.utils import timezone
 
 from accounts.models import Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
@@ -19,6 +20,28 @@ from common.scopes import delegation_ids, permission_scope
 from common.text import normalize_spaces
 
 GENERIC_LOGIN_ERROR = "Usuario, correo o contraseña incorrectos."
+
+
+def validate_position_change(form, official, cleaned):
+    if not official or not official.pk or "position" not in cleaned:
+        return
+    previous_id = Official.objects.filter(pk=official.pk).values_list("position_id", flat=True).get()
+    position = cleaned.get("position")
+    if previous_id == getattr(position, "pk", None):
+        return
+    if not position:
+        form.add_error("position", "Selecciona el nuevo cargo para registrar el cambio fechado.")
+        return
+    from accounts.measurement_models import ensure_mutable_range
+    from accounts.models import OfficialPositionPeriod
+    effective = cleaned.get("position_effective_from") or timezone.localdate()
+    try:
+        ensure_mutable_range(effective, None)
+        last = OfficialPositionPeriod.objects.filter(official=official, deleted_at__isnull=True).order_by("-start_date").first()
+        if last and (last.end_date is not None or effective <= last.start_date):
+            raise ValidationError("La fecha debe ser posterior al inicio del último tramo abierto.")
+    except ValidationError as error:
+        form.add_error("position_effective_from", error)
 # Mismo validador que auth.User.username: estos formularios no son ModelForm y guardan sin
 # full_clean(), así que sin él se aceptarían espacios u otros caracteres no permitidos.
 username_validator = UnicodeUsernameValidator(
@@ -362,6 +385,8 @@ class DelegationForm(LimitedTextFieldsMixin, forms.ModelForm):
 
 
 class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
+    position_effective_from = forms.DateField(label="Cambio de cargo vigente desde", required=False,
+        initial=timezone.localdate, widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}))
     """
     Administra la relación entre auth.User y accounts.Official.
 
@@ -698,6 +723,7 @@ class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
                         "La administración de tu propia cuenta debe realizarse mediante el perfil personal.",
                     )
 
+        validate_position_change(self, official, cleaned)
         if official is not None:
             roles = cleaned.get("roles")
             for field, message in sole_global_administrator_errors(
@@ -722,6 +748,12 @@ class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
         status = cleaned["status"]
 
         with transaction.atomic():
+            if official is not None and official.pk:
+                from configuration.period_services import lock_period_registry
+                # Mismo orden de bloqueos que el resto (registro de períodos y luego funcionario) y
+                # el cargo se compara con el valor bloqueado, no con el leído al abrir el formulario.
+                lock_period_registry()
+                official = Official.objects.select_for_update().get(pk=official.pk)
             user = instance if instance is not None and instance.pk else get_user_model_class()()
             user.username = cleaned["username"]
             user.first_name = cleaned.get("first_name") or ""
@@ -735,6 +767,10 @@ class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
 
             if has_official:
                 official = official or Official()
+                if official.pk and official.position_id != getattr(cleaned.get("position"), "pk", None):
+                    from accounts.position_services import change_position
+                    change_position(official, cleaned.get("position"), cleaned.get("position_effective_from") or timezone.localdate(),
+                                    getattr(self.actor, "official", None))
                 official.user = user
                 official.full_name = (cleaned.get("full_name") or "").strip()
                 official.national_id = (cleaned.get("national_id") or "").strip()
@@ -752,6 +788,8 @@ class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
 
 
 class OfficialForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.ModelForm):
+    position_effective_from = forms.DateField(label="Cambio de cargo vigente desde", required=False,
+        initial=timezone.localdate, widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}))
     """Administra el perfil Official y, opcionalmente, crea su cuenta de acceso."""
 
     full_name = forms.CharField(
@@ -966,6 +1004,7 @@ class OfficialForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.ModelForm)
 
     def clean(self):
         cleaned = super().clean()
+        validate_position_change(self, self.instance, cleaned)
         if (
             self.instance is not None
             and self.instance.pk
@@ -1029,6 +1068,15 @@ class OfficialForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.ModelForm)
 
     def save(self, commit=True):
         with transaction.atomic():
+            if commit and self.instance.pk:
+                from accounts.position_services import change_position
+                from configuration.period_services import lock_period_registry
+                # Orden único de bloqueos: primero el registro de períodos y después el funcionario.
+                lock_period_registry()
+                old = Official.objects.select_for_update().get(pk=self.instance.pk)
+                if old.position_id != self.instance.position_id:
+                    change_position(old, self.instance.position,
+                        self.cleaned_data.get("position_effective_from") or timezone.localdate(), getattr(self.actor, "official", None))
             return super().save(commit=commit)
 
 

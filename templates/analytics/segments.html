@@ -1,0 +1,14 @@
+{% if result.segments|length > 1 %}
+<details class="attention-entry-card my-3" open>
+    <summary>Detalle por tramo de cargo y versión</summary>
+    <p>El total integra cada tramo según sus días computables. Las metas de cada plan se conservan.</p>
+    {% for segment in result.segments %}
+    <h3 class="h6">{{ segment.position }} · {{ segment.start_date }} al {{ segment.end_date }}</h3>
+    <p>{{ segment.days }} días computables · {{ segment.total|floatformat:2 }} puntos · {% include "analytics/traffic_light.html" with light=segment.traffic_light %}</p>
+    {% if segment.notice %}<p>{{ segment.notice }}</p>{% endif %}
+    <table class="table"><thead><tr><th>Ítem</th><th>Meta</th><th>Avance</th><th>Cumplimiento</th><th>Ponderado del tramo</th></tr></thead><tbody>
+    {% for item in segment.items %}<tr><td>{{ item.item }}</td><td>{{ item.goal|default_if_none:'—' }}</td><td>{{ item.progress|default_if_none:'No evaluable' }}</td><td>{{ item.compliance|floatformat:2 }} %</td><td>{{ item.weighted|floatformat:2 }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% endfor %}
+</details>
+{% endif %}

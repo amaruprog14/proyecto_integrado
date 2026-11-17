@@ -63,7 +63,7 @@
                     {% for line in lines %}
                         <tr>
                             <th scope="row">{{ line.item }}</th><td>{{ line.function }}</td><td>{{ line.get_goal_type_display }}</td>
-                            <td>{{ line.goal|default_if_none:"—" }}{% if line.goal != None and line.goal_type == "PERCENTAGE" %} %{% endif %}</td>
+                            <td>{{ line.goal|default_if_none:"—" }}{% if line.goal != None and line.goal_type == "PERCENTAGE" or line.goal != None and line.goal_type == "MAX_PERCENTAGE" %} %{% endif %}</td>
                             <td>{{ line.weight|default_if_none:"—" }}{% if line.weight != None %} %{% endif %}</td>
                             {% if can_edit %}
                                 <td class="maintainer-actions delegation-actions">

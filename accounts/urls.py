@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib.auth import views as auth_views
 from django.urls import path
+from accounts.absence_views import AbsenceList, AbsenceEdit
 
 from .forms import SGRAuthenticationForm
 from .role_views import (
@@ -57,6 +58,10 @@ from .views import (
 )
 
 urlpatterns = [
+    path("ausencias/", AbsenceList.as_view(), name="absence_list"),
+    path("ausencias/nueva/", AbsenceEdit.as_view(), name="absence_create"),
+    path("ausencias/<int:pk>/editar/", AbsenceEdit.as_view(), name="absence_edit"),
+    path("ausencias/<int:pk>/archivar/", AbsenceEdit.as_view(archive=True), name="absence_archive"),
     path(
         'login/',
         auth_views.LoginView.as_view(

@@ -71,7 +71,7 @@ def update_commitment_alerts(record, today=None, supervisors=None):
     now = timezone.now()
     alerts = Alert.objects.filter(commitment=record, deleted_at__isnull=True)
     recipients = set()
-    if (record.deleted_at is None and record.current_status != Commitment.Status.DONE
+    if (record.deleted_at is None and record.current_status not in Commitment.CLOSED_STATUSES
             and record.committed_date <= today + timedelta(days=settings.COMMITMENT_DUE_WARNING_DAYS)):
         if supervisors is None:
             supervisors = list(eligible_officials(ASSIGN))
@@ -105,7 +105,7 @@ def refresh_commitment_alerts():
     supervisors = list(eligible_officials(ASSIGN))
     records = Commitment.objects.filter(
         Q(committed_date__lte=today + timedelta(days=settings.COMMITMENT_DUE_WARNING_DAYS),
-          deleted_at__isnull=True) & ~Q(current_status=Commitment.Status.DONE)
+          deleted_at__isnull=True) & ~Q(current_status__in=Commitment.CLOSED_STATUSES)
         | Q(alerts__resolved_at__isnull=True, alerts__isnull=False),
     ).order_by().values_list("pk", flat=True).distinct()
     for pk in records.iterator():

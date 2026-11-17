@@ -81,7 +81,7 @@ class CommitmentListView(ProtectedViewMixin, View):
             records = records.filter(current_status=status)
 
         today = timezone.localdate()
-        open_records = ~Q(current_status=Commitment.Status.DONE)
+        open_records = ~Q(current_status__in=Commitment.CLOSED_STATUSES)
         summary = add_percentages(records.aggregate(
             **summary_counts(),
             overdue=Count("pk", filter=open_records & Q(committed_date__lt=today)),
