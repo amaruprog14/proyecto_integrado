@@ -1,6 +1,8 @@
 """Contrato de Actividades: editor sin archivado, historial administrativo y exportación segura."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from io import BytesIO
+from threading import Barrier
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
@@ -9,8 +11,8 @@ from channels.testing import WebsocketCommunicator
 from django import forms
 from django.conf import settings
 from django.contrib.auth.models import Permission
-from django.db import transaction
-from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.db import connections, transaction
+from django.test import Client, TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
@@ -19,6 +21,7 @@ from accounts.models import Area, Role, ServiceRecipient
 from accounts.test_official_completion import OfficialFixture
 from activities.models import Activity, AttentionCase, SocialAttention
 from common.maintainer_forms import ActivityForm
+from common.testing_edit import revision_from_form
 from configuration.models import ActivityType, Item, Period, AttentionType, ServiceType, SubattentionType, AuditLog
 from config.asgi import application
 
@@ -57,6 +60,31 @@ class ActivityFixture(OfficialFixture):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], ALLOWED_HOSTS=['localhost','testserver'])
 class ActivityCompletionTests(ActivityFixture, TestCase):
+    def test_stale_activity_edit_preserves_first_save_and_can_retry_with_current_revision(self):
+        edit = reverse("activity_update", args=[self.activity.pk])
+        original = revision_from_form(self.client, edit)
+        editor = Client()
+        editor.force_login(self.users["editor"])
+        stale = revision_from_form(editor, edit)
+        self.assertEqual(stale, original)
+
+        first = self.client.post(edit, self.payload(edit_revision=original, action_description="Primera edición"))
+        self.assertEqual(first.status_code, 302)
+        rejected = editor.post(edit, self.payload(edit_revision=stale, action_description="Segundo borrador"))
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(rejected.json()["code"], "edit_conflict")
+        self.activity.refresh_from_db()
+        self.assertEqual(self.activity.action_description, "Primera edición")
+        self.assertEqual(AuditLog.objects.filter(action="Actividades: update", affected_record_id=self.activity.pk).count(), 1)
+
+        self.assertEqual(editor.post(edit, self.payload()).status_code, 409)
+        current = revision_from_form(editor, edit)
+        self.assertNotEqual(current, stale)
+        response = editor.post(edit, self.payload(edit_revision=current, action_description="Cambios revisados"))
+        self.assertEqual(response.status_code, 302)
+        self.activity.refresh_from_db()
+        self.assertEqual(self.activity.action_description, "Cambios revisados")
+
     def test_manual_activity_checks_area_chain_and_retains_historical_values(self):
         self.client.force_login(self.users['editor'])
         foreign_area = Area.objects.create(area_name="Área ajena")
@@ -89,7 +117,8 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
         self.assertEqual(saved.subattention_type, subattention)
         self.activity_type.is_active = False
         self.activity_type.save(update_fields=["is_active"])
-        self.assertEqual(self.client.post(reverse("activity_update", args=[saved.pk]), payload,
+        edit = reverse("activity_update", args=[saved.pk])
+        self.assertEqual(self.client.post(edit, dict(payload, edit_revision=revision_from_form(self.client, edit)),
                                          HTTP_X_MODAL_REQUEST="true").status_code, 204)
         self.assertContains(self.client.get(reverse("activity_detail", args=[saved.pk])), "Apoyo comunitario")
         self.assertIn("activity_type", self.client.post(
@@ -108,12 +137,43 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertContains(detail, reverse('activity_update', args=[created.pk]))
         self.assertNotContains(detail, reverse('activity_deactivate', args=[created.pk]))
-        response = self.client.post(reverse('activity_update', args=[created.pk]),
-            self.payload(action_description='Descripción editada'), HTTP_X_MODAL_REQUEST='true')
+        edit = reverse('activity_update', args=[created.pk])
+        response = self.client.post(edit, self.payload(action_description='Descripción editada',
+            edit_revision=revision_from_form(self.client, edit)), HTTP_X_MODAL_REQUEST='true')
         self.assertEqual(response.status_code, 204)
         created.refresh_from_db()
         self.assertEqual(created.action_description, 'Descripción editada')
         self.assertTrue(AuditLog.objects.filter(action='Actividades: update', affected_record_id=created.pk).exists())
+
+    def test_manual_registration_delegation_is_scoped_and_retained(self):
+        editor = self.users["editor"]
+        self.client.force_login(editor)
+        self.target.authorized_delegations.add(self.b)
+        create = reverse("activity_create")
+        choices_url = reverse("activity_eligible_items")
+        choices = self.client.get(choices_url, {"official": self.target.pk}).json()["delegations"]
+        self.assertEqual([row["id"] for row in choices], [self.a.pk])
+        response = self.client.post(create, self.payload(registration_delegation=self.b.pk), HTTP_X_MODAL_REQUEST="true")
+        self.assertIn("registration_delegation", response.context["form"].errors)
+
+        editor.official.authorized_delegations.add(self.b)
+        choices = self.client.get(choices_url, {"official": self.target.pk}).json()["delegations"]
+        self.assertCountEqual([row["id"] for row in choices], [self.a.pk, self.b.pk])
+        response = self.client.post(create, self.payload(), HTTP_X_MODAL_REQUEST="true")
+        self.assertIn("registration_delegation", response.context["form"].errors)
+        response = self.client.post(create, self.payload(registration_delegation=self.b.pk), HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        activity = Activity.objects.get(subject="Visita de prueba")
+        self.assertEqual(activity.registration_delegation, self.b)
+        self.assertFalse(activity.delegation_estimated)
+        edit = reverse("activity_update", args=[activity.pk])
+        response = self.client.post(
+            edit, self.payload(registration_delegation=self.a.pk, edit_revision=revision_from_form(self.client, edit)),
+            HTTP_X_MODAL_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 204)
+        activity.refresh_from_db()
+        self.assertEqual(activity.registration_delegation, self.b)
 
     def test_invalid_required_date_type_and_foreign_relations_do_not_write(self):
         self.client.force_login(self.users['editor'])
@@ -284,7 +344,8 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
         role=Role.objects.create(role_name='Archivo restringido')
         role.permissions.add(Permission.objects.get(codename='archive_activity'))
         self.client.force_login(self.users['editor'])
-        response=self.client.post(reverse('official_update',args=[self.target.pk]),self.edit_payload(roles=[role.pk]))
+        edit = reverse('official_update', args=[self.target.pk])
+        response = self.client.post(edit, self.edit_payload(roles=[role.pk], edit_revision=revision_from_form(self.client, edit)))
         self.assertEqual(response.status_code, 403)
         self.assertFalse(self.target.roles.filter(pk=role.pk).exists())
 
@@ -306,6 +367,39 @@ class ActivityCompletionTests(ActivityFixture, TestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], ALLOWED_HOSTS=['localhost','testserver'])
 class ActivityArchiveRealtimeTests(ActivityFixture, TransactionTestCase):
+    @skipUnlessDBFeature("has_select_for_update")
+    def test_parallel_activity_creations_and_edits(self):
+        editor = Client()
+        editor.force_login(self.users["editor"])
+
+        def submit_both(url, first, second):
+            ready = Barrier(2)
+
+            def submit(client, payload):
+                try:
+                    ready.wait(timeout=10)
+                    return client.post(url, payload, HTTP_X_MODAL_REQUEST="true")
+                finally:
+                    connections.close_all()
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                requests = [pool.submit(submit, self.client, first), pool.submit(submit, editor, second)]
+                return [request.result(timeout=20).status_code for request in requests]
+
+        subjects = ["Inspección en terreno", "Reunión con la delegación"]
+        self.assertEqual(submit_both(reverse("activity_create"), *(self.payload(subject=subject) for subject in subjects)), [204, 204])
+        self.assertEqual(Activity.objects.filter(subject__in=subjects).values("code").distinct().count(), 2)
+
+        edit = reverse("activity_update", args=[self.activity.pk])
+        drafts = [
+            self.payload(subject=subject, edit_revision=revision_from_form(client, edit))
+            for subject, client in zip(subjects, (self.client, editor))
+        ]
+        responses = submit_both(edit, *drafts)
+        self.assertCountEqual(responses, [204, 409])
+        self.activity.refresh_from_db()
+        self.assertEqual(self.activity.subject, subjects[responses.index(204)])
+
     def test_committed_archive_refreshes_reader_not_foreign_and_restore_notifies_again(self):
         async def scenario():
             sockets=[]

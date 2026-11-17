@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
+from common.testing_edit import revision_from_form
 from django.utils import timezone
 from openpyxl import load_workbook
 
@@ -145,9 +146,11 @@ class OfficialCrudTests(TestCase):
             delegation=self.delegation,
         )
 
+        edit = reverse("official_update", args=[official.pk])
         response = self.client.post(
-            reverse("official_update", args=[official.pk]),
+            edit,
             self.payload(
+                edit_revision=revision_from_form(self.client, edit),
                 full_name="Nombre Editado",
                 national_id="16.666.666-K",
                 email="editado@example.test",
@@ -353,9 +356,9 @@ class OfficialRoleRulesTests(TestCase):
         return payload
 
     def test_sole_global_administrator_cannot_be_deactivated(self):
-        response = self.client.post(
-            reverse("official_update", args=[self.holder.pk]), self.payload(status=Official.Status.INACTIVE)
-        )
+        edit = reverse("official_update", args=[self.holder.pk])
+        response = self.client.post(edit, self.payload(status=Official.Status.INACTIVE,
+                                                        edit_revision=revision_from_form(self.client, edit)))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No se puede desactivar ni suspender a Titular Único")
@@ -366,7 +369,8 @@ class OfficialRoleRulesTests(TestCase):
         payload = self.payload()
         payload.pop("roles")
 
-        response = self.client.post(reverse("official_update", args=[self.holder.pk]), payload)
+        edit = reverse("official_update", args=[self.holder.pk])
+        response = self.client.post(edit, dict(payload, edit_revision=revision_from_form(self.client, edit)))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No se puede quitar el rol Administración Funcionarios a Titular Único")
@@ -380,7 +384,8 @@ class OfficialRoleRulesTests(TestCase):
         self.assertContains(form_page, "Rol inactivo")
 
         response = self.client.post(
-            reverse("official_update", args=[self.holder.pk]), self.payload(full_name="Titular Editado")
+            reverse("official_update", args=[self.holder.pk]),
+            self.payload(full_name="Titular Editado", edit_revision=form_page.context["edit_revision"]),
         )
 
         self.assertRedirects(response, reverse("official_maintainer"))

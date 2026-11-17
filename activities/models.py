@@ -222,6 +222,11 @@ class Activity(AutoCodeMixin, BaseModel):
         related_name="+", verbose_name="Cargo al registrar",
     )
     registration_position_captured = models.BooleanField(default=False, editable=False)
+    registration_delegation = models.ForeignKey(
+        Delegation, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+        verbose_name="Delegación al registrar",
+    )
+    delegation_estimated = models.BooleanField(default=False, editable=False)
     item = models.ForeignKey(
         Item, on_delete=models.PROTECT, related_name="activities", verbose_name="Ítem"
     )
@@ -251,6 +256,8 @@ class Activity(AutoCodeMixin, BaseModel):
         return f"Actividad {self.pk} - {self.official}"
 
     def save(self, *args, **kwargs):
+        if self._state.adding and self.registration_delegation_id is None:
+            self.registration_delegation_id = self.official.delegation_id
         if self._state.adding and not self.registration_position_captured:
             if self.registration_position_id is None:
                 self.registration_position_id = self.official.position_id

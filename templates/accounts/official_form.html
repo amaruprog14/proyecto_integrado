@@ -21,6 +21,7 @@
 
             <form class="attention-entry-card" method="post" aria-label="{{ maintainer_title }}" data-official-form-mode="{{ form_mode }}" data-loading>
                 {% csrf_token %}
+                {% if edit_revision %}<input type="hidden" name="edit_revision" value="{{ edit_revision }}">{% endif %}
                 {% if form.non_field_errors %}
                     <div class="invalid-feedback d-block mb-3" role="alert">
                         {% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}

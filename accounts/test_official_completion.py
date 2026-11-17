@@ -17,6 +17,7 @@ from openpyxl import load_workbook
 from accounts.forms import OfficialForm
 from accounts.models import Delegation, GroupProfile, Official, Role
 from common.demo_data import demo_rut
+from common.testing_edit import revision_from_form
 from configuration.models import AuditLog, Item, Period
 from activities.models import Activity
 from config.asgi import application
@@ -114,10 +115,33 @@ class OfficialCompletionTests(OfficialFixture, TestCase):
     def test_editor_cannot_grant_archival_through_role_assignment(self):
         self.client.force_login(self.users['editor'])
         role = Role.objects.get(role_name='Perfil admin')
-        response = self.client.post(reverse('official_update', args=[self.target.pk]),
-                                    self.edit_payload(roles=[role.pk]))
+        edit = reverse('official_update', args=[self.target.pk])
+        response = self.client.post(edit, self.edit_payload(roles=[role.pk], edit_revision=revision_from_form(self.client, edit)))
         self.assertEqual(response.status_code, 403)
         self.assertFalse(self.target.roles.filter(pk=role.pk).exists())
+
+    def test_stale_official_edit_preserves_the_first_save(self):
+        edit = reverse("official_update", args=[self.target.pk])
+        editor = Client()
+        editor.force_login(self.users["editor"])
+        first_revision = revision_from_form(self.client, edit)
+        second_revision = revision_from_form(editor, edit)
+        first = self.client.post(edit, dict(self.edit_payload(), full_name="Nombre vigente", edit_revision=first_revision))
+        self.assertEqual(first.status_code, 302)
+        second = editor.post(edit, dict(self.edit_payload(), full_name="Nombre del borrador", edit_revision=second_revision))
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()["code"], "edit_conflict")
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.full_name, "Nombre vigente")
+        self.assertEqual(AuditLog.objects.filter(action="Actualización de funcionario", affected_record_id=self.target.pk).count(), 1)
+
+    def test_official_revision_detects_changes_to_authorized_delegations(self):
+        edit = reverse("official_update", args=[self.target.pk])
+        stale = revision_from_form(self.client, edit)
+        self.target.authorized_delegations.add(self.b)
+        response = self.client.post(edit, self.edit_payload(edit_revision=stale))
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(self.target.authorized_delegations.filter(pk=self.b.pk).exists())
 
     def test_archived_official_cannot_be_revived_by_editing(self):
         self.archive()

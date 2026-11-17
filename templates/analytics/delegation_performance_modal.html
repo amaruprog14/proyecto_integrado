@@ -1,0 +1,51 @@
+<div class="modal fade" id="team-detail" tabindex="-1" aria-labelledby="team-detail-title"
+     aria-hidden="true" data-return-focus="team-official-{{ selected.result.official.pk }}">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content rounded-4 shadow">
+            <div class="modal-header">
+                <h2 class="modal-title h5 fw-bold" id="team-detail-title">Resultado individual de {{ selected.result.official.full_name }}</h2>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                {% if can_open_personal %}
+                    <p><a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ selected.result.official.pk }}">Abrir desempeño individual</a></p>
+                {% endif %}
+                {% if selected_items %}
+                    <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-label="Resultados por ítem">
+                        <table class="table maintainer-table">
+                            <thead><tr>
+                                <th scope="col">Ítem</th><th scope="col">Meta</th><th scope="col">Avance</th>
+                                <th scope="col">Resultado ponderado</th><th scope="col">Semáforo</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for entry in selected_items %}
+                                    {% with item=entry.item %}
+                                        <tr>
+                                            <th scope="row">
+                                                {% if entry.activity_link %}
+                                                    <a class="auth-text-link" href="{{ entry.activity_link }}" title="Ver actividades de origen">{{ item.item }}</a>
+                                                    {% if entry.hidden %}<span class="performance-note">{{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} fuera de tu alcance de consulta.</span>{% endif %}
+                                                {% else %}
+                                                    {{ item.item }}
+                                                {% endif %}
+                                            </th>
+                                            <td>{% if item.goal is not None %}{{ item.goal|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                            <td>{% if item.progress is not None %}{{ item.progress|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
+                                            <td>{{ item.weighted|floatformat:2 }} puntos</td>
+                                            <td>{% include "analytics/traffic_light.html" with light=item.traffic_light %}</td>
+                                        </tr>
+                                    {% endwith %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="mb-0">{{ selected.result.notice|default:"No hay ítems medidos en el período." }}</p>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>

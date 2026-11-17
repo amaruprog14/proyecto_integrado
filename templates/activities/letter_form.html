@@ -10,12 +10,17 @@
     </header>
     <form method="post" class="attention-entry-card">
         {% csrf_token %}
+        {% if edit_revision %}<input type="hidden" name="edit_revision" value="{{ edit_revision }}">{% endif %}
+        {% if edit_conflict %}
+            {% url 'office_letter_edit' letter.pk as current_url %}
+            {% include "includes/edit_conflict.html" with current_edit_url=current_url only %}
+        {% endif %}
         {% bootstrap_form_errors form %}
         <div class="attention-entry-grid">
             {% for field in form %}{% bootstrap_field field %}{% endfor %}
         </div>
         <div class="attention-entry-actions">
-            <button class="btn btn-primary" type="submit">Guardar carta</button>
+            <button class="btn btn-primary" type="submit"{% if edit_conflict %} disabled{% endif %}>Guardar carta</button>
             <a class="btn attention-entry-cancel" href="{% if letter %}{% url 'office_letter_detail' letter.pk %}{% else %}{% url 'office_letter_list' %}{% endif %}">Cancelar</a>
         </div>
     </form>

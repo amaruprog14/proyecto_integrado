@@ -13,6 +13,7 @@
             </header>
             <form class="attention-entry-card" method="post" aria-label="{{ form_title }}" data-loading>
                 {% csrf_token %}
+                {% if edit_revision %}<input type="hidden" name="edit_revision" value="{{ edit_revision }}">{% endif %}
                 {% if form_description %}<p class="attention-entry-hint">{{ form_description }}</p>{% endif %}
                 {% if form.non_field_errors %}
                     <div class="invalid-feedback d-block mb-3" role="alert">{% for error in form.non_field_errors %}<p class="mb-1">{{ error }}</p>{% endfor %}</div>

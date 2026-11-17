@@ -620,14 +620,18 @@ diferencia y semáforo, además del total del funcionario.
 
 Disponible en Desempeño para quienes tienen permiso de consulta de equipo con alcance de delegación
 o global. Permite seleccionar la delegación y el período y abrir el detalle por funcionario.
-Agrupa por delegación principal. El total de actividades suma el avance de los ítems de cantidad y el
-resultado del equipo promedia los puntos de quienes tienen ítems medidos. Los compromisos de un
-período abierto se muestran aparte. En el detalle de un período abierto, los enlaces a Actividades
-respetan el alcance de consulta y señalan los registros computados que quedan fuera del alcance.
+El total de actividades válidas cuenta los registros computables en la delegación donde se
+realizaron y abre el listado que respalda esa cifra. Ingreso de atención toma la delegación de la
+atención. En un registro manual se elige entre las delegaciones habilitadas del funcionario.
+Las actividades manuales anteriores se atribuyen a su delegación principal al migrar, si existe,
+y aparecen como estimadas. El listado de respaldo requiere permiso de consulta de actividades.
 
-En períodos cerrados, el tablero consulta el resultado y la delegación registrados al cierre.
-La migración añade el campo para los nuevos cierres. Los resultados históricos que carecen de esa
-atribución siguen disponibles en el panel individual.
+La tabla de funcionarios se agrupa por delegación principal y mantiene los avances individuales.
+El resultado del equipo promedia los puntos de quienes tienen ítems medidos. Los compromisos de
+un período abierto se muestran aparte.
+
+Los nuevos cierres guardan los registros exactos que respaldan el total territorial. Los cierres
+anteriores conservan sus resultados individuales y muestran un aviso cuando carecen de ese respaldo.
 
 ### Vista por cargo (`/analytics/desempeno-cargos/`)
 

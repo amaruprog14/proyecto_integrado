@@ -24,6 +24,7 @@ from accounts.models import Delegation, Official, Role
 from accounts.validators import PasswordCompositionValidator
 from accounts.views import RECOVERY_SENT_MESSAGE
 from common.demo_data import demo_rut
+from common.testing_edit import revision_from_form
 from configuration.models import AuditLog
 
 PASSWORD = "Clave-Segura-1"
@@ -358,7 +359,9 @@ class PasswordRecoveryFlowTests(TestCase):
 
         self.client.force_login(editor)
         contact_email = "contacto.editado@example.test"
-        response = self.client.post(reverse("official_update", args=[official.pk]), {
+        edit = reverse("official_update", args=[official.pk])
+        response = self.client.post(edit, {
+            "edit_revision": revision_from_form(self.client, edit),
             "full_name": official.full_name, "national_id": official.national_id,
             "email": contact_email, "status": official.status, "delegation": delegation.pk,
         })

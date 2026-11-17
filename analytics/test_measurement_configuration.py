@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib.auth.models import Permission, User
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from common.testing_edit import revision_from_form
 from django.utils import timezone
 
 from accounts.models import Function, Official, Position, Role
@@ -128,12 +129,15 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         self.assertEqual(activity_measurement(after)["version"], revision)
         self.assertTrue(activity_measurement(after)["excluded"])
         edit = reverse("activity_update", args=[after.pk])
+        revision = revision_from_form(self.client, edit)
         self.assertContains(
-            self.client.post(edit, self.activity_data(date=self.period.start_date.isoformat(), item=self.other_item.pk)),
+            self.client.post(edit, self.activity_data(date=self.period.start_date.isoformat(),
+                                                        item=self.other_item.pk, edit_revision=revision)),
             "Elige un ítem disponible",
         )
         self.assertEqual(self.client.post(
-            edit, self.activity_data(action_description="Descripción corregida"), HTTP_X_MODAL_REQUEST="true",
+            edit, self.activity_data(action_description="Descripción corregida", edit_revision=revision),
+            HTTP_X_MODAL_REQUEST="true",
         ).status_code, 204)
         self.official.position = self.other_position
         self.official.save(update_fields=["position"])

@@ -5,6 +5,7 @@ from django.contrib.auth.models import User, Permission, Group
 from django.db import transaction
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
+from common.testing_edit import revision_from_form
 from django.utils import timezone
 
 from accounts.models import Official, Delegation, Role, GroupProfile
@@ -98,13 +99,15 @@ class ActivityRealtimeTests(TransactionTestCase):
         return {**data, **extra}
 
     def test_editor_updates_only_authorized_reader_after_http_save(self):
+        edit = reverse('activity_update', args=[self.activity.pk])
+        revision = revision_from_form(self.clients[0], edit)
+
         async def scenario():
             a, b = self.socket(), self.socket(2)
             self.assertTrue((await a.connect())[0])
             self.assertTrue((await b.connect())[0])
             response = await sync_to_async(self.clients[0].post)(
-                reverse('activity_update', args=[self.activity.pk]),
-                self.payload(action_description='Actualizada'))
+                edit, self.payload(action_description='Actualizada', edit_revision=revision))
             self.assertEqual(response.status_code, 302)
             self.assertEqual(await a.receive_json_from(), {'type': 'activities.changed'})
             self.assertTrue(await b.receive_nothing(timeout=.15))

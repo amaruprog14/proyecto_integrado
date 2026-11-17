@@ -278,7 +278,8 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                 except Item.DoesNotExist as error:
                     raise ValidationError("Configura un ítem vigente en el Tipo de Atención antes de registrar.") from error
                 activity = Activity.objects.create(official=form.official, item=item, date=attention.date,
-                    record_type=Activity.RecordType.ATTENTION, action_description=attention.description)
+                    registration_delegation=delegation, record_type=Activity.RecordType.ATTENTION,
+                    action_description=attention.description)
                 attention.activity = activity
                 attention.save()
                 assign_case(case, form.official)

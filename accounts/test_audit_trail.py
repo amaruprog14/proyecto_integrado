@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
+from common.testing_edit import revision_from_form
 
 from accounts.models import Delegation, Official, Role
 from configuration.models import AuditLog
@@ -95,9 +96,10 @@ class FieldLevelAuditTests(TestCase):
     def test_official_update_records_the_changed_fields(self):
         official = Official.objects.create(full_name="Funcionaria Antes", national_id="16666666-K", email="off.aud@example.test")
 
+        edit = reverse("official_update", args=[official.pk])
         self.client.post(
-            reverse("official_update", args=[official.pk]),
-            {"full_name": "Funcionaria Después", "national_id": "16.666.666-k", "email": "off.aud@example.test",
+            edit,
+            {"edit_revision": revision_from_form(self.client, edit), "full_name": "Funcionaria Después", "national_id": "16.666.666-k", "email": "off.aud@example.test",
              "status": Official.Status.ACTIVE},
         )
 

@@ -16,6 +16,7 @@ from common.scopes import scope_officials
 from configuration.models import ActivityType, Item, Period, ServiceType
 from activities.models import Activity
 from activities.classification import CLASSIFICATION, classification_choices
+from activities.territorial import registration_delegations
 from analytics.measurement import eligible_items
 
 
@@ -204,7 +205,7 @@ class ActivityForm(MaintainerForm):
     class Meta:
         model = Activity
         fields = (
-            "official", "item", "date", "record_type", "subject", "action_description",
+            "official", "registration_delegation", "item", "date", "record_type", "subject", "action_description",
             "contact_name", "phone", "activity_type", "service_type", "attention_type", "subattention_type",
         )
 
@@ -219,6 +220,16 @@ class ActivityForm(MaintainerForm):
             official = self.fields["official"].queryset.filter(pk=official_id).first() if 0 < official_id < 2**63 else None
         except (ValueError, TypeError):
             official = None
+        registration = self.fields["registration_delegation"]
+        registration.widget.attrs["data-activity-delegation"] = ""
+        self.delegation_choices = registration_delegations(official, actor, perm)
+        if self.instance.registration_delegation_id:
+            registration.queryset = Delegation.objects.filter(pk=self.instance.registration_delegation_id)
+            registration.disabled = True
+            registration.help_text = "Se conserva la delegación registrada para mantener la atribución histórica."
+        else:
+            registration.queryset = self.delegation_choices
+            registration.help_text = "Selecciona la delegación donde se realizó la actividad."
         raw_date = self.data.get(self.add_prefix("date"), "") if self.is_bound else self.instance.date
         try:
             date = self.fields["date"].clean(raw_date)
@@ -250,6 +261,13 @@ class ActivityForm(MaintainerForm):
             self.add_error("item", self.fields["item"].error_messages["invalid_choice"])
         if official and self.fields["activity_type"].required and not self.fields["activity_type"].queryset.exists():
             self.add_error("official", "El funcionario necesita un área con tipos de actividad vigentes.")
+        if official and not self.instance.registration_delegation_id and "registration_delegation" not in self.errors:
+            if not data.get("registration_delegation"):
+                choices = list(self.delegation_choices[:2])
+                if len(choices) == 1:
+                    data["registration_delegation"] = choices[0]
+                elif not self.instance.pk or choices:
+                    self.add_error("registration_delegation", "Selecciona la delegación donde se realizó la actividad.")
         if data.get("phone") and not data.get("contact_name"):
             self.add_error("contact_name", "Indica el nombre o una referencia para este teléfono.")
         self.validate_classification(data)

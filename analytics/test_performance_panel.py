@@ -21,7 +21,8 @@ from activities.models import (Activity, AttentionCase, Evidence, EvidenceBatch,
                                SocialAttention)
 from agenda.models import Alert, Commitment
 from analytics.measurement import publish_version
-from analytics.models import IndicatorSnapshot, MeasurementItem, MeasurementPlan, MeasurementVersion
+from analytics.models import (DelegationActivityFreeze, DelegationActivitySnapshot, IndicatorSnapshot, MeasurementItem,
+                              MeasurementPlan, MeasurementVersion)
 from analytics.services import CalculadorDesempenoService as Calc
 from analytics.test_performance_calculator import END, CalculatorFixture
 from common.sgr_seed_data import PERCENTAGE_ITEM
@@ -30,6 +31,7 @@ from configuration.models import AttentionType, AuditLog, Period, SubattentionTy
 TODAY = date(2026, 8, 26)
 URL = reverse("my_performance")
 TEAM_URL = reverse("delegation_performance")
+TERRITORIAL_URL = reverse("territorial_activity_detail")
 POSITION_URL = reverse("position_performance")
 
 
@@ -48,9 +50,11 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         own = Role.objects.create(role_name="Funcionario panel", scope=Role.Scope.DELEGATION)
         own.permissions.set(permissions("analytics.view_indicatorsnapshot", "activities.view_activity"))
         team = Role.objects.create(role_name="Delegado panel", scope=Role.Scope.DELEGATION)
-        team.permissions.set(permissions("analytics.view_indicatorsnapshot", "analytics.view_team_performance"))
+        team.permissions.set(permissions("analytics.view_indicatorsnapshot", "analytics.view_team_performance",
+                                         "activities.view_activity"))
         global_team = Role.objects.create(role_name="Coordinación panel", scope=Role.Scope.ALL)
-        global_team.permissions.set(permissions("analytics.view_indicatorsnapshot", "analytics.view_team_performance"))
+        global_team.permissions.set(permissions("analytics.view_indicatorsnapshot", "analytics.view_team_performance",
+                                                "activities.view_activity"))
 
         cls.worker = cls.with_user(cls.official("Gestora panel", "Gestor social"), "gestora", own)
         cls.colleague = cls.with_user(cls.official("Colega panel", "Apoyo administrativo"), "colega", own)
@@ -110,15 +114,24 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.record(self.outsider, "Visita terreno", 4)
         self.record(self.worker, "Visita terreno", 1, status=EvidenceValidation.Status.REJECTED)
         self.record(self.worker, "Visita terreno", 1, day=date(2026, 8, 27))
-        self.delegate.roles.get().permissions.add(*permissions("activities.view_activity"))
         self.client.force_login(self.delegate.user)
 
         response = self.client.get(TEAM_URL, {"official": self.worker.pk})
         self.assertContains(response, "Abrir desempeño individual")
+        fragment = self.client.get(TEAM_URL, {
+            "delegation": self.delegation.pk, "period": self.period.pk,
+            "official": self.worker.pk, "fragment": "official-result",
+        })
+        self.assertContains(fragment, 'id="team-detail"')
+        self.assertContains(fragment, "Abrir desempeño individual")
+        self.assertNotContains(fragment, 'id="team-officials"')
+        self.assertEqual(self.client.get(TEAM_URL, {
+            "official": self.outsider.pk, "fragment": "official-result",
+        }).status_code, 404)
         context = response.context
         self.assertEqual(context["delegation"], self.delegation)
         self.assertEqual(context["period"], self.period)
-        self.assertEqual(context["total_activities"], 1)
+        self.assertEqual(context["territorial_activity_count"], 1)
         worker_total = Calc.result_for(self.worker, self.period, TODAY).total
         self.assertEqual(context["selected"]["result"].total, worker_total)
         self.assertEqual(context["measured_count"], 2)
@@ -128,25 +141,87 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.assertEqual(listing.context["total"], visit["item"].progress)
 
         self.batch(pending, EvidenceValidation.Status.APPROVED)
-        self.assertEqual(self.client.get(TEAM_URL).context["total_activities"], 2)
+        self.assertEqual(self.client.get(TEAM_URL).context["territorial_activity_count"], 2)
+
+    def test_territorial_totals_reconcile_with_detail_and_keep_individual_progress(self, _today):
+        self.worker.authorized_delegations.add(self.other_delegation)
+        local = self.record(self.worker, "Visita terreno", 8)
+        foreign = self.record(self.worker, "Visita terreno", 4)
+        Activity.objects.filter(pk__in=[row.pk for row in foreign[:3]]).update(
+            registration_delegation=self.other_delegation,
+        )
+        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5")
+        kind = AttentionType.objects.create(name="Consulta territorial", activity_item=self.items["Visita terreno"])
+        sub = SubattentionType.objects.create(name="Derivación territorial", attention_type=kind)
+        case = AttentionCase.objects.create(recipient=recipient, delegation=self.other_delegation, subject="Visita")
+        SocialAttention.objects.create(
+            case=case, activity=foreign[-1], recipient=recipient, attention_type=kind, subattention_type=sub,
+            delegation=self.other_delegation, responsible=self.worker, date=foreign[-1].date,
+        )
+        Activity.objects.filter(pk=local[0].pk).update(delegation_estimated=True)
+        self.record(self.worker, "Visita terreno", 1, status=None)
+
+        self.client.force_login(self.coordinator.user)
+        for delegation, expected in ((self.delegation, local), (self.other_delegation, foreign)):
+            params = {"delegation": delegation.pk, "period": self.period.pk}
+            dashboard = self.client.get(TEAM_URL, params)
+            detail = self.client.get(TERRITORIAL_URL, params)
+            self.assertContains(dashboard, f"{len(expected)} actividades válidas de la delegación")
+            self.assertEqual(detail.context["page_obj"].paginator.count, dashboard.context["territorial_activity_count"])
+            self.assertCountEqual([row.activity_id for row in detail.context["page_obj"]], [row.pk for row in expected])
+            if delegation == self.delegation:
+                self.assertContains(detail, "Estimada")
+        personal = self.view(self.worker)
+        self.assertEqual(live_row(personal.context["result"], "Visita terreno").progress, 12)
+
+        self.client.force_login(self.delegate.user)
+        params = {"delegation": self.other_delegation.pk, "period": self.period.pk}
+        self.assertEqual(self.client.get(TERRITORIAL_URL, params).status_code, 404)
+        self.delegate.roles.get().permissions.remove(*permissions("activities.view_activity"))
+        dashboard = self.client.get(TEAM_URL)
+        self.assertIsNone(dashboard.context["territorial_activity_count"])
+        self.assertEqual(self.client.get(TERRITORIAL_URL).status_code, 403)
 
     def test_delegation_history_keeps_attribution_and_totals_after_transfer(self, _today):
-        self.record(self.worker, "Visita terreno", 2)
+        first, second = self.record(self.worker, "Visita terreno", 2)
         self.close()
+        Activity.objects.filter(pk=first.pk).update(deleted_at=timezone.now(), subject="Archivada")
         self.worker.delegation = self.other_delegation
-        self.worker.save(update_fields=["delegation"])
+        self.worker.full_name = "Nuevo nombre del funcionario"
+        self.worker.save(update_fields=["delegation", "full_name"])
         self.record(self.worker, "Visita terreno", 1)
 
         self.client.force_login(self.delegate.user)
         response = self.client.get(TEAM_URL, {"official": self.worker.pk})
         self.assertContains(response, "Resultados congelados")
-        self.assertEqual(response.context["total_activities"], 2)
+        self.assertEqual(response.context["territorial_activity_count"], 2)
         self.assertFalse(response.context["can_open_personal"])
         self.assertFalse(any(entry["activity_link"] for entry in response.context["selected_items"]))
+        detail = self.client.get(TERRITORIAL_URL, {"delegation": self.delegation.pk, "period": self.period.pk})
+        self.assertContains(detail, "Gestora panel")
+        self.assertNotContains(detail, "Nuevo nombre del funcionario")
+        self.assertEqual(detail.context["page_obj"].paginator.count, 2)
+        self.assertEqual({row["record"].activity_id: row["can_open"] for row in detail.context["supports"]},
+                         {first.pk: False, second.pk: False})
         self.client.force_login(self.coordinator.user)
+        detail = self.client.get(TERRITORIAL_URL, {"delegation": self.delegation.pk, "period": self.period.pk})
+        self.assertEqual({row["record"].activity_id: row["can_open"] for row in detail.context["supports"]},
+                         {first.pk: False, second.pk: True})
         response = self.client.get(TEAM_URL, {"delegation": self.other_delegation.pk})
         self.assertNotContains(response, self.worker.full_name)
-        self.assertEqual(response.context["total_activities"], 0)
+        self.assertEqual(response.context["territorial_activity_count"], 0)
+
+    def test_older_period_without_territorial_snapshot_keeps_individual_results(self, _today):
+        self.record(self.worker, "Visita terreno", 1)
+        self.close()
+        DelegationActivitySnapshot.objects.filter(freeze__period=self.period).delete()
+        DelegationActivityFreeze.objects.filter(period=self.period).delete()
+        self.client.force_login(self.delegate.user)
+        response = self.client.get(TEAM_URL)
+        self.assertContains(response, "Resultados congelados")
+        self.assertIsNone(response.context["territorial_activity_count"])
+        self.assertGreater(response.context["measured_count"], 0)
+        self.assertEqual(self.client.get(TERRITORIAL_URL).status_code, 404)
 
     def test_delegation_dashboard_queries_do_not_grow_with_team_size(self, _today):
         self.client.force_login(self.delegate.user)
@@ -161,7 +236,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         with CaptureQueriesContext(connection) as large:
             response = self.client.get(TEAM_URL)
 
-        self.assertEqual(response.context["total_activities"], 8)
+        self.assertEqual(response.context["territorial_activity_count"], 8)
         self.assertEqual(response.context["measured_count"], initial_count + 8)
         self.assertEqual(len(small), len(large))
 

@@ -4,6 +4,7 @@ function bindActivityItemChoices(form) {
     item.dataset.bound = "true";
     const official = form.querySelector('select[name="official"]');
     const date = form.querySelector('input[name="date"]');
+    const delegation = form.querySelector("select[data-activity-delegation]");
     const classificationFields = [...form.querySelectorAll("select[data-activity-classification]")];
     const parentKeys = ["area_id", "activity_type_id", "service_type_id", "attention_type_id"];
     let classification = null;
@@ -36,8 +37,11 @@ function bindActivityItemChoices(form) {
         controller?.abort();
         const currentRequest = new AbortController();
         controller = currentRequest;
-        if (!official.value || !date.value) {
+        if (!official.value) {
             item.disabled = false;
+            if (delegation && !delegation.disabled) {
+                delegation.replaceChildren(new Option("Selecciona una opción", ""));
+            }
             feedback.textContent = "Selecciona un funcionario y una fecha para consultar sus ítems.";
             return;
         }
@@ -51,13 +55,22 @@ function bindActivityItemChoices(form) {
         try {
             const response = await fetch(url, {signal: currentRequest.signal, credentials: "same-origin"});
             if (!response.ok) throw new Error("No se pudieron consultar los ítems.");
-            const {items, classification: catalog} = await response.json();
+            const {items, classification: catalog, delegations} = await response.json();
             if (currentRequest.signal.aborted) return;
             item.replaceChildren(new Option("---------", ""), ...items.map(row => new Option(row.item_name, row.id)));
             item.value = items.some(row => String(row.id) === selected) ? selected : "";
+            if (delegation && !delegation.disabled) {
+                const previous = delegation.value;
+                delegation.replaceChildren(new Option("Selecciona una opción", ""),
+                    ...delegations.map(row => new Option(row.delegation_name, row.id)));
+                delegation.value = delegations.some(row => String(row.id) === previous) ? previous
+                    : delegations.length === 1 ? String(delegations[0].id) : "";
+            }
             classification = catalog;
             refreshClassification();
-            feedback.textContent = items.length ? "" : "No hay ítems disponibles para esta fecha y funcionario.";
+            feedback.textContent = items.length ? "" : date.value
+                ? "No hay ítems disponibles para esta fecha y funcionario."
+                : "Selecciona una fecha para consultar los ítems.";
         } catch (error) {
             if (error.name !== "AbortError") {
                 feedback.textContent = "No se pudieron actualizar los ítems. El SGR validará la selección al guardar.";
@@ -69,7 +82,7 @@ function bindActivityItemChoices(form) {
 
     official.addEventListener("change", refresh);
     date.addEventListener("change", refresh);
-    if (official.value && date.value && classificationFields.length) refresh();
+    if (official.value && classificationFields.length) refresh();
 }
 
 document.addEventListener("DOMContentLoaded", () => {

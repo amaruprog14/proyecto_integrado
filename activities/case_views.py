@@ -1,3 +1,5 @@
+from copy import copy
+
 from django import forms
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -14,6 +16,7 @@ from agenda.comments import comments_context
 from agenda.commitments import VIEW as VIEW_COMMITMENT, scoped_commitments
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.chilean_rut import normalize_chilean_rut
+from common.edit_concurrency import edit_is_current, edit_revision
 from common.list_state import positive
 from common.pagination import ClampedPaginationMixin
 from common.text import clean_description_text, normalize_spaces
@@ -113,7 +116,7 @@ class CaseListView(ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
                 "querystring": params.urlencode()}
 
 
-def render_case(request, case, *, request_list_url=None, errors=None):
+def render_case(request, case, *, request_list_url=None, errors=None, follow_up_conflict=False):
     user = request.user
     official = getattr(user, "official", None)
     can_manage = official is not None and user.has_perm(CHANGE_CASE) and scoped_cases(user, CHANGE_CASE).filter(pk=case.pk).exists()
@@ -154,6 +157,8 @@ def render_case(request, case, *, request_list_url=None, errors=None):
         "invitation_form": PortalInvitationForm(initial={"email": invitation.email if invitation else case.recipient.email}),
         "entry_date": entered, "attentions": attentions, "intervals": list(case_intervals(case, entered)),
         "follow_up_form": CaseFollowUpForm(instance=case, case_entry_date=entered),
+        "follow_up_revision": request.POST.get("edit_revision") if follow_up_conflict else edit_revision(case),
+        "follow_up_conflict": follow_up_conflict,
         "can_view_commitments": can_view_commitments,
         "commitments": scoped_commitments(user).filter(origin_case=case) if can_view_commitments else (),
         "letters": scoped_letters(user).filter(case=case, delegation_id=case.delegation_id)
@@ -162,7 +167,7 @@ def render_case(request, case, *, request_list_url=None, errors=None):
     if errors:
         context.update(errors)
     context.update(comments_context(user, case, "case"))
-    return render(request, "activities/case_detail.html", context)
+    return render(request, "activities/case_detail.html", context, status=409 if follow_up_conflict else 200)
 
 
 class CaseDetailView(ProtectedViewMixin, View):
@@ -201,6 +206,12 @@ class CaseActionView(ProtectedViewMixin, View):
         with transaction.atomic():
             authorized = scoped_cases(request.user, CHANGE_CASE).values("pk")
             case = get_scoped_object_or_404(request, AttentionCase.objects.select_for_update().filter(pk__in=authorized), pk=pk)
+            if action == "hitos":
+                first_attention = active_attentions(case).first() if not case.client_request_id else None
+                entered = entry_date(case, first_attention.date if first_attention else None)
+                follow_up = CaseFollowUpForm(request.POST, instance=copy(case), case_entry_date=entered)
+                if case.is_closed or not edit_is_current(request, edit_revision(case)):
+                    return render_case(request, case, errors={"follow_up_form": follow_up}, follow_up_conflict=True)
             if case.is_closed:
                 messages.error(request, "El caso está cerrado.")
                 return redirect("attention_case_detail", pk=pk)
@@ -241,12 +252,10 @@ class CaseActionView(ProtectedViewMixin, View):
                 record_case_event(case, actor, title, case.next_step, title if case.public_next_step else "")
                 case.next_step, case.next_step_date, case.public_next_step = "", None, ""
             elif action == "hitos":
-                first_attention = active_attentions(case).first() if not case.client_request_id else None
-                entered = entry_date(case, first_attention.date if first_attention else None)
-                form = CaseFollowUpForm(request.POST, instance=case, case_entry_date=entered)
+                form = follow_up
                 if not form.is_valid():
-                    case.refresh_from_db()
                     return render_case(request, case, errors={"follow_up_form": form})
+                case = form.save(commit=False)
                 changes = []
                 for field in form.changed_data:
                     if field == "observation":

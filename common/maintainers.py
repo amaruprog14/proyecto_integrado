@@ -14,6 +14,7 @@ from common.list_state import ordered, query_params
 from accounts.models import Function, Position, Area, GroupProfile, Official, Role, Territory
 from analytics.measurement import VIEW_PLAN, activity_measurement
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
+from common.edit_concurrency import edit_conflict, edit_is_current, edit_revision
 from common.exports import xlsx_response
 from common.modal_forms import add_form_success, is_modal_request
 from common.text import normalize_spaces, describe_changes
@@ -42,7 +43,7 @@ CATALOGS = {
 def snapshot(obj):
     data = {str(f.verbose_name): str(getattr(obj, f.name)) for f in obj._meta.fields
             if f.name not in ("created_at", "updated_at", "first_closed_at",
-                              "registration_position", "registration_position_captured")}
+                              "registration_position", "registration_position_captured", "delegation_estimated")}
     if isinstance(obj, Function):
         data["Cargos"] = ", ".join(obj.positions.values_list("position_name", flat=True))
     if isinstance(obj, Group):
@@ -56,7 +57,7 @@ def snapshot(obj):
 
 
 def activity_queryset(user, permission, include_archived=False):
-    qs = Activity.objects.select_related("official__position", "registration_position", "item", "social_attentions__delegation",
+    qs = Activity.objects.select_related("official__position", "registration_position", "registration_delegation", "item", "social_attentions__delegation",
                                          "social_attentions__case__client_request")
     if not include_archived:
         qs = qs.filter(deleted_at__isnull=True)
@@ -154,6 +155,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         return dict(maintainer_title=self.spec[2], maintainer_kind=self.spec[3],
             entity_label=entity, form_title=form_title, form_mode="edit" if self.operation == "update" else "create",
             maintainer_note=notes.get(self.key, "Los registros no se eliminan: se desactivan y reactivan, y conservan su historial."),
+            edit_revision=self.request.POST.get("edit_revision") if self.key == "activity" and self.operation == "update" else None,
             list_url=self.url("list"), export_url=self.url("export"), create_url=self.url("create"),
             can_add=self.request.user.has_perm(f"{permission}.add_{model}"),
             can_change=self.request.user.has_perm(f"{permission}.change_{model}"),
@@ -284,6 +286,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 return redirect(self.url("list"))
             context["form"] = self.spec[1](actor=request.user, instance=obj)
             context["current_status"] = state(obj)[1] if obj else ""
+            if isinstance(obj, Activity):
+                context["edit_revision"] = edit_revision(obj)
             return render(request, "maintainers/form.html", context)
         if self.operation == "detail":
             obj = self.object(pk)
@@ -319,6 +323,10 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                     if not getattr(obj, name):
                         context["values"].pop(str(Activity._meta.get_field(name).verbose_name), None)
                 context["measurement"] = activity_measurement(obj)
+                attention = getattr(obj, "social_attentions", None)
+                context["values"]["Delegación al registrar"] = str(
+                    attention.delegation if attention else obj.registration_delegation or "Sin atribución",
+                ) + (" (estimada)" if obj.delegation_estimated and not attention else "")
                 context.update(evidence_context(request.user, obj))
                 context.update(comments_context(request.user, obj, "activity"))
                 if obj.deleted_at is None and request.user.has_perms(("agenda.view_commitment", "agenda.add_commitment")):
@@ -439,6 +447,9 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 if obj:
                     obj = self.spec[0].objects.select_for_update().get(pk=obj.pk)
                 self.check_mutable(obj)
+                if isinstance(obj, Activity) and self.operation == "update":
+                    if not edit_is_current(request, edit_revision(obj)):
+                        return edit_conflict()
                 previous = snapshot(obj) if obj else {}
                 if self.operation in ("create", "update"):
                     original_date = obj.date if isinstance(obj, Activity) else None

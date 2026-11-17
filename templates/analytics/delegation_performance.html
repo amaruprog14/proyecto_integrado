@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Tablero de delegación · SGR{% endblock %}
 {% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
@@ -51,10 +52,17 @@
                         <p class="text-muted">El período está cerrado y aún no tiene resultados congelados.</p>
                     {% endif %}
                 {% endif %}
+                {% if territorial_activity_count is not None %}
+                    <p><a class="auth-text-link" href="{% url 'territorial_activity_detail' %}?delegation={{ delegation.pk }}&amp;period={{ period.pk }}">{{ territorial_activity_count }} actividades válidas de la delegación</a></p>
+                {% elif closed %}
+                    <p class="text-muted">El detalle territorial está disponible para los cierres que guardaron su respaldo y las cuentas con permiso de consulta.</p>
+                {% else %}
+                    <p class="text-muted">El total territorial requiere permiso de consulta de actividades en esta delegación.</p>
+                {% endif %}
                 {% if rows or not closed %}
                 <dl class="row mb-0">
-                    <dt class="col-sm-6">Actividades computadas</dt><dd class="col-sm-6">{{ total_activities|floatformat:"0" }}</dd>
                     <dt class="col-sm-6">Funcionarios medidos</dt><dd class="col-sm-6">{{ measured_count }} de {{ rows|length }}</dd>
+                    <dt class="col-sm-6">Actividades computadas del equipo</dt><dd class="col-sm-6">{{ total_activities }}</dd>
                     <dt class="col-sm-6">Resultado del equipo (promedio ponderado individual)</dt>
                     <dd class="col-sm-6">{% if average is not None %}{{ average|floatformat:2 }} puntos{% else %}—{% endif %}</dd>
                     <dt class="col-sm-6">Meta esperada promedio</dt>
@@ -73,17 +81,18 @@
             {% if rows %}
                 <section class="attention-entry-card mb-3" aria-labelledby="team-officials">
                     <h2 class="h5" id="team-officials">Resultados por funcionario</h2>
+                    <p class="mb-0 visually-hidden" id="team-detail-status" role="status"></p>
                     <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="team-officials">
                         <table class="table maintainer-table">
                             <thead><tr>
-                                <th scope="col">Funcionario</th><th scope="col">Cargo</th><th scope="col">Actividades computadas</th>
+                                <th scope="col">Funcionario</th><th scope="col">Cargo</th><th scope="col">Actividades individuales</th>
                                 <th scope="col">Meta esperada</th><th scope="col">Resultado ponderado</th><th scope="col">Semáforo</th>
                             </tr></thead>
                             <tbody>
                                 {% for row in rows %}
                                     <tr>
                                         <th scope="row">
-                                            <a class="auth-text-link" href="?delegation={{ delegation.pk }}&amp;period={{ period.pk }}&amp;official={{ row.result.official.pk }}#team-detail">{{ row.result.official.full_name }}</a>
+                                            <a class="auth-text-link" id="team-official-{{ row.result.official.pk }}" data-team-detail aria-haspopup="dialog" href="?delegation={{ delegation.pk }}&amp;period={{ period.pk }}&amp;official={{ row.result.official.pk }}">{{ row.result.official.full_name }}</a>
                                             {% if row.result.notice %}<span class="performance-note">{{ row.result.notice }}</span>{% endif %}
                                         </th>
                                         <td>{{ row.position|default:"Sin cargo" }}</td>
@@ -101,47 +110,14 @@
                 <p class="alert alert-info" role="status">No hay resultados para esta delegación y período.</p>
             {% endif %}
 
-            {% if selected %}
-                <section class="attention-entry-card" aria-labelledby="team-detail" tabindex="-1">
-                    <h2 class="h5" id="team-detail">Detalle de {{ selected.result.official.full_name }}</h2>
-                    {% if can_open_personal %}
-                        <p><a class="auth-text-link" href="{% url 'my_performance' %}?period={{ period.pk }}&amp;official={{ selected.result.official.pk }}">Abrir desempeño individual</a></p>
-                    {% endif %}
-                    {% if selected_items %}
-                        <div class="table-responsive maintainer-table-wrap performance-results-table-wrap" tabindex="0" role="region" aria-labelledby="team-detail">
-                            <table class="table maintainer-table">
-                                <thead><tr>
-                                    <th scope="col">Ítem</th><th scope="col">Meta</th><th scope="col">Avance</th>
-                                    <th scope="col">Resultado ponderado</th><th scope="col">Semáforo</th>
-                                </tr></thead>
-                                <tbody>
-                                    {% for entry in selected_items %}
-                                        {% with item=entry.item %}
-                                            <tr>
-                                                <th scope="row">
-                                                    {% if entry.activity_link %}
-                                                        <a class="auth-text-link" href="{{ entry.activity_link }}" title="Ver actividades de origen">{{ item.item }}</a>
-                                                        {% if entry.hidden %}<span class="performance-note">{{ entry.hidden }} actividad{{ entry.hidden|pluralize:"es" }} fuera de tu alcance de consulta.</span>{% endif %}
-                                                    {% else %}
-                                                        {{ item.item }}
-                                                    {% endif %}
-                                                </th>
-                                                <td>{% if item.goal is not None %}{{ item.goal|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
-                                                <td>{% if item.progress is not None %}{{ item.progress|floatformat:"-2" }}{% if item.is_percentage %} %{% endif %}{% else %}—{% endif %}</td>
-                                                <td>{{ item.weighted|floatformat:2 }} puntos</td>
-                                                <td>{% include "analytics/traffic_light.html" with light=item.traffic_light %}</td>
-                                            </tr>
-                                        {% endwith %}
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <p>{{ selected.result.notice|default:"No hay ítems medidos en el período." }}</p>
-                    {% endif %}
-                </section>
-            {% endif %}
+            {% if selected %}{% include "analytics/delegation_performance_modal.html" %}{% endif %}
         {% endif %}
     </section>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    {% if rows %}
+        <script src="{% static 'js/delegation-performance-modal.js' %}?v=20261116-scroll" defer></script>
+    {% endif %}
 {% endblock %}

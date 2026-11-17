@@ -65,6 +65,10 @@ class CaseFollowUpForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        if data.get("requires_visit") is False:
+            for name in ("scheduled_visit_on", "visited_on"):
+                if data.get(name):
+                    self.add_error(name, "Quita esta fecha o marca que el caso requiere visita.")
         scheduled = data.get("scheduled_visit_on")
         if scheduled and scheduled < self.case_entry_date:
             self.add_error("scheduled_visit_on", "La visita programada debe ser igual o posterior al ingreso.")
@@ -118,14 +122,21 @@ class CaseFollowUpFilters(forms.Form):
 
 
 def case_intervals(case, entered):
-    intervals = (
+    visit_intervals = (
         ("Ingreso a visita programada", entered, case.scheduled_visit_on, 10),
         ("Visita programada a visita realizada", case.scheduled_visit_on, case.visited_on, 0),
         ("Visita a entrega de informe", case.visited_on, case.report_delivered_on, 4),
+    )
+    delivery_intervals = (
         ("Informe a entrega de beneficio", case.report_delivered_on, case.benefit_delivered_on, 4),
         ("Ingreso a entrega de beneficio", entered, case.benefit_delivered_on, 20),
     )
-    for label, start, end, limit in intervals:
+    visit_does_not_apply = case.requires_visit is False and not (case.scheduled_visit_on or case.visited_on)
+    for interval in (*visit_intervals, *delivery_intervals):
+        label, start, end, limit = interval
+        if visit_does_not_apply and interval in visit_intervals:
+            yield {"label": label, "days": None, "reference": "—", "result": "No aplica"}
+            continue
         days = (end - start).days if start and end else None
         reference = f"Hasta {limit} días" if limit else "Sin diferencia (0 días)"
         result = "Sin fechas suficientes"

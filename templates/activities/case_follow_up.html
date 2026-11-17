@@ -34,9 +34,10 @@
             </tbody>
         </table>
     </div>
-    {% if can_manage %}
+    {% if can_manage or follow_up_conflict %}
         {% url 'attention_case_action' case.pk 'hitos' as action_url %}
-        {% include 'activities/case_form.html' with action_url=action_url action_form=follow_up_form label='Guardar seguimiento' %}
+        {% url 'attention_case_detail' case.pk as current_url %}
+        {% include 'activities/case_form.html' with action_url=action_url|add:'#case-milestones' action_form=follow_up_form label='Guardar seguimiento' edit_revision=follow_up_revision edit_conflict=follow_up_conflict current_edit_url=current_url|add:'#case-milestones' %}
     {% endif %}
 </section>
 <section class="attention-entry-card mt-3" aria-labelledby="case-steps">

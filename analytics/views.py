@@ -13,6 +13,7 @@ from decimal import Decimal
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.core.paginator import Paginator
 from django.db.models import Count, Exists, Max, OuterRef, Q
 from django.http import Http404
 from django.shortcuts import render
@@ -30,6 +31,7 @@ from analytics.queries import (
     select_period, summarize_team, team_results,
 )
 from analytics.services import CalculadorDesempenoService, computable_activities, computable_days
+from analytics.territorial import territorial_records
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.maintainers import activity_queryset
 from common.scopes import permission_scope, scope_officials
@@ -207,6 +209,7 @@ class TeamPerformanceView(ProtectedViewMixin, View):
 class DelegationPerformanceView(TeamPerformanceView):
     def get(self, request):
         today = timezone.localdate()
+        modal_only = request.GET.get("fragment") == "official-result"
         periods, period = period_selection(request, today)
         delegation_options = self.delegations()
         delegation = self.requested_delegation(delegation_options)
@@ -219,6 +222,8 @@ class DelegationPerformanceView(TeamPerformanceView):
             "can_view_delegation": True, "performance_tab": "delegation",
         }
         if period is None or delegation is None:
+            if modal_only:
+                raise Http404
             return render(request, "analytics/delegation_performance.html", context)
 
         closed = period.status == Period.Status.CLOSED
@@ -234,12 +239,15 @@ class DelegationPerformanceView(TeamPerformanceView):
             })
 
         selected_id = request.GET.get("official")
-        if selected_id:
+        if selected_id or modal_only:
             selected = next((row for row in rows if str(row["result"].official.pk) == selected_id), None)
             if selected is None:
                 raise Http404("No se encontró el funcionario en el período y delegación seleccionados.")
             self.add_drilldown(context, selected, period, today)
+            if modal_only:
+                return render(request, "analytics/delegation_performance_modal.html", context)
 
+        records = territorial_records(request.user, delegation, period, today)
         commitments = None
         if not closed:
             commitments = Commitment.objects.filter(
@@ -251,7 +259,9 @@ class DelegationPerformanceView(TeamPerformanceView):
                 overdue=Count("pk", filter=~Q(current_status=Commitment.Status.DONE) & Q(committed_date__lt=today)),
             )
         context.update(
-            rows=rows, commitments=commitments, closed=closed, **summarize_team(results),
+            rows=rows, commitments=commitments, closed=closed,
+            territorial_activity_count=records.count() if records is not None else None,
+            **summarize_team(results),
         )
         return render(request, "analytics/delegation_performance.html", context)
 
@@ -278,6 +288,34 @@ class DelegationPerformanceView(TeamPerformanceView):
                 for item in result.items
             ],
         )
+
+
+class TerritorialActivityDetailView(TeamPerformanceView):
+    permission_required = (*TeamPerformanceView.permission_required, VIEW_ACTIVITY)
+
+    def get(self, request):
+        today = timezone.localdate()
+        _, period = period_selection(request, today)
+        delegation = self.requested_delegation(self.delegations())
+        if delegation is None or period is None:
+            raise Http404
+        records = territorial_records(request.user, delegation, period, today)
+        if records is None:
+            raise Http404
+        page = Paginator(records.order_by("-date", "-pk"), 20).get_page(request.GET.get("page"))
+        rows = list(page)
+        ids = [row.activity_id for row in rows]
+        allowed = activity_queryset(request.user, VIEW_ACTIVITY, include_archived=True).filter(pk__in=ids)
+        link_filter = Q(deleted_at__isnull=True)
+        if period.status == Period.Status.CLOSED:
+            archived = activity_queryset(request.user, "activities.archive_activity", include_archived=True)
+            link_filter |= Q(pk__in=archived.values("pk"))
+        linkable = set(allowed.filter(link_filter).values_list("pk", flat=True))
+        return render(request, "analytics/territorial_activity_detail.html", {
+            "delegation": delegation, "period": period, "page_obj": page,
+            "supports": [{"record": row, "can_open": row.activity_id in linkable} for row in rows],
+            "closed": period.status == Period.Status.CLOSED,
+        })
 
 
 def position_item_totals(results):
