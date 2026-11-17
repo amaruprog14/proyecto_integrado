@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from accounts.models import Area, Delegation, Official, Position, Role, Territory
 from activities.models import Activity
-from configuration.models import AttentionType, Item, Period, SubattentionType
+from configuration.models import ActivityType, AttentionType, Item, Period, SubattentionType
 
 
 User = get_user_model()
@@ -28,6 +28,8 @@ class ModalFeedbackTests(TestCase):
             email=cls.admin.email, delegation=cls.delegation,
         )
         cls.area = Area.objects.create(area_name="Área de referencia")
+        Official.objects.filter(pk=cls.official.pk).update(area=cls.area)
+        cls.activity_type = ActivityType.objects.create(name="Tipo de actividad de referencia", area=cls.area)
         cls.position = Position.objects.create(position_name="Cargo de referencia")
         cls.role = Role.objects.create(role_name="Rol de referencia", scope=Role.Scope.DELEGATION)
         cls.permission = Permission.objects.get(content_type__app_label="accounts", codename="view_official")
@@ -80,6 +82,7 @@ class ModalFeedbackTests(TestCase):
             }, "Grupo del modal editado"),
             ("activity", Activity, "action_description", {
                 "action_description": "Actividad del modal", "official": self.official.pk,
+                "subject": "Asunto del modal", "activity_type": self.activity_type.pk,
                 "item": self.item.pk, "date": self.today.isoformat(), "record_type": Activity.RecordType.FIELD,
             }, "Actividad del modal editada"),
             ("item", Item, "item_name", {
