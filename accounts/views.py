@@ -39,6 +39,7 @@ from common.access import (
     register_denied_access,
 )
 from common.exports import xlsx_response
+from common.edit_concurrency import edit_conflict, edit_is_current, edit_revision
 from common.modal_forms import ModalFormOnlyMixin, add_form_error, add_form_success
 from common.pagination import ClampedPaginationMixin  # noqa: F401 (también se importaba desde aquí)
 from common.text import describe_changes, format_snapshot
@@ -998,17 +999,28 @@ class OfficialUpdateView(ProtectedViewMixin, ModalFormOnlyMixin, FormView):
             self._official = get_scoped_object_or_404(
                 request, scoped_officials(request.user).select_for_update(), pk=kwargs["pk"]
             )
+            revision = edit_revision(self._official, memberships=(
+                self._official.authorized_delegations.values_list("pk", flat=True),
+                self._official.roles.values_list("pk", flat=True),
+            ))
+            if not edit_is_current(request, revision):
+                return edit_conflict()
             return super().post(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)
-            official = self.get_official()
-            context.update(
-                maintainer_title=f"Editar funcionario {official.full_name}",
-                form_mode="edit",
-                edited_official=official,
-            )
-            return context
+        context = super().get_context_data(**kwargs)
+        official = self.get_official()
+        revision = self.request.POST.get("edit_revision")
+        if self.request.method == "GET":
+            initial = context["form"].initial
+            revision = edit_revision(official, memberships=(initial["authorized_delegations"], initial["roles"]))
+        context.update(
+            maintainer_title=f"Editar funcionario {official.full_name}",
+            form_mode="edit",
+            edited_official=official,
+            edit_revision=revision,
+        )
+        return context
 
     def form_valid(self, form):
             deny_role_assignment(self.request, form)

@@ -4,11 +4,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.test import TestCase
 from django.urls import reverse
+from common.testing_edit import revision_from_form
 from django.utils import timezone
 
 from accounts.models import Area, Delegation, Official, Position, Role, Territory
 from activities.models import Activity
-from configuration.models import AttentionType, Item, Period, SubattentionType
+from configuration.models import ActivityType, AttentionType, Item, Period, SubattentionType
 
 
 User = get_user_model()
@@ -23,11 +24,12 @@ class ModalFeedbackTests(TestCase):
         cls.delegation = Delegation.objects.create(
             delegation_name="Zona de referencia", address="Calle Uno", commune="La Serena",
         )
+        cls.area = Area.objects.create(area_name="Área de referencia")
         cls.official = Official.objects.create(
             user=cls.admin, full_name="Administración de prueba", national_id="11111111-1",
-            email=cls.admin.email, delegation=cls.delegation,
+            email=cls.admin.email, delegation=cls.delegation, area=cls.area,
         )
-        cls.area = Area.objects.create(area_name="Área de referencia")
+        cls.activity_type = ActivityType.objects.create(area=cls.area, name="Visita de referencia")
         cls.position = Position.objects.create(position_name="Cargo de referencia")
         cls.role = Role.objects.create(role_name="Rol de referencia", scope=Role.Scope.DELEGATION)
         cls.permission = Permission.objects.get(content_type__app_label="accounts", codename="view_official")
@@ -81,6 +83,7 @@ class ModalFeedbackTests(TestCase):
             ("activity", Activity, "action_description", {
                 "action_description": "Actividad del modal", "official": self.official.pk,
                 "item": self.item.pk, "date": self.today.isoformat(), "record_type": Activity.RecordType.FIELD,
+                "subject": "Visita de prueba", "activity_type": self.activity_type.pk,
             }, "Actividad del modal editada"),
             ("item", Item, "item_name", {
                 "item_name": "Ítem del modal", "code": "MODAL-ITM", "is_active": "True",
@@ -105,7 +108,10 @@ class ModalFeedbackTests(TestCase):
                 update = {**payload, field: edited_value}
                 if route == "user":
                     update.update(password1="", password2="")
-                self.assert_modal_saved(self.client.post(reverse(f"{route}_update", args=[record.pk]), update, **INLINE_MODAL))
+                edit = reverse(f"{route}_update", args=[record.pk])
+                if route in ("activity", "official"):
+                    update["edit_revision"] = revision_from_form(self.client, edit)
+                self.assert_modal_saved(self.client.post(edit, update, **INLINE_MODAL))
                 self.assertTrue(model.objects.filter(pk=record.pk, **{field: edited_value}).exists())
                 self.assertNotContains(self.client.get(next_list), "data-sgr-messages")
 

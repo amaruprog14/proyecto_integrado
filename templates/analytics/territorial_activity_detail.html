@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Actividades de la delegación · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="performance" %}{% endblock %}
+
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="territorial-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">
+                    Desempeño <span aria-hidden="true">/</span>
+                    <a class="auth-text-link" href="{% url 'delegation_performance' %}?delegation={{ delegation.pk }}&amp;period={{ period.pk }}">Tablero de delegación</a>
+                </p>
+                <h1 id="territorial-title">Actividades válidas de {{ delegation.delegation_name }}</h1>
+                <p class="text-muted mb-0">{{ period.start_date|date:"d-m-Y" }} al {{ period.end_date|date:"d-m-Y" }} · {{ period.get_status_display }}</p>
+            </div>
+        </header>
+        <section class="attention-entry-card" aria-labelledby="territorial-records">
+            <h2 class="h5" id="territorial-records">Respaldo del total ({{ page_obj.paginator.count }})</h2>
+            {% if closed %}
+                <p class="text-muted">Registros computados al cierre del {{ period.frozen_at|date:"d-m-Y H:i" }}.</p>
+            {% endif %}
+            {% if supports %}
+                <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-labelledby="territorial-records">
+                    <table class="table maintainer-table">
+                        <thead>
+                            <tr><th scope="col">Código</th><th scope="col">Fecha</th><th scope="col">Funcionario</th>
+                                <th scope="col">Ítem</th><th scope="col">Atribución</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in supports %}
+                                {% with record=row.record %}
+                                    <tr>
+                                        <th scope="row">{% if row.can_open %}<a class="auth-text-link" href="{% url 'activity_detail' record.activity_id %}">{{ record.code }}</a>{% else %}{{ record.code }}{% endif %}</th>
+                                        <td>{{ record.date|date:"d-m-Y" }}</td>
+                                        <td>{{ record.official_name }}</td>
+                                        <td>{{ record.item_name }}</td>
+                                        <td>{% if record.estimated %}Estimada{% else %}Registrada{% endif %}</td>
+                                    </tr>
+                                {% endwith %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if page_obj.has_other_pages %}
+                    <nav class="mt-3" aria-label="Páginas de actividades">
+                        <ul class="pagination maintainer-pagination">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item"><a class="page-link" href="?delegation={{ delegation.pk }}&amp;period={{ period.pk }}&amp;page={{ page_obj.previous_page_number }}">Anterior</a></li>
+                            {% endif %}
+                            <li class="page-item active"><span class="page-link" aria-current="page">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+                            {% if page_obj.has_next %}
+                                <li class="page-item"><a class="page-link" href="?delegation={{ delegation.pk }}&amp;period={{ period.pk }}&amp;page={{ page_obj.next_page_number }}">Siguiente</a></li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+            {% else %}
+                <p class="text-muted mb-0">No hay actividades computadas para esta delegación y período.</p>
+            {% endif %}
+        </section>
+    </section>
+</div>
+{% endblock %}

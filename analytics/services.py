@@ -444,6 +444,9 @@ class CalculadorDesempenoService:
             result = cls.calculate(official, period, period.end_date)
             snapshots.extend(cls.build_snapshot(result, row, now, frozen=True) for row in result.items)
         IndicatorSnapshot.objects.bulk_create(snapshots, batch_size=500)
+        from analytics.territorial import freeze_territorial_activities
+
+        freeze_territorial_activities(period, now)
         period.frozen_at = now
         period.save(update_fields=["frozen_at", "updated_at"])
         return len(snapshots)

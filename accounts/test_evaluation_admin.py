@@ -13,6 +13,7 @@ from accounts.evaluation_admin import PERMISSIONS, ROLE_NAME, USERNAME
 from accounts.models import Official, Role
 from activities.models import Activity
 from common.demo_data import demo_rut
+from common.testing_edit import revision_from_form
 from common.realtime import queryset as realtime_queryset
 from common.scopes import permission_scope
 from common.testing_seed import TEST_SEED_PASSWORD
@@ -76,8 +77,9 @@ class EvaluationAdminTests(TestCase):
             email='forged@example.invalid', delegation=self.foreign.delegation_id, status='ACTIVE'))
         self.assertIn('delegation', response.context['form'].errors)
         self.assertEqual(Official.objects.count(), before_officials)
-        response = self.client.post(reverse('official_update', args=[self.target.pk]), dict(
-            full_name=self.target.full_name, national_id=self.target.national_id,
+        edit = reverse('official_update', args=[self.target.pk])
+        response = self.client.post(edit, dict(
+            edit_revision=revision_from_form(self.client, edit), full_name=self.target.full_name, national_id=self.target.national_id,
             email=self.target.email, delegation=self.a.pk, status='ACTIVE',
             roles=[Role.objects.get(role_name='Administrador').pk]))
         self.assertEqual(response.status_code, 403)
@@ -194,15 +196,18 @@ class EvaluationAdminTests(TestCase):
         self.assertEqual(self.client.post(reverse('official_create'), data).status_code, 302)
         official = Official.objects.get(national_id=data['national_id'])
         data['full_name'] = 'Persona Evaluación Editada'
-        self.assertEqual(self.client.post(reverse('official_update', args=[official.pk]), data).status_code, 302)
+        edit_official = reverse('official_update', args=[official.pk])
+        self.assertEqual(self.client.post(edit_official,
+            dict(data, edit_revision=revision_from_form(self.client, edit_official))).status_code, 302)
         self.assertContains(self.client.get(reverse('official_detail', args=[official.pk])), data['full_name'])
         self.assertEqual(self.client.post(reverse('official_archive', args=[official.pk])).status_code, 302)
         official.refresh_from_db()
         self.assertIsNotNone(official.deleted_at)
         self.assertEqual(self.client.post(reverse('activity_create'), self.activity_payload()).status_code, 302)
         activity = Activity.objects.get(action_description='Evaluación ámbito A')
-        self.assertEqual(self.client.post(reverse('activity_update', args=[activity.pk]),
-            self.activity_payload(action_description='Editada en ámbito A')).status_code, 302)
+        edit_activity = reverse('activity_update', args=[activity.pk])
+        self.assertEqual(self.client.post(edit_activity, self.activity_payload(action_description='Editada en ámbito A',
+            edit_revision=revision_from_form(self.client, edit_activity))).status_code, 302)
         self.assertContains(self.client.get(reverse('activity_detail', args=[activity.pk])), 'Editada en ámbito A')
         self.assertEqual(self.client.post(reverse('activity_deactivate', args=[activity.pk])).status_code, 302)
         activity.refresh_from_db()

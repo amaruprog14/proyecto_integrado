@@ -286,6 +286,30 @@ class IndicatorSnapshot(BaseModel):
         return f"{self.official} / {self.item} / {self.period}"
 
 
+class DelegationActivityFreeze(models.Model):
+    period = models.ForeignKey(Period, on_delete=models.PROTECT)
+    captured_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["period", "captured_at"], name="unique_delegation_activity_freeze")]
+
+
+class DelegationActivitySnapshot(models.Model):
+    freeze = models.ForeignKey(DelegationActivityFreeze, on_delete=models.PROTECT, related_name="activities")
+    activity = models.ForeignKey("activities.Activity", on_delete=models.PROTECT, related_name="+")
+    delegation = models.ForeignKey(Delegation, on_delete=models.PROTECT, related_name="+")
+    official = models.ForeignKey(Official, on_delete=models.PROTECT, related_name="+")
+    code = models.CharField(max_length=32)
+    date = models.DateField()
+    official_name = models.CharField(max_length=200)
+    item_name = models.CharField(max_length=150)
+    estimated = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["freeze", "activity"], name="unique_frozen_territorial_activity")]
+        indexes = [models.Index(fields=["freeze", "delegation"], name="frozen_activity_delegation_idx")]
+
+
 class IncentiveApplication(BaseModel):
     """Tabla operativa: incentivo o penalización aplicado a un indicador."""
 
