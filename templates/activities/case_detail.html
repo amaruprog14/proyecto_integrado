@@ -11,6 +11,8 @@
     <section class="attention-entry-card" aria-labelledby="case-summary">
         <h2 class="h5" id="case-summary">Seguimiento de {{ case.identifier }}</h2>
         <dl class="row mb-0">
+            <dt class="col-sm-4">RUT</dt><dd class="col-sm-8">{{ case.recipient.national_id }}</dd>
+            <dt class="col-sm-4">Teléfono</dt><dd class="col-sm-8">{{ case.recipient.phone|default:'Sin registrar' }}</dd>
             <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{% include 'client/status.html' with item=case %}</dd>
             <dt class="col-sm-4">Responsable actual</dt><dd class="col-sm-8">{{ case.responsible.full_name|default:'Sin asignar' }}</dd>
             <dt class="col-sm-4">Última actualización</dt><dd class="col-sm-8">{{ case.updated_at|date:'d/m/Y H:i' }}</dd>
@@ -41,6 +43,8 @@
             {% endif %}
         </div>
     </section>
+
+    {% include 'activities/case_follow_up.html' %}
 
     <section class="attention-entry-card mt-3" aria-labelledby="case-timeline">
         <h2 class="h5" id="case-timeline">Historial del caso</h2>

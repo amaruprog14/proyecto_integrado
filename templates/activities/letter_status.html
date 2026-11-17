@@ -1,0 +1,1 @@
+<span class="maintainer-status-pill{% if letter.status == 'IN_PROGRESS' %} client-status-review{% elif letter.status == 'NOT_APPLICABLE' %} is-inactive{% else %} is-active{% endif %}">{{ letter.get_status_display }}</span>

@@ -11,6 +11,7 @@ from django.views.generic import TemplateView, View
 from accounts.delegation_context import get_active_delegation
 from accounts.models import Official
 from agenda.comments import comments_context
+from agenda.commitments import VIEW as VIEW_COMMITMENT, scoped_commitments
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.chilean_rut import normalize_chilean_rut
 from common.list_state import positive
@@ -21,6 +22,9 @@ from .cases import (ADD_ATTENTION, CHANGE_CASE, VIEW_CASE, assign_case, case_tim
                     change_request_status, record_case_event, scoped_cases)
 from .invitations import invite_to_portal
 from .evidence import VIEW_ACTIVITY, VIEW_EVIDENCE, evidence_activities
+from .follow_up import (CaseFollowUpFilters, CaseFollowUpForm, active_attentions, case_intervals,
+                        entry_date, with_first_attention_date)
+from .letters import VIEW as VIEW_LETTER, scoped_letters
 from .models import AttentionCase, ClientRequest, PortalInvitation, SocialAttention
 
 
@@ -75,6 +79,8 @@ class CaseListView(ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         cases = scoped_cases(self.request.user)
+        filters = CaseFollowUpFilters(self.request.GET, responsibles=Official.objects.filter(
+            pk__in=cases.order_by().values("responsible_id")))
         query = normalize_spaces(self.request.GET.get("q"))[:200]
         if query:
             match = Q(subject__icontains=query) | Q(recipient__full_name__icontains=query)
@@ -95,10 +101,15 @@ class CaseListView(ClampedPaginationMixin, ProtectedViewMixin, TemplateView):
         if status in ClientRequest.Status.values or status in AttentionCase.DirectStatus.values:
             cases = cases.filter(Q(client_request__status=status) |
                                  Q(client_request__isnull=True, direct_status=status))
+        cases = with_first_attention_date(cases)
+        if filters.is_valid():
+            cases = filters.filter(cases)
         page = self.clamp_page(cases)
+        for case in page:
+            case.entry_date = entry_date(case, case.first_attention_date)
         params = self.request.GET.copy()
         params.pop("page", None)
-        return {**context, "page_obj": page, "query": query, "selected_status": status,
+        return {**context, "page_obj": page, "query": query, "selected_status": status, "filters": filters,
                 "querystring": params.urlencode()}
 
 
@@ -114,6 +125,9 @@ def render_case(request, case, *, request_list_url=None, errors=None):
     can_invite = authorized_delegation and can_append and not case.client_request_id and not case.recipient.user_id
     invitation = PortalInvitation.objects.filter(recipient=case.recipient).first() if can_invite else None
     timeline = case_timeline(case)
+    attentions = list(active_attentions(case).select_related("attention_type", "subattention_type"))
+    entered = entry_date(case, attentions[0].date if attentions else None)
+    can_view_commitments = user.has_perm(VIEW_COMMITMENT)
     if user.has_perms((VIEW_ACTIVITY, VIEW_EVIDENCE)):
         activities_by_attention = {
             attention_id: (activity_id, code)
@@ -138,6 +152,12 @@ def render_case(request, case, *, request_list_url=None, errors=None):
             "next_step_date": case.next_step_date, "public_next_step": case.public_next_step}),
         "close_form": CaseCloseForm(),
         "invitation_form": PortalInvitationForm(initial={"email": invitation.email if invitation else case.recipient.email}),
+        "entry_date": entered, "attentions": attentions, "intervals": list(case_intervals(case, entered)),
+        "follow_up_form": CaseFollowUpForm(instance=case, case_entry_date=entered),
+        "can_view_commitments": can_view_commitments,
+        "commitments": scoped_commitments(user).filter(origin_case=case) if can_view_commitments else (),
+        "letters": scoped_letters(user).filter(case=case, delegation_id=case.delegation_id)
+        if user.has_perm(VIEW_LETTER) else (),
     }
     if errors:
         context.update(errors)
@@ -220,6 +240,30 @@ class CaseActionView(ProtectedViewMixin, View):
                 title = "Próximo paso completado" if action == "completar-paso" else "Próximo paso cancelado"
                 record_case_event(case, actor, title, case.next_step, title if case.public_next_step else "")
                 case.next_step, case.next_step_date, case.public_next_step = "", None, ""
+            elif action == "hitos":
+                first_attention = active_attentions(case).first() if not case.client_request_id else None
+                entered = entry_date(case, first_attention.date if first_attention else None)
+                form = CaseFollowUpForm(request.POST, instance=case, case_entry_date=entered)
+                if not form.is_valid():
+                    case.refresh_from_db()
+                    return render_case(request, case, errors={"follow_up_form": form})
+                changes = []
+                for field in form.changed_data:
+                    if field == "observation":
+                        continue
+                    initial, current = form.initial.get(field), form.cleaned_data[field]
+                    if field == "requires_visit":
+                        initial = {"true": "Sí", "false": "No", "unknown": "Sin registrar"}[initial]
+                        current = {True: "Sí", False: "No", None: "Sin registrar"}[current]
+                    else:
+                        initial = initial.strftime("%d/%m/%Y") if initial else "Sin registrar"
+                        current = current.strftime("%d/%m/%Y") if current else "Sin registrar"
+                    if initial != current:
+                        changes.append(f"{form.fields[field].label}: de {initial} a {current}")
+                if changes:
+                    record_case_event(case, actor, "Hitos de seguimiento actualizados", " · ".join(changes))
+                if observation := form.cleaned_data["observation"]:
+                    record_case_event(case, actor, "Observación de seguimiento", observation)
             elif action == "cerrar":
                 form = CaseCloseForm(request.POST)
                 valid = form.is_valid()

@@ -1,0 +1,56 @@
+<section class="attention-entry-card mt-3" aria-labelledby="case-milestones">
+    <h2 class="h5" id="case-milestones">Hitos y plazos</h2>
+    <dl class="row mb-0">
+        <dt class="col-sm-4">Fecha de ingreso</dt><dd class="col-sm-8">{{ entry_date|date:"d/m/Y" }}</dd>
+        <dt class="col-sm-4">Requiere visita</dt><dd class="col-sm-8">{{ case.requires_visit|yesno:"Sí,No,Sin registrar" }}</dd>
+        <dt class="col-sm-4">Visita programada</dt><dd class="col-sm-8">{{ case.scheduled_visit_on|date:"d/m/Y"|default:"Sin registrar" }}</dd>
+        <dt class="col-sm-4">Visita realizada</dt><dd class="col-sm-8">{{ case.visited_on|date:"d/m/Y"|default:"Sin registrar" }}</dd>
+        <dt class="col-sm-4">Entrega de informe</dt><dd class="col-sm-8">{{ case.report_delivered_on|date:"d/m/Y"|default:"Sin registrar" }}</dd>
+        <dt class="col-sm-4">Entrega de beneficio</dt><dd class="col-sm-8">{{ case.benefit_delivered_on|date:"d/m/Y"|default:"Sin registrar" }}</dd>
+        {% if can_view_commitments %}
+            <dt class="col-sm-4">Ingreso al tubo</dt>
+            <dd class="col-sm-8">
+                {% for commitment in commitments %}
+                    <a class="auth-text-link" href="{% url 'commitment_detail' commitment.pk %}">{{ commitment.identifier }}</a> · {{ commitment.get_current_status_display }}{% if not forloop.last %}<br>{% endif %}
+                {% empty %}Sin compromisos visibles{% endfor %}
+            </dd>
+        {% endif %}
+        {% if letters %}
+            <dt class="col-sm-4">Cartas de Oficina de Partes</dt>
+            <dd class="col-sm-8">
+                {% for letter in letters %}
+                    <a class="auth-text-link text-break" href="{% url 'office_letter_detail' letter.pk %}">{{ letter.identifier }} · {{ letter.subject }}</a>{% if not forloop.last %}<br>{% endif %}
+                {% endfor %}
+            </dd>
+        {% endif %}
+    </dl>
+    <div class="table-responsive maintainer-table-wrap mt-3" tabindex="0" role="region" aria-label="Plazos de seguimiento en días corridos">
+        <table class="table maintainer-table">
+            <thead><tr><th scope="col">Intervalo</th><th scope="col">Días corridos</th><th scope="col">Referencia</th><th scope="col">Resultado</th></tr></thead>
+            <tbody>
+                {% for interval in intervals %}
+                    <tr><th scope="row">{{ interval.label }}</th><td>{{ interval.days|default_if_none:"—" }}</td><td>{{ interval.reference }}</td><td>{{ interval.result }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if can_manage %}
+        {% url 'attention_case_action' case.pk 'hitos' as action_url %}
+        {% include 'activities/case_form.html' with action_url=action_url action_form=follow_up_form label='Guardar seguimiento' %}
+    {% endif %}
+</section>
+<section class="attention-entry-card mt-3" aria-labelledby="case-steps">
+    <h2 class="h5" id="case-steps">Gestiones registradas</h2>
+    <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-label="Gestiones del caso">
+        <table class="table maintainer-table">
+            <thead><tr><th scope="col">Gestión</th><th scope="col">Fecha</th><th scope="col">Tipo y subatención</th><th scope="col">Resultado</th></tr></thead>
+            <tbody>
+                {% for attention in attentions %}
+                    <tr><th scope="row">{{ forloop.counter }}</th><td>{{ attention.date|date:"d/m/Y" }}</td>
+                        <td class="text-break">{{ attention.attention_type }}<small class="d-block">{{ attention.subattention_type }}</small></td>
+                        <td class="text-break">{{ attention.result|default:"—" }}</td></tr>
+                {% empty %}<tr><td colspan="4">Sin gestiones registradas.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
