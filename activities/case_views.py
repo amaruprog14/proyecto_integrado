@@ -19,7 +19,8 @@ from common.chilean_rut import normalize_chilean_rut
 from common.edit_concurrency import edit_is_current, edit_revision
 from common.list_state import positive
 from common.pagination import ClampedPaginationMixin
-from common.text import clean_description_text, normalize_spaces
+from common.text import clean_description_text, describe_changes, normalize_spaces
+from configuration.services import AuditoriaService
 
 from .cases import (ADD_ATTENTION, CHANGE_CASE, VIEW_CASE, assign_case, case_timeline,
                     change_request_status, record_case_event, scoped_cases)
@@ -29,6 +30,17 @@ from .follow_up import (CaseFollowUpFilters, CaseFollowUpForm, active_attentions
                         entry_date, with_first_attention_date)
 from .letters import VIEW as VIEW_LETTER, scoped_letters
 from .models import AttentionCase, ClientRequest, PortalInvitation, SocialAttention
+
+
+def case_audit_snapshot(case):
+    return {
+        "Estado": case.get_status_display(), "Responsable": str(case.responsible_id or "Sin asignar"),
+        "Próximo paso registrado": "Sí" if case.next_step else "No",
+        "Fecha de próximo paso": str(case.next_step_date or "Sin registrar"),
+        **{str(case._meta.get_field(field).verbose_name): str(getattr(case, field))
+           for field in ("requires_visit", "scheduled_visit_on", "visited_on",
+                         "report_delivered_on", "benefit_delivered_on")},
+    }
 
 
 class CaseAssignmentForm(forms.Form):
@@ -215,10 +227,11 @@ class CaseActionView(ProtectedViewMixin, View):
             if case.is_closed:
                 messages.error(request, "El caso está cerrado.")
                 return redirect("attention_case_detail", pk=pk)
+            before = case_audit_snapshot(case)
             if action == "tomar" and case.responsible_id is None:
                 if not actor.get_authorized_delegations().filter(pk=case.delegation_id).exists():
                     return self.handle_no_permission()
-                assign_case(case, actor)
+                assign_case(case, actor, request=request)
                 public_text = "" if case.client_request_id else "El caso está en curso."
                 record_case_event(case, actor, "Caso asignado", actor.full_name, public_text)
             elif action == "asignar":
@@ -230,7 +243,7 @@ class CaseActionView(ProtectedViewMixin, View):
                 if previous == responsible:
                     return redirect("attention_case_detail", pk=pk)
                 case.responsible = responsible
-                assign_case(case, actor)
+                assign_case(case, actor, request=request)
                 record_case_event(case, actor, "Responsable actualizado", f"De {previous or 'sin asignar'} a {responsible}.")
             elif action == "proximo-paso":
                 form = CaseNextStepForm(request.POST)
@@ -282,7 +295,7 @@ class CaseActionView(ProtectedViewMixin, View):
                     return render_case(request, case, errors={"close_form": form})
                 response = form.cleaned_data["response"]
                 if case.client_request_id:
-                    change_request_status(case, ClientRequest.Status.RESOLVED, actor, response)
+                    change_request_status(case, ClientRequest.Status.RESOLVED, actor, response, request=request)
                     record_case_event(case, actor, "Caso cerrado y solicitud resuelta")
                 else:
                     case.direct_status = AttentionCase.DirectStatus.RESOLVED
@@ -292,5 +305,11 @@ class CaseActionView(ProtectedViewMixin, View):
                 messages.info(request, "El caso ya se actualizó. Revisa su estado y vuelve a intentar.")
                 return redirect("attention_case_detail", pk=pk)
             case.save()
+            previous, current = describe_changes(before, case_audit_snapshot(case))
+            if current != "Sin cambios":
+                AuditoriaService.register_change(
+                    actor, "Actualización de seguimiento de caso", case, previous_value=previous, new_value=current,
+                    origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user,
+                )
         messages.success(request, "Seguimiento actualizado correctamente.")
         return redirect("attention_case_detail", pk=pk)

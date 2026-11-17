@@ -1,3 +1,4 @@
+{% load audit_permissions %}
 {% comment %}
     Menú lateral común (base.html). `active` identifica la pantalla actual y la marca con
     aria-current. Solo lista lo que el perfil puede abrir (el acceso real se valida en cada vista).
@@ -40,18 +41,20 @@
             </nav>
         </div>
     {% endif %}
-    {% if perms.analytics.view_indicatorsnapshot %}
+    {% if perms.analytics.view_indicatorsnapshot or perms.analytics.view_scoreadjustment %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-desempeno">Desempeño</p>
             <nav aria-labelledby="menu-desempeno">
-                <a class="maintainer-sidebar-link{% if active == 'performance' %} is-active{% endif %}" href="{% url 'my_performance' %}"{% if active == 'performance' %} aria-current="page"{% endif %}>{% if perms.analytics.view_team_performance %}Desempeño{% else %}Mi desempeño{% endif %}</a>
+                {% if perms.analytics.view_indicatorsnapshot %}<a class="maintainer-sidebar-link{% if active == 'performance' %} is-active{% endif %}" href="{% url 'my_performance' %}"{% if active == 'performance' %} aria-current="page"{% endif %}>{% if perms.analytics.view_team_performance %}Desempeño{% else %}Mi desempeño{% endif %}</a>{% endif %}
+                {% if perms.analytics.view_scoreadjustment %}<a class="maintainer-sidebar-link{% if active == 'score_adjustments' %} is-active{% endif %}" href="{% url 'score_adjustment_list' %}"{% if active == 'score_adjustments' %} aria-current="page"{% endif %}>Reclamos y felicitaciones</a>{% endif %}
             </nav>
         </div>
     {% endif %}
-    {% if perms.configuration.view_item or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype or perms.configuration.view_period or perms.configuration.view_activitytype or perms.configuration.view_servicetype %}
+    {% if perms.configuration.view_item or perms.configuration.view_attentiontype or perms.configuration.view_subattentiontype or perms.configuration.view_period or perms.configuration.view_activitytype or perms.configuration.view_servicetype or perms.configuration.view_auditlog and user|can_view_audit %}
         <div>
             <p class="maintainer-sidebar-title" id="menu-configuracion">Configuración</p>
             <nav aria-labelledby="menu-configuracion">
+                {% if perms.configuration.view_auditlog and user|can_view_audit %}<a class="maintainer-sidebar-link{% if active == 'audit' %} is-active{% endif %}" href="{% url 'audit_list' %}"{% if active == 'audit' %} aria-current="page"{% endif %}>Bitácora general</a>{% endif %}
                 {% if perms.configuration.view_item %}<a class="maintainer-sidebar-link{% if active == 'items' %} is-active{% endif %}" href="{% url 'item_maintainer' %}"{% if active == 'items' %} aria-current="page"{% endif %}>Ítems y metas</a>{% endif %}
                 {% if perms.configuration.view_activitytype %}<a class="maintainer-sidebar-link{% if active == 'activity-types' %} is-active{% endif %}" href="{% url 'activity_type_maintainer' %}"{% if active == 'activity-types' %} aria-current="page"{% endif %}>Tipos de actividad</a>{% endif %}
                 {% if perms.configuration.view_servicetype %}<a class="maintainer-sidebar-link{% if active == 'service-types' %} is-active{% endif %}" href="{% url 'service_type_maintainer' %}"{% if active == 'service-types' %} aria-current="page"{% endif %}>Servicios</a>{% endif %}

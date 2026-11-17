@@ -11,6 +11,7 @@ from common.edit_concurrency import edit_is_current, edit_revision
 from common.list_state import positive
 from common.pagination import ClampedPaginationMixin
 from common.scopes import delegation_ids, permission_scope
+from common.text import format_snapshot
 from configuration.models import Period
 from configuration.services import AuditoriaService
 
@@ -176,8 +177,15 @@ def record_letter_event(request, letter, title, changes):
     actor = getattr(request.user, "official", None)
     OfficeLetterEvent.objects.create(letter=letter, actor=actor, actor_username=request.user.get_username(),
                                      title=title, changes=changes)
-    AuditoriaService.register_change(actor, title, letter, new_value=letter.identifier,
-                                     origin_ip=request.META.get("REMOTE_ADDR") or None)
+    allowed_fields = {"Delegación", "Recepción", "Fecha de recepción", "Fecha de actividad",
+                      "Responsable", "Área responsable", "Estado"}
+    operational_changes = [entry for entry in changes if entry["field"] in allowed_fields]
+    old = {entry["field"]: entry["before"] for entry in operational_changes if entry["before"] != ""}
+    new = {"Código": letter.identifier, **{entry["field"]: entry["after"] for entry in operational_changes}}
+    AuditoriaService.register_change(
+        actor, title, letter, previous_value=format_snapshot(old), new_value=format_snapshot(new),
+        origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user,
+    )
 
 
 def letter_values(letter):

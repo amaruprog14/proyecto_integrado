@@ -9,7 +9,7 @@ from common.testing_edit import revision_from_form
 from django.utils import timezone
 
 from accounts.models import Official, Delegation, Role, GroupProfile
-from activities.models import Activity
+from activities.models import Activity, Evidence, EvidenceBatch, EvidenceValidation
 from configuration.models import Item, Period
 from config.asgi import application
 
@@ -116,6 +116,42 @@ class ActivityRealtimeTests(TransactionTestCase):
         async_to_sync(scenario)()
         self.activity.refresh_from_db()
         self.assertEqual(self.activity.action_description, 'Actualizada')
+
+    def test_annulment_updates_only_readers_in_scope_after_commit(self):
+        author, reviewer, outsider = self.users
+        view_evidence = Permission.objects.get(content_type__app_label="activities", codename="view_evidence")
+        for user in (author, reviewer, outsider):
+            user.user_permissions.add(view_evidence)
+        reviewer.user_permissions.add(Permission.objects.get(
+            content_type__app_label="activities", codename="change_evidencevalidation",
+        ))
+        batch = EvidenceBatch.objects.create(activity=self.activity, author=author.official,
+                                             stage=EvidenceBatch.Stage.INITIAL, description="Respaldo de prueba")
+        image = Evidence.objects.create(activity=self.activity, batch=batch, file_url="prueba.png", file_format="png")
+        EvidenceValidation.objects.create(evidence=image, verifier=reviewer.official,
+                                          status=EvidenceValidation.Status.APPROVED, validated_at=timezone.now())
+        detail = reverse("activity_detail", args=[self.activity.pk])
+        annul = reverse("activity_evidence_annul", args=[self.activity.pk, batch.pk])
+        self.assertContains(self.clients[0].get(detail), 'data-evidence-updates="/ws/activities/"')
+
+        async def scenario():
+            nearby, outside = self.socket(0), self.socket(2)
+            self.assertTrue((await nearby.connect())[0])
+            self.assertTrue((await outside.connect())[0])
+            try:
+                await sync_to_async(self.clients[1].post)(annul, {"reason": ""})
+                self.assertTrue(await nearby.receive_nothing(timeout=.1))
+                response = await sync_to_async(self.clients[1].post)(annul, {"reason": "Evidencia de otra gestión."})
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(await nearby.receive_json_from(), {"type": "activities.changed"})
+                self.assertTrue(await outside.receive_nothing(timeout=.1))
+                refreshed = await sync_to_async(self.clients[0].get)(detail)
+                self.assertContains(refreshed, "Aprobación anulada")
+            finally:
+                await nearby.disconnect()
+                await outside.disconnect()
+
+        async_to_sync(scenario)()
 
     def test_invalid_form_rollback_and_forbidden_save_emit_nothing(self):
         def rollback():

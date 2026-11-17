@@ -12,9 +12,9 @@
                         <h3 class="h6 mb-0">{{ batch.get_stage_display }}</h3>
                         <time class="small text-muted" datetime="{{ batch.created_at|date:'c' }}">{{ batch.created_at|date:"d/m/Y H:i" }}</time>
                     </div>
-                    <p class="mb-1 small text-muted">{{ batch.author.full_name }} · {% if batch.review %}{{ batch.review.get_status_display }}{% else %}Pendiente de revisión{% endif %}</p>
+                    <p class="mb-1 small text-muted">{{ batch.author.full_name }} · {% if batch.annulment %}Aprobación anulada{% elif batch.review %}{{ batch.review.get_status_display }}{% else %}Pendiente de revisión{% endif %}</p>
                     <p class="my-1 text-break">{{ batch.description|linebreaksbr }}</p>
-                    <details>
+                    <details data-evidence-section="images">
                         <summary class="small text-muted">{{ batch.active_images|length }} {% if batch.active_images|length == 1 %}imagen adjunta{% else %}imágenes adjuntas{% endif %}</summary>
                         <ul class="d-flex flex-wrap gap-3 list-unstyled mt-2 mb-2">
                             {% for image in batch.active_images %}
@@ -30,11 +30,11 @@
                         </ul>
                     </details>
                     {% if batch.review %}
-                        <p class="small mb-1">Revisada por {{ batch.review.verifier.full_name }} · {{ batch.review.validated_at|date:"d/m/Y H:i" }}</p>
+                        <p class="small mb-1">{% if batch.annulment %}Aprobada{% else %}Revisada{% endif %} por {{ batch.review.verifier.full_name }} · {{ batch.review.validated_at|date:"d/m/Y H:i" }}</p>
                         {% if batch.review.observation %}<p class="small text-break mb-1">{{ batch.review.observation|linebreaksbr }}</p>{% endif %}
                     {% endif %}
                     {% if batch.review_form %}
-                        <details class="mt-2">
+                        <details class="mt-2" data-evidence-section="review">
                             <summary class="auth-text-link fw-semibold">Revisar evidencia</summary>
                             <form method="post" action="{% url 'activity_evidence_review' evidence_activity.pk batch.pk %}" class="d-grid gap-2 mt-2">
                                 {% csrf_token %}
@@ -42,6 +42,21 @@
                                     <div class="attention-entry-field">{{ field.label_tag }}{{ field }}</div>
                                 {% endfor %}
                                 <div class="d-flex justify-content-end"><button class="btn btn-primary" type="submit">Guardar revisión</button></div>
+                            </form>
+                        </details>
+                    {% endif %}
+                    {% if batch.annulment %}
+                        <p class="small mb-1">Anulada por {{ batch.annulment.actor.full_name }} · {{ batch.annulment.annulled_at|date:"d/m/Y H:i" }}</p>
+                        <p class="small text-break mb-1">{{ batch.annulment.reason|linebreaksbr }}</p>
+                    {% elif batch.annulment_form %}
+                        <details class="mt-2" data-evidence-section="annulment">
+                            <summary class="auth-text-link fw-semibold">Anular aprobación</summary>
+                            <form method="post" action="{% url 'activity_evidence_annul' evidence_activity.pk batch.pk %}" class="d-grid gap-2 mt-2">
+                                {% csrf_token %}
+                                {% for field in batch.annulment_form %}
+                                    <div class="attention-entry-field">{{ field.label_tag }}{{ field }}</div>
+                                {% endfor %}
+                                <div class="d-flex justify-content-end"><button class="btn btn-outline-danger" type="submit">Confirmar anulación</button></div>
                             </form>
                         </details>
                     {% endif %}
@@ -62,7 +77,7 @@
     {% endif %}
 
     {% if evidence_upload_form %}
-        <details class="border-top pt-3" open>
+        <details class="border-top pt-3" data-evidence-section="upload" open>
             <summary class="auth-text-link fw-semibold">Agregar evidencia</summary>
             <form action="{% url 'activity_evidence_upload' evidence_activity.pk %}" method="post"
                   enctype="multipart/form-data" class="d-grid gap-3 mt-3">

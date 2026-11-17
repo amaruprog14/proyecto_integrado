@@ -67,7 +67,9 @@ MEASUREMENT_ADMIN_PERMISSIONS = frozenset(
         "analytics.add_measurementplan",
         "analytics.change_measurementplan",
         "analytics.publish_measurementplan",
+        "analytics.review_scoreadjustment",
         "configuration.reopen_period",
+        "configuration.view_auditlog",
     }
 )
 

@@ -386,6 +386,16 @@ class EvidenceBatch(BaseModel):
         default_permissions = ()
 
 
+class EvidenceBatchAnnulment(models.Model):
+    batch = models.OneToOneField(EvidenceBatch, on_delete=models.PROTECT, related_name="annulment")
+    actor = models.ForeignKey(Official, on_delete=models.PROTECT)
+    reason = models.TextField(max_length=500)
+    annulled_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        default_permissions = ()
+
+
 class Evidence(BaseModel):
     """Tabla operativa: archivo de respaldo asociado a una actividad."""
 

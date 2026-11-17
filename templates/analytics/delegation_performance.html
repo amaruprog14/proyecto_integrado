@@ -35,6 +35,9 @@
                     </select>
                 </div>
                 <button class="btn btn-primary" type="submit">Ver resultado</button>
+                {% if delegation %}
+                    <a class="btn attention-entry-cancel" href="{% url 'delegation_performance' %}?export=xlsx&amp;period={{ period.pk }}&amp;delegation={{ delegation.pk }}">Exportar a Excel</a>
+                {% endif %}
             </form>
         {% endif %}
 

@@ -91,6 +91,7 @@ def audit_login_event(request, action, user=None, detail=""):
         record_id=user.pk if user is not None else None,
         new_value=detail,
         origin_ip=client_ip(request),
+        actor=user if action in ("Inicio de sesión", "Cierre de sesión") else None,
     )
 
 

@@ -19,7 +19,7 @@ from django.views.generic import RedirectView
 from agenda.comments import InternalCommentView
 from .case_views import CaseActionView, CaseDetailView, CaseListView
 from .eligible_items import ActivityEligibleItemsView
-from .evidence import EvidenceImageView, EvidenceReviewView, EvidenceUploadView
+from .evidence import EvidenceAnnulmentView, EvidenceImageView, EvidenceReviewView, EvidenceUploadView
 from .letters import LetterCaseView, LetterDetailView, LetterFormView, LetterListView
 from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
@@ -45,6 +45,7 @@ urlpatterns += [
     path('casos/<int:pk>/<slug:action>/', CaseActionView.as_view(), name='attention_case_action'),
     path('<int:pk>/evidencias/nueva/', EvidenceUploadView.as_view(), name='activity_evidence_upload'),
     path('<int:pk>/evidencias/<int:batch_id>/revisar/', EvidenceReviewView.as_view(), name='activity_evidence_review'),
+    path('<int:pk>/evidencias/<int:batch_id>/anular/', EvidenceAnnulmentView.as_view(), name='activity_evidence_annul'),
     path('<int:pk>/evidencias/imagen/<int:image_id>/', EvidenceImageView.as_view(), name='activity_evidence_image'),
     path('<int:pk>/comentarios/', InternalCommentView.as_view(target="activity"), name="activity_internal_comment"),
 ]

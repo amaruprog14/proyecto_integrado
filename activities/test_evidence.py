@@ -12,9 +12,9 @@ from accounts.models import Official
 from agenda.alerts import notify_evidence_reviewers
 from agenda.models import Alert
 from analytics.services import CalculadorDesempenoService
-from configuration.models import Period
+from configuration.models import AuditLog, Period
 
-from .models import Evidence, EvidenceBatch, EvidenceValidation, SocialAttention
+from .models import Evidence, EvidenceBatch, EvidenceBatchAnnulment, EvidenceValidation, SocialAttention
 from .test_case_follow_up import CaseFixture
 
 
@@ -55,6 +55,9 @@ class EvidenceTests(CaseFixture, TestCase):
 
     def upload_images(self, images, stage=EvidenceBatch.Stage.INITIAL):
         return self.client.post(self.upload, dict(images=images, stage=stage, description="Se revisó el poste."))
+
+    def evidence_url(self, action, batch):
+        return reverse(f"activity_evidence_{action}", args=[self.activity.pk, batch.pk])
 
     def test_multiple_stages_share_the_activity_history_and_approve_once(self):
         self.assertRedirects(self.upload_images([self.photo(index) for index in range(5)]),
@@ -114,6 +117,86 @@ class EvidenceTests(CaseFixture, TestCase):
         self.assertFalse(EvidenceValidation.objects.exists())
         self.client.post(review, {"status": "CORRECTION_REQUESTED", "observation": "Falta claridad."})
         self.assertEqual(EvidenceValidation.objects.get().observation, "Falta claridad.")
+
+    def test_annulment_keeps_review_and_photos_and_updates_progress_once(self):
+        self.upload_images([self.photo(1), self.photo(2)])
+        self.upload_images([self.photo(3)], EvidenceBatch.Stage.COMPLETED)
+        first, second = EvidenceBatch.objects.all()
+        reviewer = User.objects.get(username="verificador")
+        reviewer.user_permissions.add(Permission.objects.get(
+            content_type__app_label="activities", codename="change_evidencevalidation",
+        ))
+        self.client.force_login(reviewer)
+        period = Period.objects.get()
+        progress = CalculadorDesempenoService.calculate_current_progress
+        self.assertEqual(progress(self.official, self.activity.item, period), 0)
+        for batch in (first, second):
+            self.client.post(self.evidence_url("review", batch), {"status": "APPROVED", "observation": "Respaldo aprobado."})
+        self.assertEqual(progress(self.official, self.activity.item, period), 1)
+        self.assertContains(self.client.get(self.detail), "Anular aprobación", count=2)
+
+        reason = "La imagen correspondía a otra gestión."
+        annul_first = self.evidence_url("annul", first)
+        self.assertRedirects(self.client.post(annul_first, {"reason": reason}), self.detail + "#activity-evidence-title")
+        self.assertEqual(progress(self.official, self.activity.item, period), 1)
+        self.assertRedirects(self.client.post(self.evidence_url("annul", second), {"reason": reason}),
+                             self.detail + "#activity-evidence-title")
+        self.assertEqual(progress(self.official, self.activity.item, period), 0)
+        self.assertEqual(EvidenceValidation.objects.filter(status="APPROVED", deleted_at__isnull=False).count(), 3)
+        self.assertEqual(Evidence.objects.filter(deleted_at__isnull=True).count(), 3)
+        self.assertEqual(len(list(self.evidence_root.iterdir())), 3)
+        self.assertEqual(EvidenceBatchAnnulment.objects.get(batch=first).actor, reviewer.official)
+        audit = AuditLog.objects.filter(action="Aprobación de evidencia anulada", affected_record_id=first.pk).get()
+        self.assertEqual(audit.previous_value, "Aprobada")
+        self.assertIn(reason, audit.new_value)
+        page = self.client.get(self.detail)
+        self.assertContains(page, "Aprobación anulada", count=2)
+        self.assertContains(page, "Aprobada por verificador", count=2)
+        self.assertContains(page, "Anulada por verificador", count=2)
+        self.assertContains(page, reason, count=2)
+        self.assertNotContains(page, "Anular aprobación")
+        self.assertNotContains(page, "Revisar evidencia")
+
+        duplicate = self.client.post(annul_first, {"reason": "Otro motivo."}, follow=True)
+        self.assertContains(duplicate, "ya fue anulada")
+        self.assertEqual(EvidenceBatchAnnulment.objects.get(batch=first).reason, reason)
+        self.client.post(self.evidence_url("review", first), {"status": "APPROVED"})
+        self.assertEqual(progress(self.official, self.activity.item, period), 0)
+
+        self.client.force_login(self.staff)
+        self.upload_images([self.photo(4)])
+        self.client.force_login(reviewer)
+        replacement = EvidenceBatch.objects.exclude(pk__in=[first.pk, second.pk]).get()
+        self.client.post(self.evidence_url("review", replacement), {"status": "APPROVED"})
+        self.assertEqual(progress(self.official, self.activity.item, period), 1)
+
+    def test_annulment_requires_an_approved_batch_permission_reason_and_open_period(self):
+        self.upload_images([self.photo()])
+        batch = EvidenceBatch.objects.get()
+        reviewer = User.objects.get(username="verificador")
+        foreign = User.objects.get(username="lector-foraneo")
+        change = Permission.objects.get(content_type__app_label="activities", codename="change_evidencevalidation")
+        url = self.evidence_url("annul", batch)
+        reason = {"reason": "El archivo no corresponde."}
+        self.client.force_login(reviewer)
+        self.assertEqual(self.client.post(url, reason).status_code, 403)
+        reviewer.user_permissions.add(change)
+        self.assertContains(self.client.post(url, reason, follow=True), "no tiene una aprobación vigente")
+        self.client.post(self.evidence_url("review", batch), {"status": "APPROVED"})
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertContains(self.client.post(url, {"reason": "   "}, follow=True), "Indica el motivo de la anulación.")
+        foreign.user_permissions.add(change)
+        self.client.force_login(foreign)
+        self.assertEqual(self.client.post(url, reason).status_code, 404)
+        self.staff.user_permissions.add(change)
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.post(url, reason).status_code, 403)
+        self.client.force_login(reviewer)
+        Period.objects.get().close_period()
+        self.assertNotContains(self.client.get(self.detail), "Anular aprobación")
+        self.assertContains(self.client.post(url, reason, follow=True), "período abierto")
+        self.assertFalse(EvidenceBatchAnnulment.objects.exists())
+        self.assertTrue(EvidenceValidation.objects.filter(status="APPROVED", deleted_at__isnull=True).exists())
 
     def test_upload_notifies_only_scoped_reviewers_and_review_resolves_alert(self):
         self.upload_images([self.photo()])

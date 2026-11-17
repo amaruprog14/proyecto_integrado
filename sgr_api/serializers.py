@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
 from analytics.models import MeasurementItem
@@ -12,6 +13,9 @@ from configuration.models import Period
 
 class SGRTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
+        # La validación estándar de renovación no comprueba el cambio de contraseña.
+        # Reutiliza el control de usuario y revocación que también protege las consultas.
+        JWTAuthentication().get_user(self.token_class(attrs["refresh"]))
         try:
             return super().validate(attrs)
         except get_user_model().DoesNotExist as error:

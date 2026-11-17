@@ -31,6 +31,7 @@
                 {% endif %}
             </section>
             {% if show_evidence %}
+                <p class="small text-muted mb-0 mt-3" data-evidence-updates="/ws/activities/" role="status"></p>
                 {% include "activities/evidence.html" %}
             {% endif %}
             {% if show_internal_comments %}{% include "agenda/internal_comments.html" %}{% endif %}
@@ -51,5 +52,5 @@
 {% endblock %}
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    {% if evidence_batches %}<script src="{% static 'js/evidence-viewer.js' %}" defer></script>{% endif %}
+    {% if show_evidence %}<script src="{% static 'js/evidence-viewer.js' %}?v=20261117-live" defer></script>{% endif %}
 {% endblock %}

@@ -282,23 +282,23 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                     action_description=attention.description)
                 attention.activity = activity
                 attention.save()
-                assign_case(case, form.official)
+                assign_case(case, form.official, request=self.request)
                 case.save(update_fields=["responsible", "direct_status", "updated_at"])
-                AuditoriaService.register_change(official=form.official, action="Creación de actividad automática",
-                    instance=activity, new_value=f"Atención: {attention.identifier}; Ítem: {item}",
-                    origin_ip=self.request.META.get("REMOTE_ADDR") or None)
+                actor = getattr(self.request.user, "official", None)
+                AuditoriaService.register_change(official=actor, action="Creación de actividad automática",
+                    instance=activity, new_value=f"Atención: {attention.identifier}\nÍtem: {item}",
+                    origin_ip=self.request.META.get("REMOTE_ADDR") or None, actor=self.request.user)
                 AuditoriaService.register_change(
-                    official=form.official,
+                    official=actor,
                     action="Creación de atención",
                     instance=attention,
                     new_value=(
-                        f"Identificador: {attention.identifier}; "
-                        f"Solicitante ID interno: {recipient.pk}; "
-                        f"Tipo: {attention.attention_type}; "
-                        f"Sub Atención: {attention.subattention_type}; "
-                        f"Delegación: {attention.delegation}; Caso: {case.identifier}"
+                        f"Código: {attention.identifier}\nTipo de atención: {attention.attention_type}\n"
+                        f"Subatención: {attention.subattention_type}\nDelegación: {attention.delegation}\n"
+                        f"Caso: {case.identifier}\nResponsable: {form.official.pk}"
                     ),
                     origin_ip=self.request.META.get("REMOTE_ADDR") or None,
+                    actor=self.request.user,
                 )
         except ValidationError as error:
             for field, errors in getattr(error, "message_dict", {}).items():

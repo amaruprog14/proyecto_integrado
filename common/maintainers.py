@@ -481,7 +481,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 old, new = describe_changes(previous, snapshot(obj))
                 AuditoriaService.register_change(official=getattr(request.user, "official", None),
                     action=f"{self.spec[2]}: {self.operation}", instance=obj, previous_value=old,
-                    new_value=new, origin_ip=request.META.get("REMOTE_ADDR") or None)
+                    new_value=new, origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user)
         except IntegrityError:
             if form:
                 form.add_error(None, "Ya existe un registro con esos datos. Revisa el nombre y la delegación.")

@@ -26,6 +26,7 @@ from accounts.delegation_context import get_active_delegation
 from accounts.models import Delegation, Official, Role
 from activities.models import Activity, EvidenceBatch, EvidenceValidation
 from agenda.models import Commitment
+from analytics.exports import delegation_export, personal_export, position_export
 from analytics.models import MeasurementItem
 from analytics.queries import (
     TEAM_PERFORMANCE, VIEW_PERFORMANCE, available_periods, performance_delegations,
@@ -59,16 +60,17 @@ def evidence_counts(official, period):
     batches = EvidenceBatch.objects.filter(
         deleted_at__isnull=True, activity__official=official, activity__deleted_at__isnull=True,
         activity__date__range=(period.start_date, period.end_date), images__deleted_at__isnull=True,
-    ).distinct()
+    )
     reviews = EvidenceValidation.objects.filter(
         evidence__batch=OuterRef("pk"), evidence__deleted_at__isnull=True, deleted_at__isnull=True,
     )
-    return {
-        "pending": batches.filter(~Exists(reviews)).count(),
-        "rejected": batches.filter(Exists(reviews.filter(status=EvidenceValidation.Status.REJECTED))).count(),
-        "correction": batches.filter(Exists(reviews.filter(
-            status=EvidenceValidation.Status.CORRECTION_REQUESTED))).count(),
-    }
+    return batches.aggregate(
+        pending=Count("pk", distinct=True, filter=~Exists(reviews)),
+        rejected=Count("pk", distinct=True, filter=Exists(reviews.filter(status=EvidenceValidation.Status.REJECTED))),
+        correction=Count("pk", distinct=True, filter=Exists(
+            reviews.filter(status=EvidenceValidation.Status.CORRECTION_REQUESTED),
+        )),
+    )
 
 
 def commitment_counts(official, period, today):
@@ -172,6 +174,8 @@ class MyPerformanceView(ProtectedViewMixin, View):
         }
         if period is not None and subject is not None:
             result = CalculadorDesempenoService.result_for(subject, period, today)
+            if request.GET.get("export") == "xlsx":
+                return personal_export(period, today, result)
             show_links = request.user.has_perm(VIEW_ACTIVITY)
             # Mismo corte que el avance: hasta hoy en un período abierto, hasta el término si está cerrado.
             until = period.end_date if result.frozen else min(max(today, period.start_date), period.end_date)
@@ -191,6 +195,8 @@ class MyPerformanceView(ProtectedViewMixin, View):
                 recent=recent_activity([subject.pk], period, today, activity_scope)[subject.pk],
                 activity_cutoff=min(today, period.end_date),
             )
+        elif request.GET.get("export") == "xlsx":
+            raise Http404
         return render(request, "analytics/my_performance.html", context)
 
 
@@ -230,7 +236,7 @@ class DelegationPerformanceView(TeamPerformanceView):
             "can_view_delegation": True, "performance_tab": "delegation",
         }
         if period is None or delegation is None:
-            if modal_only:
+            if modal_only or request.GET.get("export") == "xlsx":
                 raise Http404
             return render(request, "analytics/delegation_performance.html", context)
 
@@ -268,9 +274,11 @@ class DelegationPerformanceView(TeamPerformanceView):
             )
         context.update(
             rows=rows, commitments=commitments, closed=closed,
-            territorial_activity_count=records.count() if records is not None else None,
             **summarize_team(results),
         )
+        if request.GET.get("export") == "xlsx":
+            return delegation_export(period, today, delegation, context, records)
+        context["territorial_activity_count"] = records.count() if records is not None else None
         return render(request, "analytics/delegation_performance.html", context)
 
     def add_drilldown(self, context, selected, period, today):
@@ -361,6 +369,8 @@ class PositionPerformanceView(TeamPerformanceView):
             "can_view_delegation": True, "performance_tab": "position",
         }
         if period is None:
+            if request.GET.get("export") == "xlsx":
+                raise Http404
             return render(request, "analytics/position_performance.html", context)
         selected_delegations = delegations.filter(pk=delegation.pk) if delegation else delegations
         results = team_results(period, today, selected_delegations.order_by())
@@ -390,6 +400,8 @@ class PositionPerformanceView(TeamPerformanceView):
             groups=groups, closed=period.status == Period.Status.CLOSED,
             activity_cutoff=min(today, period.end_date), started=period.start_date <= today,
         )
+        if request.GET.get("export") == "xlsx":
+            return position_export(period, today, delegation, context)
         return render(request, "analytics/position_performance.html", context)
 
     def add_position_detail(self, context, selected, members, period, today):

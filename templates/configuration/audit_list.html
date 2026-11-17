@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Bitácora general · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="audit" %}{% endblock %}
+{% block content %}
+<div class="maintainer-layout">
+    <section class="maintainer-content" aria-labelledby="audit-title">
+        <header class="maintainer-heading">
+            <div>
+                <p class="maintainer-breadcrumb">Gestión municipal / Configuración</p>
+                <h1 id="audit-title">Bitácora general</h1>
+            </div>
+        </header>
+        <form method="get" class="maintainer-tools performance-filters mb-3" aria-label="Filtrar eventos de auditoría">
+            {% for field in form %}
+                <div>
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<p class="invalid-feedback d-block mb-0">{{ error }}</p>{% endfor %}
+                </div>
+            {% endfor %}
+            <button class="btn btn-primary" type="submit">Filtrar</button>
+            <a class="btn attention-entry-cancel" href="{% url 'audit_list' %}">Limpiar</a>
+        </form>
+        {% if page_obj.object_list %}
+            <div class="table-responsive maintainer-table-wrap" tabindex="0" role="region" aria-label="Eventos de auditoría">
+                <table class="table maintainer-table">
+                    <thead><tr>
+                        <th scope="col">Fecha y hora</th><th scope="col">Usuario</th><th scope="col">Acción</th>
+                        <th scope="col">Entidad</th><th scope="col">ID afectado</th><th scope="col">Detalle</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for event in page_obj %}
+                            <tr>
+                                <td>{{ event.date|date:"d-m-Y H:i:s" }}</td>
+                                <td>{% include "configuration/audit_actor.html" %}</td>
+                                <th scope="row">{{ event.action }}</th>
+                                <td>{{ event.affected_table }}</td>
+                                <td>{{ event.affected_record_id|default_if_none:"—" }}</td>
+                                <td><a class="auth-text-link" href="{% url 'audit_detail' event.pk %}{% querystring %}" aria-label="Ver evento {{ event.pk }}">Ver evento</a></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <nav class="d-flex flex-wrap gap-3 align-items-center mt-3" aria-label="Páginas de la bitácora">
+                {% if page_obj.has_previous %}<a class="auth-text-link" href="{% querystring page=page_obj.previous_page_number %}">Anterior</a>{% endif %}
+                <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} · {{ page_obj.paginator.count }} eventos</span>
+                {% if page_obj.has_next %}<a class="auth-text-link" href="{% querystring page=page_obj.next_page_number %}">Siguiente</a>{% endif %}
+            </nav>
+        {% elif not form.errors %}
+            <p class="alert alert-info">No se encontraron eventos con estos filtros.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

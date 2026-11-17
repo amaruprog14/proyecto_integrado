@@ -23,6 +23,11 @@ python manage.py runserver --noreload
 
 El acceso dura 5 minutos y la renovación 1 día. Los permisos actuales se consultan al recibir cada solicitud. La API responde `401` por falta de autenticación, `403` por permiso insuficiente y `404` si la delegación queda fuera del alcance o el período no está disponible. Un parámetro de período inválido devuelve `400`.
 
+Al cambiar o recuperar la contraseña, los tokens de acceso y renovación anteriores responden
+`401`. El cliente debe obtener otro par con la nueva contraseña. Esta comprobación también
+rechaza los tokens emitidos antes de habilitar la revocación por cambio de contraseña, por lo
+que al actualizar el servicio los clientes de la API deben volver a autenticarse.
+
 ## Actualizar en EC2
 
 Después de incorporar los cambios, ejecuta estos comandos desde la carpeta del proyecto con el mismo entorno virtual que usa el servicio.

@@ -716,6 +716,7 @@ def _registrar_auditoria(request, action, instance, previous="", new=""):
         previous_value=previous,
         new_value=new,
         origin_ip=request.META.get("REMOTE_ADDR") or None,
+        actor=request.user,
     )
 
 

@@ -79,6 +79,7 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'SIGNING_KEY': os.getenv('SGR_API_JWT_SIGNING_KEY') or SECRET_KEY,
     'USER_AUTHENTICATION_RULE': 'sgr_api.permissions.api_account_enabled',
+    'CHECK_REVOKE_TOKEN': True,
 }
 
 SPECTACULAR_SETTINGS = {
@@ -105,6 +106,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'config.urls'
+CSRF_FAILURE_VIEW = "configuration.audit_views.csrf_failure"
 
 TEMPLATES = [
     {

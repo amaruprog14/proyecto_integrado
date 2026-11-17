@@ -32,21 +32,31 @@ def scoped_cases(user, permission=VIEW_CASE):
     return cases.none()
 
 
-def change_request_status(case, status, actor, response=None):
+def change_request_status(case, status, actor, response=None, *, request):
     origin = case.client_request
+    previous = origin.get_status_display()
+    response_changed = response is not None and origin.response != response
     if response is not None:
         origin.response = response
     origin.status = status
     origin.save(update_fields=["status", "response", "updated_at"])
     ClientRequestEvent.objects.create(request=origin, status=status, response=response or "", actor=actor)
+    current = f"Estado: {origin.get_status_display()}"
+    if response_changed:
+        current += "\nRespuesta actualizada: Sí"
+    AuditoriaService.register_change(
+        getattr(request.user, "official", None), "Estado o respuesta de solicitud ciudadana actualizados", origin,
+        previous_value=f"Estado: {previous}", new_value=current,
+        origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user,
+    )
 
 
-def assign_case(case, actor):
+def assign_case(case, actor, *, request):
     if case.responsible_id is None:
         case.responsible = actor
     if case.client_request_id:
         if case.status == ClientRequest.Status.RECEIVED:
-            change_request_status(case, ClientRequest.Status.REVIEW, actor)
+            change_request_status(case, ClientRequest.Status.REVIEW, actor, request=request)
     else:
         case.direct_status = AttentionCase.DirectStatus.REVIEW
 

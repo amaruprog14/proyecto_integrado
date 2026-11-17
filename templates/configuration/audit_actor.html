@@ -1,0 +1,3 @@
+{% if event.actor_username %}{{ event.actor_username }}
+{% elif event.official and event.action != "Solicitud de recuperación de contraseña" %}{{ event.official.full_name }}
+{% else %}Actor sin identificar{% endif %}

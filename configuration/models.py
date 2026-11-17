@@ -237,7 +237,8 @@ class AuditLog(BaseModel):
         related_name="audit_logs",
         verbose_name="Funcionario",
     )
-    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha")
+    actor_username = models.CharField("Cuenta que realizó la acción", max_length=150, blank=True, editable=False)
+    date = models.DateTimeField(default=timezone.now, verbose_name="Fecha", db_index=True)
     origin_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP de origen")
     action = models.CharField(max_length=100, verbose_name="Acción")
     affected_table = models.CharField(max_length=100, verbose_name="Tabla afectada")
@@ -258,10 +259,12 @@ class AuditLog(BaseModel):
 
     @classmethod
     def register_event(
-        cls, official, action, entity, previous_value="", new_value="", record_id=None, origin_ip=None
+        cls, official, action, entity, previous_value="", new_value="", record_id=None, origin_ip=None,
+        *, actor_username="",
     ):
         return cls.objects.create(
             official=official,
+            actor_username=actor_username,
             action=action,
             affected_table=entity,
             affected_record_id=record_id,

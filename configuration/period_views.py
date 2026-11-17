@@ -64,6 +64,7 @@ class PeriodReopenView(ProtectedViewMixin, ModalFormOnlyMixin, View):
                 new_value=(f"Abierto. Motivo: {form.cleaned_data['reason']}\n"
                            f"Cuenta {request.user.pk} ({request.user.get_username()})"),
                 origin_ip=request.META.get("REMOTE_ADDR") or None,
+                actor=request.user,
             )
         add_form_success(request, "Período reabierto correctamente.")
         return redirect("period_detail", pk=period.pk)

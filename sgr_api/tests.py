@@ -5,10 +5,14 @@ from django.contrib.auth.models import Permission, User
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from accounts.models import Delegation, Official, Role
+from accounts.views import recovery_token_generator
 from activities.models import EvidenceBatch, EvidenceValidation
 from analytics.queries import TEAM_PERFORMANCE, VIEW_PERFORMANCE
 from analytics.services import q2
@@ -97,6 +101,63 @@ class PerformanceAPITests(CalculatorFixture, TestCase):
                                                format="json").status_code, 401)
             self.assertEqual(self.api.post(TOKEN, {"username": self.worker.user.username, "password": PASSWORD},
                                            format="json").status_code, 401)
+
+    def assert_old_tokens_rejected_and_new_password_works(self, tokens, password):
+        self.assertEqual(self.api.get(PERIODS).status_code, 401)
+        self.api.credentials()
+        self.assertEqual(self.api.post(REFRESH, {"refresh": tokens["refresh"]}, format="json").status_code, 401)
+        fresh = self.api.post(TOKEN, {"username": self.worker.user.username, "password": password}, format="json")
+        self.assertEqual(fresh.status_code, 200)
+        self.api.credentials(HTTP_AUTHORIZATION=f"Bearer {fresh.json()['access']}")
+        self.assertEqual(self.api.get(PERIODS).status_code, 200)
+        self.api.credentials()
+        self.assertEqual(self.api.post(REFRESH, {"refresh": fresh.json()["refresh"]}, format="json").status_code, 200)
+
+    def test_web_password_change_revokes_both_tokens(self):
+        tokens = self.authorize(self.worker)
+        self.client.force_login(self.worker.user)
+        password = "Renovada-API-2026"
+        response = self.client.post(reverse("password_change"), {
+            "old_password": PASSWORD, "new_password1": password, "new_password2": password,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assert_old_tokens_rejected_and_new_password_works(tokens, password)
+
+    def test_password_recovery_revokes_both_tokens(self):
+        tokens = self.authorize(self.worker)
+        link = reverse("recovery_confirm", kwargs={
+            "uidb64": urlsafe_base64_encode(force_bytes(self.worker.user.pk)),
+            "token": recovery_token_generator.make_token(self.worker.user),
+        })
+        response = self.client.get(link, follow=True)
+        self.assertTrue(response.context["validlink"])
+        password = "Recuperada-API-2026"
+        response = self.client.post(response.request["PATH_INFO"], {
+            "new_password1": password, "new_password2": password,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assert_old_tokens_rejected_and_new_password_works(tokens, password)
+
+    def test_failed_password_change_keeps_existing_tokens_valid(self):
+        tokens = self.authorize(self.worker)
+        self.client.force_login(self.worker.user)
+        response = self.client.post(reverse("password_change"), {
+            "old_password": PASSWORD, "new_password1": "Renovada-API-2026", "new_password2": "Diferente-API-2026",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.api.get(PERIODS).status_code, 200)
+        self.api.credentials()
+        self.assertEqual(self.api.post(REFRESH, {"refresh": tokens["refresh"]}, format="json").status_code, 200)
+
+    def test_legacy_tokens_without_password_claim_are_rejected(self):
+        tokens = self.authorize(self.worker)
+        access, refresh = AccessToken(tokens["access"]), RefreshToken(tokens["refresh"])
+        del access[api_settings.REVOKE_TOKEN_CLAIM]
+        del refresh[api_settings.REVOKE_TOKEN_CLAIM]
+        self.api.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertEqual(self.api.get(PERIODS).status_code, 401)
+        self.api.credentials()
+        self.assertEqual(self.api.post(REFRESH, {"refresh": str(refresh)}, format="json").status_code, 401)
 
     def test_role_removal_and_suspension_take_effect_after_token_issuance(self):
         tokens = self.authorize(self.worker)
