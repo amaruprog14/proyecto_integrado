@@ -59,10 +59,11 @@
                     {% endif %}
                     {% if result.version %}
                         <dt class="col-sm-4">Meta esperada al día</dt><dd class="col-sm-8">{{ result.expected_percentage|floatformat:2 }} %</dd>
-                        {% if result.score_adjustments or result.base_total > result.total %}
+                        {% if result.score_adjustments or result.cap_applied or result.floor_applied %}
                             <dt class="col-sm-4">Total ponderado base</dt><dd class="col-sm-8" data-performance-base>{{ result.base_total|floatformat:2 }} puntos</dd>
                             {% if result.score_adjustments %}<dt class="col-sm-4">Ajustes computables</dt><dd class="col-sm-8">{% if result.score_adjustment_total > 0 %}+{% endif %}{{ result.score_adjustment_total|floatformat:2 }} puntos</dd>{% endif %}
-                            {% if result.max_final_score is not None %}<dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8" data-performance-cap>{{ result.max_final_score|floatformat:"-2" }} puntos</dd>{% endif %}
+                            {% if result.cap_applied %}<dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8" data-performance-cap>{{ result.max_final_score|floatformat:"-2" }} puntos (aplicado)</dd>{% endif %}
+                            {% if result.floor_applied %}<dt class="col-sm-4">Piso del resultado final</dt><dd class="col-sm-8" data-performance-floor>{{ result.min_final_score|floatformat:"-2" }} puntos (aplicado: los reclamos no dejan el resultado bajo 0)</dd>{% endif %}
                         {% endif %}
                         <dt class="col-sm-4">Resultado final</dt>
                         <dd class="col-sm-8"><strong data-performance-total>{{ result.total|floatformat:2 }} puntos</strong> {% include "analytics/traffic_light.html" with light=total_light %}</dd>
@@ -76,7 +77,7 @@
                                 <li>{{ entry.kind }} · {{ entry.date }} · {% if entry.excluded %}Fuera del límite de tres felicitaciones{% else %}{% if entry.positive %}+{% endif %}{{ entry.applied_points|floatformat:2 }} puntos{% endif %}</li>
                             {% endfor %}
                         </ul>
-                        <p class="performance-note mt-2 mb-0">Tope del resultado final: {{ result.max_final_score|floatformat:"-2" }} puntos.</p>
+                        <p class="performance-note mt-2 mb-0">Tope del resultado final: {{ result.max_final_score|floatformat:"-2" }} puntos{% if result.min_final_score is not None %}; piso: {{ result.min_final_score|floatformat:"-2" }} puntos{% endif %}.</p>
                     </details>
                 {% endif %}
                 {% if result.notice %}<p class="alert alert-warning mt-3 mb-0" role="status">{{ result.notice }}</p>{% endif %}

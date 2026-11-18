@@ -27,6 +27,11 @@
             {% endif %}
         </dl>
     </div>
+    {% if own_pending %}
+        <p class="alert alert-info" role="status" data-own-record>Ingresaste este registro: su validación corresponde a otra cuenta autorizada.</p>
+    {% elif subject_pending %}
+        <p class="alert alert-info" role="status" data-subject-record>Este registro es sobre ti: su validación corresponde a otra cuenta autorizada.</p>
+    {% endif %}
     {% if form %}
         <form class="attention-entry-card" method="post" aria-labelledby="score-review-title" data-loading>
             {% csrf_token %}

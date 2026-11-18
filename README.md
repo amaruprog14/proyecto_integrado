@@ -546,6 +546,15 @@ La exportación usa el permiso de consulta.
 | Ingreso de atención | `activities.view_socialattention` (consulta) | `activities.add_socialattention` | — |
 | Otros mantenedores | `view_position`, `view_area`, `auth.view_group`, `view_period` | Según permisos del modelo | Según permisos del modelo |
 
+En la demostración, Administrador y Coordinador del sistema (alcance global) y Delegado (su
+delegación) reciben `view_officialabsence` y `manage_absence`. Funcionario, Usuario consulta y
+Verificador no los reciben: las ausencias son datos personales y el rol Funcionario tiene alcance de
+delegación, por lo que vería las de sus colegas. Una base ya cargada los recibe al volver a ejecutar
+`seed_demo` (lista `UPGRADE_PERMISSIONS`) o con la migración `accounts/0015_absence_seed_roles`, que
+solo toca los roles creados por la semilla. Revertir esa migración quita los dos permisos al Coordinador y al Delegado
+de la semilla aunque se les hubieran asignado antes a mano (no conserva ese estado previo); al
+Administrador no se los quita.
+
 Los permisos provienen del usuario, de sus grupos y de los **roles SGR vigentes** (activos y no
 archivados) de su funcionario (`accounts.backends.SGRAuthBackend`). Salvo el superusuario, se
 exige además un funcionario habilitado. Cada acceso denegado responde 403 y queda en `AuditLog`
@@ -797,10 +806,21 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   CAL-F: 8 de 10 realizados con meta 80 % = 100 %). Sin compromisos no hay denominador: el ítem
   muestra un aviso y no aporta. Al calcular a una fecha pasada solo cuentan los compromisos creados
   hasta ese día, cada uno con el estado que tenía según su historial. El semáforo compara ese
-  cumplimiento con la meta esperada del día.
+  cumplimiento con la meta esperada del día. **Supuesto de cancelados:** igual que en «Pendientes
+  en tubo», los compromisos cancelados con justificación al corte salen del denominador y del
+  numerador (`analytics.segments.measured_commitments`, criterio común de los dos ítems del tubo).
+  Uno cancelado después del corte cuenta con el estado que tenía al corte; uno cancelado sin
+  justificación (dato legado) sigue contando. Si todos están cancelados, no hay denominador y el
+  ítem no aporta.
 - **Reclamos y felicitaciones.** El personal autorizado puede registrar el motivo y respaldo escrito
   desde **Desempeño → Reclamos y felicitaciones**. Administrador y Coordinador del sistema
-  pueden validar los registros del período abierto. Al aprobar se conserva el puntaje de la versión
+  pueden validar los registros del período abierto. **Segregación de funciones:** la cuenta que
+  registró un reclamo o felicitación no puede aprobarlo ni rechazarlo, aunque tenga ambos permisos
+  (se compara la cuenta de usuario, `recorded_by`); no ve el formulario de revisión y un intento por
+  POST se rechaza sin cambiar el estado y queda en la bitácora («Intento de validar un registro
+  propio»). Tampoco lo valida el funcionario afectado, aunque lo haya registrado otra persona: se
+  rechaza igual y queda como «Intento de validar un registro sobre sí mismo». Debe validarlo otra
+  cuenta autorizada. Al aprobar se conserva el puntaje de la versión
   publicada vigente para el cargo en la fecha del hecho. En un borrador del plan se pueden configurar
   los valores por cargo y período (+10 y −20 por defecto, o un descuento de 30 puntos si corresponde).
   Computan las tres primeras felicitaciones aprobadas por funcionario y período. El resultado suma
@@ -809,6 +829,10 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   copiado a cada revisión). Es una regla del proyecto, distinta del tope de cumplimiento por ítem de
   la guía B3 (`max_computable`, 150 % por defecto); el panel muestra la base y el tope cuando recorta. Con tramos de cargo rige el tope de la última versión aplicada. El tope
   y el desglose quedan congelados al cerrar; los cierres anteriores a este campo usaron 150.
+  **Piso del resultado final:** el resultado final no baja de 0 puntos (piso fijo): con base 0 y un
+  reclamo de −20, o base 10 y un reclamo de −20, el resultado es 0. El panel, la API
+  (`piso_resultado_final`) y la exportación muestran la base, los ajustes y el piso aplicado para
+  que el desglose cuadre. El piso queda congelado; los cierres anteriores lo conservan como estaban.
 - **Pendientes en tubo (A2, documentación prevalece).** La matriz SGR del trimestre 2026 (archivo
   de la institución, no incluido en el repositorio), hoja `SALON`, celdas C23/G23, define el
   indicador y su fórmula: cumplimiento 100 % si pendientes ≤ 10 %, 50 % si
@@ -844,8 +868,8 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   computada (código, fecha, ítem y, con cambio de cargo, el tramo y el cargo); en «Soluciones de
   ingresos al tubo» y «Pendientes en tubo», cada compromiso del denominador con su estado al corte y
   si cuenta en el numerador (Realizado, o no Realizado en pendientes). Criterio: el mismo que la
-  cifra, con las mismas funciones (`computable_activities`, `commitments_at_cutoff` y
-  `pending_commitments`) y el mismo corte al día de término; no hay un recálculo aparte. Por eso la
+  cifra, con las mismas funciones (`computable_activities` y
+  `measured_commitments`) y el mismo corte al día de término; no hay un recálculo aparte. Por eso la
   cantidad del respaldo coincide con el avance congelado y numerador/denominador con el porcentaje
   (con tramos, por tramo: el porcentaje integrado pondera cada tramo por sus días, y un tramo sin
   días computables no guarda compromisos). Si una actividad se edita o archiva después, se muestra el valor
@@ -886,6 +910,26 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
 - **Datos en vivo en un período cerrado.** El resultado se lee de lo congelado, pero los contadores de
   evidencias y compromisos y la desviación se calculan al consultar.
 - **Datos.** Solo datos ficticios: no se cargan nombres ni teléfonos del Excel.
+
+## Decisiones adicionales del proyecto, pendientes de validación
+
+Reglas que la guía (S1, `Guia_Proyecto_Software_SGR_Alumnos`) y el plan de pruebas (PP) no definen
+por completo. Están implementadas y probadas, pero deben validarse formalmente antes de declarar
+conformidad (PP B1: las reglas cuantitativas se aprueban; PP B3 y S1 §13.1: los ajustes no se fijan
+con valores definitivos sin una regla parametrizada y aprobada). «Respaldada» = la fuente la
+contiene; «propia» = decisión del proyecto. La matriz SGR es un archivo de la institución que no
+está en el repositorio: las celdas citadas no se pudieron verificar aquí.
+
+| Regla | Respaldo | Motivo | Implementación |
+| --- | --- | --- | --- |
+| Descuento de días computables por ausencias (licencia, vacaciones, emergencia, compensatorio) | Parcial: la guía nombra los días computables (RF-005, RN-007) sin decir qué se descuenta; la matriz descuenta esas ausencias (celda no identificada en este repositorio). El no prorrateo de metas es propio | Medir solo los días en que la persona pudo trabajar | `analytics.services.computable_days`, `accounts.measurement_models.OfficialAbsence`; supuesto A1 |
+| Estado «Cancelado con justificación» y su exclusión del tubo | Propia: RF-018 y AGE-03 solo definen Ingresado, Pendiente, En proceso y Realizado; CAL-C usa Realizado, Pendiente y En proceso | Cerrar compromisos que ya no corresponden sin castigar ni inflar el porcentaje; sale del denominador y del numerador de «Soluciones de ingresos al tubo» y «Pendientes en tubo». Un cancelado sin justificación (dato legado) sigue contando como no realizado | `agenda.models.Commitment.Status.CANCELLED`, `analytics.segments.measured_commitments` |
+| Piso 0 del resultado final | Propia: ni la guía ni la matriz fijan un mínimo | Evitar resultados negativos por reclamos; fijo en el código (no parametrizable aún, a diferencia del tope) | `analytics.services.MIN_FINAL_SCORE`, `PerformanceResult.total`; API `piso_resultado_final` |
+| Máximo de 3 felicitaciones por período | Propia: no aparece en la guía; no se verificó en la matriz. S1 §13.1 pide no fijar ajustes sin regla aprobada, y este 3 está fijo en el código | Limitar el efecto de las felicitaciones; las siguientes se muestran como «Fuera del límite de tres felicitaciones» (API: `excluido_por_limite`) | `analytics.services.MAX_CONGRATULATIONS` |
+| Tope del resultado final configurable (`max_final_score`), distinto de `max_computable` | Parcial: B3 pide un tope de 150 % configurable, que corresponde al cumplimiento por ítem (`max_computable`, CAL-B); el tope del total es propio | Acotar el total ya sumados reclamos y felicitaciones | `MeasurementVersion.max_final_score` (150 por defecto, 1–1000) |
+| Valores +10 por felicitación y −20 por reclamo | Respaldada en la matriz según la hoja RECLAMOS (+10 en B5 y −20 en J3; celdas no verificables en este repositorio). RN-011 exige valores parametrizables y menciona −20 % y −30 % como pendientes de definición oficial; PP B3 dice que no se fijen automáticamente esos −20 % o −30 %, así que el −20 por defecto requiere aprobación | Valores por defecto de cada versión del plan, editables. **Duda abierta:** el sistema los aplica como **puntos** sobre el total; la guía habla de **%** | `MeasurementVersion.congratulation_points` y `complaint_points` |
+| Segregación al validar ajustes | Propia: RF-025 pide motivo, valor, responsable y efecto, y TAB-04 solo exige permiso y motivo; ninguno dice quién valida | Quien registra y el funcionario afectado no pueden aprobar ni rechazar el registro; el intento se audita | `analytics.score_adjustments.ScoreAdjustmentDetail.review_conflict` |
+| Permisos de Ausencias por rol | Propia (guía B5: la tabla de permisos debe aprobarse) | Administrador (por sus permisos de cuentas), Coordinador y Delegado gestionan; Funcionario, Usuario consulta y Verificador no las ven, porque son datos personales y el rol Funcionario tiene alcance de delegación | `seed_demo` (`MANAGE_ABSENCES`), migración `accounts/0015_absence_seed_roles` |
 
 ## Arquitectura del proyecto
 

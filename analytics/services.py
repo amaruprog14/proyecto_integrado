@@ -24,6 +24,8 @@ HUNDRED = Decimal("100")
 CENT = Decimal("0.01")
 # Tope por defecto del resultado final; cada versión del plan puede configurar el suyo.
 MAX_FINAL_SCORE = Decimal("150")
+# Piso fijo del resultado final: los reclamos no lo dejan bajo 0 puntos.
+MIN_FINAL_SCORE = Decimal("0")
 MAX_CONGRATULATIONS = 3
 TrafficLight = IndicatorSnapshot.TrafficLight
 
@@ -185,7 +187,30 @@ class PerformanceResult:
     def total(self):
         if self.frozen:
             return Decimal(self.frozen_score_summary["total"]) if self.frozen_score_summary else self.base_total
-        return min(self.base_total + self.score_adjustment_total, self.max_final_score or MAX_FINAL_SCORE)
+        return max(min(self.raw_total, self.max_final_score or MAX_FINAL_SCORE), MIN_FINAL_SCORE)
+
+    @property
+    def raw_total(self):
+        """Total base más ajustes computables, antes de aplicar tope y piso."""
+        return self.base_total + self.score_adjustment_total
+
+    @property
+    def min_final_score(self):
+        """Piso del resultado final. Congelado: el guardado al cierre; los resúmenes anteriores al
+        piso no lo aplicaban (None)."""
+        if self.frozen:
+            if not self.frozen_score_summary or "min_final" not in self.frozen_score_summary:
+                return None
+            return Decimal(self.frozen_score_summary["min_final"])
+        return MIN_FINAL_SCORE
+
+    @property
+    def cap_applied(self):
+        return self.max_final_score is not None and self.raw_total > self.total
+
+    @property
+    def floor_applied(self):
+        return self.min_final_score is not None and self.raw_total < self.total
 
     @property
     def max_final_score(self):
@@ -247,17 +272,19 @@ class CalculadorDesempenoService:
     @staticmethod
     def _percentage_progress_by_official(official_ids, period, until=None):
         """Ítems porcentuales («Soluciones de ingresos al tubo»): % de compromisos del funcionario
-        con fecha comprometida en el período que están Realizados (guía, CAL-C y CAL-F).
+        con fecha comprometida en el período que están Realizados (guía, CAL-C y CAL-F). Los
+        cancelados con justificación al corte no entran al denominador ni al numerador (mismo
+        criterio que «Pendientes en tubo», `measured_commitments`).
 
         Con `until`, solo cuentan los compromisos creados hasta ese día y cada uno con el estado
         que tenía al cierre de ese día según su historial. Sin compromisos no hay denominador:
         devuelve None y el ítem no aporta."""
         from agenda.models import Commitment
-        from analytics.segments import commitments_at_cutoff
+        from analytics.segments import measured_commitments
 
         # Se acota al término dentro de commitments_at_cutoff: un período terminado no cambia
         # según el día de la consulta. Sin historial, el estado al corte es el actual.
-        rows = commitments_at_cutoff(official_ids, period, until).order_by().values("responsible_id").annotate(
+        rows = measured_commitments(official_ids, period, until).order_by().values("responsible_id").annotate(
             total=Count("pk"), done=Count("pk", filter=Q(measured_status=Commitment.Status.DONE)),
         )
         return {row["responsible_id"]: Decimal(row["done"]) / row["total"] * HUNDRED for row in rows}
@@ -458,7 +485,7 @@ class CalculadorDesempenoService:
             segments=result.segments, result_notice=result.notice,
             score_summary={
                 "base": str(result.base_total), "total": str(result.total),
-                "max_final": str(result.max_final_score),
+                "max_final": str(result.max_final_score), "min_final": str(MIN_FINAL_SCORE),
                 "adjustments": result.score_adjustments,
             },
         )

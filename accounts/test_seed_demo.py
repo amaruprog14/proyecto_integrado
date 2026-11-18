@@ -384,6 +384,53 @@ class SeedDemoTests(TestCase):
         self.assertEqual(foreign.address, "Dirección externa 123")
         self.assertEqual(Delegation.objects.count(), 3)
 
+    def test_absence_permissions_follow_the_demo_roles(self):
+        roles = {role.role_name: role for role in Role.objects.filter(description__startswith="[SGR seed v1]")}
+        for name in ("Administrador", "Coordinador del sistema", "Delegado"):
+            codes = set(roles[name].permissions.values_list("codename", flat=True))
+            self.assertLessEqual({"view_officialabsence", "manage_absence"}, codes, name)
+        for name in ("Funcionario", "Usuario consulta", "Verificador"):
+            codes = set(roles[name].permissions.values_list("codename", flat=True))
+            self.assertFalse({"view_officialabsence", "manage_absence"} & codes, name)
+
+        delegation = Delegation.objects.order_by("pk").first()
+        own = Official.objects.filter(delegation=delegation, user__isnull=True).order_by("pk").first()
+        other = Official.objects.exclude(delegation=delegation).filter(user__isnull=True).order_by("pk").first()
+        delegate = Official.objects.filter(delegation=delegation, user__isnull=True).exclude(pk=own.pk).order_by("pk").first()
+        delegate.user = User.objects.create_user("delegado-ausencias")
+        delegate.save(update_fields=["user"])
+        delegate.roles.set([roles["Delegado"]])
+        self.client.force_login(delegate.user)
+        self.assertContains(self.client.get(reverse("absence_list")), "Registrar ausencia")
+        form = self.client.get(reverse("absence_create"), HTTP_X_MODAL_REQUEST="true").context["form"]
+        choices = set(form.fields["official"].queryset.values_list("pk", flat=True))
+        self.assertIn(own.pk, choices)
+        self.assertNotIn(other.pk, choices)
+        response = self.client.post(reverse("absence_create"), {
+            "official": own.pk, "kind": "VACACIONES", "start_date": "2026-11-02", "end_date": "2026-11-03",
+            "reason": "Vacaciones de demostración"}, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+
+        self.client.force_login(User.objects.get(username="editorA"))
+        self.assertEqual(self.client.get(reverse("absence_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("absence_create")).status_code, 403)
+        reader = User.objects.get(username="readerA")
+        self.client.force_login(reader)
+        self.assertEqual(self.client.get(reverse("absence_list")).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("home")), reverse("absence_list"))
+
+    def test_reseed_adds_absence_permissions_without_duplicates(self):
+        for name in ("Coordinador del sistema", "Delegado"):
+            Role.objects.get(role_name=name).permissions.remove(
+                *Permission.objects.filter(codename__in=["view_officialabsence", "manage_absence"]))
+        before = counts()
+        self.assertIn("Semilla SGR completada", seed())
+        self.assertIn("Semilla SGR completada", seed())
+        self.assertEqual(counts(), before)
+        for name in ("Coordinador del sistema", "Delegado"):
+            role = Role.objects.get(role_name=name)
+            self.assertEqual(role.permissions.filter(codename__in=["view_officialabsence", "manage_absence"]).count(), 2)
+
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
                    SEED_DEMO_PASSWORD=PASSWORD)

@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -94,9 +94,11 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
     def test_absence_modal_audits_and_requires_permission(self):
         payload = {"official": self.worker.pk, "kind": "VACACIONES", "start_date": "2026-07-10",
                    "end_date": "2026-07-12", "reason": "Vacaciones registradas"}
-        response = self.client.post(reverse("absence_create"), payload, HTTP_X_MODAL_REQUEST="true")
+        response = self.client.post(reverse("absence_create"), payload, HTTP_X_MODAL_REQUEST="true",
+                                    REMOTE_ADDR="192.0.2.30")
         self.assertEqual(response.status_code, 204)
-        self.assertTrue(AuditLog.objects.filter(action="Ausencia guardada").exists())
+        event = AuditLog.objects.get(action="Ausencia guardada")
+        self.assertEqual((event.origin_ip, event.actor_username), ("192.0.2.30", self.admin.username))
         outsider = self.official("Sin permisos")
         outsider.user = User.objects.create_user("sin-permiso-ausencias")
         outsider.save(update_fields=["user"])
@@ -258,9 +260,11 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
         absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
         url = reverse("absence_archive", args=[absence.pk])
         revision = self.client.get(url, HTTP_X_MODAL_REQUEST="true").context["edit_revision"]
-        self.assertEqual(self.client.post(url, {"edit_revision": revision}, HTTP_X_MODAL_REQUEST="true").status_code, 204)
+        self.assertEqual(self.client.post(url, {"edit_revision": revision}, HTTP_X_MODAL_REQUEST="true",
+                                          REMOTE_ADDR="192.0.2.31").status_code, 204)
         self.assertIsNotNone(OfficialAbsence.objects.get(pk=absence.pk).deleted_at)
-        self.assertTrue(AuditLog.objects.filter(action="Ausencia archivada").exists())
+        event = AuditLog.objects.get(action="Ausencia archivada")
+        self.assertEqual((event.origin_ip, event.actor_username), ("192.0.2.31", self.admin.username))
         frozen = self.absence(date(2026, 8, 10), date(2026, 8, 12))
         self.period.close_period()
         url = reverse("absence_archive", args=[frozen.pk])
@@ -321,3 +325,24 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
         self.assertContains(listing, 'aria-current="page">Ausencias</a>')
         form = self.client.get(reverse("absence_create"), HTTP_X_MODAL_REQUEST="true")
         self.assertContains(form, "attention-entry-cancel")
+
+    def test_absence_pagination_keeps_the_official_filter(self):
+        other = self.official("Otra persona con ausencias")
+        for offset in range(30):
+            day = date(2026, 7, 2) + timedelta(days=offset)
+            self.absence(day, day)
+            OfficialAbsence.objects.create(official=other, registered_by=self.verifier, kind="LICENCIA",
+                                           start_date=day, end_date=day, reason="Ausencia de otra persona")
+        first = self.client.get(reverse("absence_list"), {"official": self.worker.pk})
+        self.assertEqual(first.context["filter_query"], f"official={self.worker.pk}")
+        next_link = f'href="?official={self.worker.pk}&amp;page=2"'
+        self.assertContains(first, next_link)
+        self.assertNotContains(first, "?&amp;")
+        second = self.client.get(reverse("absence_list"), {"official": self.worker.pk, "page": 2})
+        rows = list(second.context["page_obj"])
+        self.assertEqual(len(rows), 5)
+        self.assertEqual({row.official_id for row in rows}, {self.worker.pk})
+        self.assertContains(second, f'href="?official={self.worker.pk}&amp;page=1"')
+        unfiltered = self.client.get(reverse("absence_list"))
+        self.assertContains(unfiltered, 'href="?page=2"')
+        self.assertEqual(self.client.get(reverse("absence_list"), {"official": "abc"}).status_code, 404)

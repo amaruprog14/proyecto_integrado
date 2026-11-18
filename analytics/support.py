@@ -3,8 +3,9 @@
 Se captura al congelar, con el mismo criterio y el mismo corte que la cifra:
 - ítems de cantidad: `computable_activities`, atribuidas al tramo de cargo por su fecha y solo si el
   ítem está en el plan de ese tramo (como `segmented_results` y `_counted_progress_by_official`);
-- «Soluciones de ingresos al tubo» (PERCENTAGE): `commitments_at_cutoff`, numerador = Realizado;
-- «Pendientes en tubo» (MAX_PERCENTAGE): `pending_commitments`, numerador = no Realizado.
+- «Soluciones de ingresos al tubo» (PERCENTAGE): `measured_commitments`, numerador = Realizado;
+- «Pendientes en tubo» (MAX_PERCENTAGE): `measured_commitments`, numerador = no Realizado.
+  En ambos, los cancelados con justificación al corte quedan fuera del denominador.
 
 Un resultado sin días computables no se evalúa: no aporta al total y no guarda respaldo. Con tramos,
 el porcentaje integrado pondera cada tramo por sus días: un tramo de 0 días no guarda compromisos.
@@ -16,7 +17,7 @@ from types import SimpleNamespace
 
 from activities.models import Activity
 from analytics.models import IndicatorSupportSnapshot, MeasurementItem
-from analytics.segments import commitments_at_cutoff, pending_commitments
+from analytics.segments import measured_commitments
 
 GoalType = MeasurementItem.GoalType
 
@@ -67,12 +68,9 @@ def support_rows(result, on_date):
             continue
         scope = SimpleNamespace(start_date=span[0], end_date=span[1]) if segmented else period
         for item_id, goal_type in span[3]:
-            if goal_type == GoalType.PERCENTAGE:
-                commitments = commitments_at_cutoff([official.pk], scope, on_date)
-            elif goal_type == GoalType.MAX_PERCENTAGE:
-                commitments = pending_commitments([official.pk], scope, on_date)
-            else:
+            if goal_type not in (GoalType.PERCENTAGE, GoalType.MAX_PERCENTAGE):
                 continue
+            commitments = measured_commitments([official.pk], scope, on_date)
             for pk, day, status in commitments.order_by("committed_date", "pk").values_list(
                     "pk", "committed_date", "measured_status"):
                 done = status == Commitment.Status.DONE
