@@ -466,6 +466,14 @@ La unicidad por campaña y RUT normalizado se exige también en la base de datos
 simultáneos se serializan por campaña. Si ya está inscrito, se informa únicamente la delegación
 que lo registró. El mismo menor puede participar en otra campaña. Inscripciones, ediciones y
 entregas requieren una campaña abierta y una fecha actual dentro de sus fechas de vigencia.
+La delegación capturada al inscribir se conserva como propietaria del registro. Reasignar el
+territorio en su catálogo no transfiere las inscripciones ni cambia quién puede consultarlas.
+Una corrección de territorio debe pertenecer a la delegación original. Desactivar o archivar
+un territorio conserva las inscripciones existentes y permite su anulación con motivo.
+Las delegaciones participantes que luego se desactivan o archivan permanecen disponibles en
+la configuración de esa campaña para que el responsable autorizado pueda editarla o cerrarla.
+Las nuevas campañas e inscripciones ofrecen opciones vigentes; la consulta histórica y las
+operaciones sobre registros existentes conservan su ámbito territorial original.
 Cada modificación conserva un historial con actor, fecha, valores anteriores y nuevos y deja
 registro en la bitácora general. El vínculo con una actividad no suma automáticamente entregas
 al puntaje de desempeño. El módulo conserva los datos de inscripción y entrega sin gestionar stock.

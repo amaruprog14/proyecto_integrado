@@ -192,6 +192,105 @@ class GiftFlowTests(GiftFixture, TestCase):
         with self.assertRaises(IntegrityError), transaction.atomic():
             row.save()
 
+    def test_delivery_preserves_original_delegation_after_territory_transfer(self):
+        row = self.register()
+        Territory.objects.filter(pk=self.ta.pk).update(delegation=self.b)
+        self.client.force_login(self.global_user)
+        response = post_with_revision(self.client, reverse("gift_registration_deliver", args=[row.pk]), {})
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        self.assertEqual(row.status, "DELIVERED")
+        self.assertEqual(row.delegation_id, self.a.pk)
+        event = row.events.latest("pk")
+        self.assertEqual(event.previous["delegation"], str(self.a.pk))
+        self.assertEqual(event.current["delegation"], str(self.a.pk))
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse("gift_registration_detail", args=[row.pk])).status_code, 200)
+        other = self.make_user("delegado-antena", self.b, "DELEGATION")
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(reverse("gift_registration_detail", args=[row.pk])).status_code, 404)
+
+    def test_inactive_territory_does_not_prevent_cancellation(self):
+        row = self.register()
+        Territory.objects.filter(pk=self.ta.pk).update(is_active=False)
+        response = post_with_revision(self.client, reverse("gift_registration_cancel", args=[row.pk]), {
+            "observation": "Desistimiento del adulto responsable",
+        })
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        self.assertEqual(row.status, "CANCELLED")
+        self.assertEqual(row.delegation_id, self.a.pk)
+        self.assertEqual(row.events.count(), 2)
+
+    def test_global_coordinator_can_close_campaign_with_inactive_participant(self):
+        self.register()
+        Delegation.objects.filter(pk=self.b.pk).update(status="INACTIVE")
+        self.client.force_login(self.global_user)
+        url = reverse("gift_campaign_edit", args=[self.campaign.pk])
+        response = self.client.get(url, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        payload = {"name": self.campaign.name, "celebration": "CHRISTMAS", "year": self.campaign.year,
+                   "start_date": self.campaign.start_date, "end_date": self.campaign.end_date,
+                   "is_open": "False", "delegations": [self.a.pk, self.b.pk]}
+        response = post_with_revision(self.client, url, payload)
+        self.assertEqual(response.status_code, 302, response.context and response.context["form"].errors)
+        self.campaign.refresh_from_db()
+        self.assertFalse(self.campaign.is_open)
+        self.assertEqual(set(self.campaign.delegations.values_list("pk", flat=True)), {self.a.pk, self.b.pk})
+
+    def test_existing_registration_can_be_edited_after_territory_transfer_without_changing_owner(self):
+        row = self.register()
+        Territory.objects.filter(pk=self.ta.pk).update(delegation=self.b)
+        url = reverse("gift_registration_edit", args=[row.pk])
+        response = post_with_revision(self.client, url, self.data(notes="Contacto actualizado"))
+        self.assertEqual(response.status_code, 302, response.context and response.context["form"].errors)
+        row.refresh_from_db()
+        self.assertEqual((row.delegation_id, row.notes), (self.a.pk, "Contacto actualizado"))
+        self.client.force_login(self.global_user)
+        response = post_with_revision(self.client, url, self.data(territory=self.tb.pk))
+        self.assertEqual(response.status_code, 200)
+        row.refresh_from_db()
+        self.assertEqual((row.delegation_id, row.territory_id), (self.a.pk, self.ta.pk))
+
+    def test_inactive_original_delegation_keeps_history_and_allows_cancellation(self):
+        row = self.register()
+        Delegation.objects.filter(pk=self.a.pk).update(status="INACTIVE")
+        listing = self.client.get(reverse("gift_registration_list", args=[self.campaign.pk]))
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.context["total"], 1)
+        response = post_with_revision(self.client, reverse("gift_registration_cancel", args=[row.pk]), {"observation": "Registro desistido"})
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        self.assertEqual((row.status, row.delegation_id), ("CANCELLED", self.a.pk))
+        response = self.client.post(self.create_url, self.data(child_rut=demo_rut(72000002)))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("territory", response.context["form"].errors)
+        self.assertEqual(GiftRegistration.objects.count(), 1)
+
+    def test_inactive_participant_does_not_expand_local_campaign_permissions(self):
+        Delegation.objects.filter(pk=self.b.pk).update(status="INACTIVE")
+        url = reverse("gift_campaign_edit", args=[self.campaign.pk])
+        self.assertEqual(self.client.get(url, HTTP_X_MODAL_REQUEST="true").status_code, 404)
+        self.assertEqual(self.client.post(url, {}).status_code, 404)
+        self.client.force_login(self.global_user)
+        form = self.client.get(reverse("gift_campaign_create"), HTTP_X_MODAL_REQUEST="true").context["form"]
+        self.assertNotIn(self.b.pk, form.fields["delegations"].queryset.values_list("pk", flat=True))
+        form = self.client.get(url, HTTP_X_MODAL_REQUEST="true").context["form"]
+        self.assertIn(self.b.pk, form.fields["delegations"].queryset.values_list("pk", flat=True))
+
+    def test_campaign_with_all_participants_inactive_remains_manageable_globally(self):
+        self.register()
+        Delegation.objects.filter(pk__in=[self.a.pk, self.b.pk]).update(status="INACTIVE")
+        self.client.force_login(self.global_user)
+        self.assertContains(self.client.get(reverse("gift_campaign_list")), self.campaign.name)
+        payload = {"name": self.campaign.name, "celebration": "CHRISTMAS", "year": self.campaign.year,
+                   "start_date": self.campaign.start_date, "end_date": self.campaign.end_date,
+                   "is_open": "False", "delegations": [self.a.pk, self.b.pk]}
+        response = post_with_revision(self.client, reverse("gift_campaign_edit", args=[self.campaign.pk]), payload)
+        self.assertEqual(response.status_code, 302, response.context and response.context["form"].errors)
+        self.campaign.refresh_from_db()
+        self.assertFalse(self.campaign.is_open)
+
     def test_campaign_create_from_modal_and_date_validation(self):
         today = timezone.localdate()
         url = reverse("gift_campaign_create")

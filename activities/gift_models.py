@@ -108,11 +108,21 @@ class GiftRegistration(BaseModel):
                 raise ValidationError({field: error.messages}) from error
         if self.child_rut == self.guardian_rut:
             raise ValidationError({"guardian_rut": "El menor y el adulto responsable deben tener RUT distintos."})
-        if self.territory_id:
-            self.delegation_id = self.territory.delegation_id
+        previous = type(self).objects.filter(pk=self.pk).values("delegation_id", "territory_id", "activity_id").first() if self.pk else None
+        if previous:
+            # La delegación capturada al inscribir es la propietaria del registro histórico.
+            self.delegation_id = previous["delegation_id"]
+        territory_changed = previous is None or self.territory_id != previous["territory_id"]
+        if self.territory_id and territory_changed:
+            if previous and self.territory.delegation_id != self.delegation_id:
+                raise ValidationError({"territory": "El territorio debe pertenecer a la delegación de inscripción original."})
+            if previous is None:
+                self.delegation_id = self.territory.delegation_id
             if not self.territory.is_active or self.territory.deleted_at or self.territory.delegation.deleted_at or self.territory.delegation.status != "ACTIVE":
                 raise ValidationError({"territory": "Selecciona un territorio y una delegación vigentes."})
-        if self.activity_id and (self.activity.deleted_at or self.activity.registration_delegation_id != self.delegation_id):
+        activity_changed = previous is None or self.activity_id != previous["activity_id"]
+        if self.activity_id and (territory_changed or activity_changed) and (
+                self.activity.deleted_at or self.activity.registration_delegation_id != self.delegation_id):
             raise ValidationError({"activity": "La actividad debe estar vigente y pertenecer a la delegación de inscripción."})
 
     def save(self, *args, **kwargs):

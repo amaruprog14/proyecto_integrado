@@ -34,8 +34,10 @@ CANCEL = "activities.cancel_giftregistration"
 VIEW_CAMPAIGN = "activities.view_giftcampaign"
 
 
-def allowed_delegations(user, *permissions):
-    rows = Delegation.objects.filter(deleted_at__isnull=True, status="ACTIVE")
+def allowed_delegations(user, *permissions, active_only=True):
+    rows = Delegation.objects.all()
+    if active_only:
+        rows = rows.filter(deleted_at__isnull=True, status="ACTIVE")
     for permission in permissions:
         scope = permission_scope(user, permission)
         if scope == Role.Scope.DELEGATION:
@@ -46,18 +48,18 @@ def allowed_delegations(user, *permissions):
 
 
 def campaigns_for(user, *permissions):
-    delegates = allowed_delegations(user, *permissions)
+    delegates = allowed_delegations(user, *permissions, active_only=False)
     return GiftCampaign.objects.filter(deleted_at__isnull=True, delegations__in=delegates).distinct()
 
 
 def registrations_for(user, permission=VIEW):
     return GiftRegistration.objects.filter(
-        deleted_at__isnull=True, delegation__in=allowed_delegations(user, VIEW, permission),
+        deleted_at__isnull=True, delegation__in=allowed_delegations(user, VIEW, permission, active_only=False),
     )
 
 
 def editable_campaigns(user):
-    ids = allowed_delegations(user, VIEW_CAMPAIGN, "activities.change_giftcampaign").values("pk")
+    ids = allowed_delegations(user, VIEW_CAMPAIGN, "activities.change_giftcampaign", active_only=False).values("pk")
     # Un delegado no puede quitar la participación de otra delegación.
     return campaigns_for(user, VIEW_CAMPAIGN).exclude(
         delegations__in=Delegation.objects.exclude(pk__in=ids),
@@ -70,6 +72,11 @@ def campaign_available(campaign):
         raise ValidationError("La campaña debe estar abierta y dentro de sus fechas para inscribir, editar o entregar.")
 
 
+def delegation_option(delegation):
+    status = "Archivada" if delegation.deleted_at else delegation.get_status_display()
+    return f"{delegation} · {status}"
+
+
 class CampaignForm(MaintainerForm):
     class Meta:
         model = GiftCampaign
@@ -78,7 +85,13 @@ class CampaignForm(MaintainerForm):
     def __init__(self, *args, actor, **kwargs):
         super().__init__(*args, actor=actor, **kwargs)
         permission = "activities.change_giftcampaign" if self.instance.pk else "activities.add_giftcampaign"
-        self.fields["delegations"].queryset = allowed_delegations(actor, VIEW_CAMPAIGN, permission)
+        permitted = allowed_delegations(actor, VIEW_CAMPAIGN, permission, active_only=False)
+        current = self.instance.delegations.values("pk") if self.instance.pk else []
+        self.fields["delegations"].queryset = permitted.filter(
+            Q(status="ACTIVE", deleted_at__isnull=True) | Q(pk__in=current),
+        )
+        self.fields["delegations"].help_text = "Las delegaciones inactivas o archivadas ya participantes se conservan para gestionar el historial."
+        self.fields["delegations"].label_from_instance = delegation_option
         self.fields["name"].widget.attrs.pop("data-field-pattern", None)
         self.fields["is_open"].widget = forms.Select(choices=((True, "Abierta"), (False, "Cerrada")), attrs={"class": "form-select"})
 
@@ -108,10 +121,15 @@ class RegistrationForm(MaintainerForm):
         super().__init__(*args, actor=actor, **kwargs)
         permission = CHANGE if self.instance.pk else ADD
         delegates = allowed_delegations(actor, VIEW, permission)
-        self.fields["territory"].queryset = Territory.objects.filter(
+        if self.instance.pk:
+            delegates = delegates.filter(pk=self.instance.delegation_id)
+        current = Q(pk__in=[])
+        if self.instance.pk and allowed_delegations(actor, VIEW, permission, active_only=False).filter(pk=self.instance.delegation_id).exists():
+            current = Q(pk=self.instance.territory_id)
+        self.fields["territory"].queryset = Territory.objects.filter(Q(
             is_active=True, deleted_at__isnull=True, delegation__in=delegates,
             delegation__gift_campaigns=self.instance.campaign,
-        )
+        ) | current)
         activities = activity_queryset(actor, "activities.view_activity")
         if not actor.has_perm("activities.view_activity"):
             activities = activities.none()
@@ -263,7 +281,7 @@ class RegistrationList(ProtectedViewMixin, View):
             "counts": [(label, counts.get(value, 0)) for value, label in GiftRegistration.Status.choices],
             "total": sum(counts.values()), "filters": filters, "filter_query": urlencode(filters),
             "status_choices": GiftRegistration.Status.choices,
-            "delegations": campaign.delegations.filter(pk__in=allowed_delegations(request.user, VIEW).values("pk")),
+            "delegations": campaign.delegations.filter(pk__in=allowed_delegations(request.user, VIEW, active_only=False).values("pk")),
             "can_add": request.user.has_perm(ADD),
         })
 
@@ -354,8 +372,10 @@ class RegistrationEdit(ProtectedViewMixin, ModalFormOnlyMixin, View):
                         if not obj.campaign.delegations.filter(pk=obj.delegation_id).exists():
                             raise ValidationError("La delegación debe participar en la campaña.")
                         obj.save()
-                except (ValidationError, IntegrityError) as error:
-                    form.add_error(None, error if isinstance(error, ValidationError) and not hasattr(error, "error_dict") else "No se pudo guardar. Comprueba los datos y si el RUT ya está inscrito en la campaña.")
+                except ValidationError as error:
+                    form.add_error(None, error.messages)
+                except IntegrityError:
+                    form.add_error(None, "No se pudo guardar. Comprueba los datos y si el RUT ya está inscrito en la campaña.")
                 else:
                     action = {"deliver": "Regalo entregado", "cancel": "Inscripción de regalo anulada"}.get(self.operation, "Inscripción de regalo editada" if pk else "Inscripción de regalo creada")
                     current = snapshot(obj)
