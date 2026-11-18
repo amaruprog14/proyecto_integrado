@@ -29,6 +29,7 @@
         <div>
             <p class="maintainer-sidebar-title" id="menu-operacion">Operación</p>
             <nav aria-labelledby="menu-operacion">
+                {% if perms.activities.view_giftcampaign %}<a class="maintainer-sidebar-link{% if active == 'gifts' %} is-active{% endif %}" href="{% url 'gift_campaign_list' %}"{% if active == 'gifts' %} aria-current="page"{% endif %}>Regalos y entregas</a>{% endif %}
                 {% if perms.activities.view_socialattention %}
                     <a class="maintainer-sidebar-link{% if active == 'staff_client_requests' or active == 'staff_client_request_review' or active == 'staff_client_request_detail' %} is-active{% endif %}" href="{% url 'staff_client_requests' %}"{% if active == 'staff_client_requests' or active == 'staff_client_request_review' or active == 'staff_client_request_detail' %} aria-current="page"{% endif %}>Solicitudes ciudadanas</a>
                 {% endif %}

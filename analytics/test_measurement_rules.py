@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -9,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.absence_views import AbsenceForm
-from accounts.models import Delegation, OfficialAbsence, OfficialPositionPeriod, Role
+from accounts.models import Delegation, Official, OfficialAbsence, OfficialPositionPeriod, Role
 from activities.models import Activity
 from accounts.position_services import change_position
 from agenda.models import Commitment
@@ -19,6 +20,7 @@ from analytics.queries import summarize_team
 from analytics.services import CalculadorDesempenoService as Calc, computable_days, expected_percentage
 from analytics.test_performance_calculator import CalculatorFixture, START, END
 from common.maintainer_forms import activity_item_choices
+from common.testing_edit import post_with_revision
 from configuration.models import AuditLog
 
 
@@ -99,6 +101,8 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
         self.assertEqual(response.status_code, 204)
         event = AuditLog.objects.get(action="Ausencia guardada")
         self.assertEqual((event.origin_ip, event.actor_username), ("192.0.2.30", self.admin.username))
+        self.assertEqual(event.previous_value, "")
+        self.assertIn('Motivo: "Vacaciones registradas"', event.new_value)
         outsider = self.official("Sin permisos")
         outsider.user = User.objects.create_user("sin-permiso-ausencias")
         outsider.save(update_fields=["user"])
@@ -117,6 +121,65 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
         self.assertEqual(self.client.post(url, payload, HTTP_X_MODAL_REQUEST="true").status_code, 409)
         absence.refresh_from_db()
         self.assertEqual(absence.reason, "Primera edición")
+        events = AuditLog.objects.filter(action="Ausencia guardada", affected_record_id=absence.pk,
+                                        affected_table=absence._meta.db_table)
+        self.assertEqual(events.count(), 1)
+        self.assertNotIn("Edición con versión vencida", events.get().new_value)
+
+    def test_absence_edit_audits_previous_reason_dates_and_kind(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        response = post_with_revision(self.client, reverse("absence_edit", args=[absence.pk]), {
+            "official": self.worker.pk, "kind": "VACACIONES", "start_date": "2026-07-11",
+            "end_date": "2026-07-14", "reason": "Motivo corregido",
+        }, HTTP_X_MODAL_REQUEST="true", REMOTE_ADDR="192.0.2.40")
+        self.assertEqual(response.status_code, 204)
+        event = AuditLog.objects.get(action="Ausencia guardada")
+        for value in ('Motivo: "Ausencia de prueba"', "Tipo de ausencia: Licencia", "Inicio: 2026-07-10", "Término: 2026-07-12"):
+            self.assertIn(value, event.previous_value)
+        for value in ('Motivo: "Motivo corregido"', "Tipo de ausencia: Vacaciones", "Inicio: 2026-07-11", "Término: 2026-07-14"):
+            self.assertIn(value, event.new_value)
+        self.assertNotIn("Motivo corregido", event.previous_value)
+        self.assertEqual((event.actor_username, event.origin_ip), (self.admin.username, "192.0.2.40"))
+
+    def test_absence_archive_retains_reason_and_records_archive_transition(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        response = post_with_revision(self.client, reverse("absence_archive", args=[absence.pk]), {}, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        event = AuditLog.objects.get(action="Ausencia archivada")
+        self.assertIn('Motivo: "Ausencia de prueba"', event.previous_value)
+        self.assertIn('Motivo: "Ausencia de prueba"', event.new_value)
+        self.assertIn("Archivado: No", event.previous_value)
+        self.assertIn("Archivado: Sí", event.new_value)
+
+    def test_absence_invalid_edit_does_not_change_reason_or_create_event(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        response = post_with_revision(self.client, reverse("absence_edit", args=[absence.pk]), {
+            "official": self.worker.pk, "kind": "VACACIONES", "start_date": "2026-07-15",
+            "end_date": "2026-07-10", "reason": "Cambio inválido",
+        }, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        absence.refresh_from_db()
+        self.assertEqual(absence.reason, "Ausencia de prueba")
+        self.assertFalse(AuditLog.objects.filter(action="Ausencia guardada").exists())
+
+    def test_absence_multiline_reasons_remain_reserved_in_audit_view(self):
+        from configuration.audit_views import visible_value
+
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        previous = 'Razón original\nInicio: dato reservado'
+        absence.reason = previous
+        absence.save()
+        current = 'Motivo actualizado\nEstado: otro dato reservado'
+        response = post_with_revision(self.client, reverse("absence_edit", args=[absence.pk]), {
+            "official": self.worker.pk, "kind": "LICENCIA", "start_date": "2026-07-10",
+            "end_date": "2026-07-12", "reason": current,
+        }, HTTP_X_MODAL_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        event = AuditLog.objects.get(action="Ausencia guardada")
+        self.assertIn(json.dumps(previous, ensure_ascii=False), event.previous_value)
+        self.assertIn(json.dumps(current, ensure_ascii=False), event.new_value)
+        self.assertNotIn("dato reservado", visible_value(event, event.previous_value))
+        self.assertNotIn("dato reservado", visible_value(event, event.new_value))
 
     def test_max_percentage_matches_excel_boundaries_and_empty_denominator(self):
         version, line = self.single_plan("MAX_PERCENTAGE", 10)
@@ -346,3 +409,86 @@ class MeasurementRulesTests(CalculatorFixture, TestCase):
         unfiltered = self.client.get(reverse("absence_list"))
         self.assertContains(unfiltered, 'href="?page=2"')
         self.assertEqual(self.client.get(reverse("absence_list"), {"official": "abc"}).status_code, 404)
+
+    def test_absence_default_excludes_archived_officials_from_rows_and_choices(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        Official.objects.filter(pk=self.worker.pk).update(deleted_at=timezone.now())
+        response = self.client.get(reverse("absence_list"))
+        self.assertNotIn(self.worker.pk, response.context["officials"].values_list("pk", flat=True))
+        self.assertNotIn(absence.pk, [row.pk for row in response.context["page_obj"]])
+        form = self.client.get(reverse("absence_create"), HTTP_X_MODAL_REQUEST="true").context["form"]
+        self.assertNotIn(self.worker.pk, form.fields["official"].queryset.values_list("pk", flat=True))
+
+    def test_absence_history_is_explicit_and_archived_official_is_read_only(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        Official.objects.filter(pk=self.worker.pk).update(deleted_at=timezone.now())
+        response = self.client.get(reverse("absence_list"), {"include_archived": "1", "official": self.worker.pk})
+        self.assertEqual([row.pk for row in response.context["page_obj"]], [absence.pk])
+        self.assertEqual(response.context["selected_official"], self.worker.pk)
+        self.assertContains(response, "Funcionario archivado")
+        self.assertContains(response, "Solo consulta")
+        self.assertNotContains(response, reverse("absence_edit", args=[absence.pk]))
+        self.assertNotContains(response, reverse("absence_archive", args=[absence.pk]))
+        self.assertIsNone(OfficialAbsence.objects.get(pk=absence.pk).deleted_at)
+
+    def test_disabling_history_resets_an_archived_selection(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        Official.objects.filter(pk=self.worker.pk).update(deleted_at=timezone.now())
+        response = self.client.get(reverse("absence_list"), {"official": self.worker.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["selected_official"])
+        self.assertNotIn("official=", response.context["filter_query"])
+        self.assertNotIn(absence.pk, [row.pk for row in response.context["page_obj"]])
+        self.assertContains(response, "Se retiró la selección")
+
+    def test_absence_history_pagination_keeps_both_filters(self):
+        for day in range(1, 28):
+            self.absence(date(2026, 8, day), date(2026, 8, day))
+        Official.objects.filter(pk=self.worker.pk).update(deleted_at=timezone.now())
+        url = reverse("absence_list")
+        filters = {"official": self.worker.pk, "include_archived": "1"}
+        first = self.client.get(url, filters)
+        self.assertContains(first, f'?include_archived=1&amp;official={self.worker.pk}&amp;page=2')
+        second = self.client.get(url, {**filters, "page": 2})
+        self.assertEqual(len(second.context["page_obj"]), 2)
+        self.assertEqual({row.official_id for row in second.context["page_obj"]}, {self.worker.pk})
+        self.assertContains(second, f'?include_archived=1&amp;official={self.worker.pk}&amp;page=1')
+
+    def test_archived_official_absences_reject_new_edits_and_archive_posts(self):
+        absence = self.absence(date(2026, 7, 10), date(2026, 7, 12))
+        url = reverse("absence_edit", args=[absence.pk])
+        revision = self.client.get(url, HTTP_X_MODAL_REQUEST="true").context["edit_revision"]
+        Official.objects.filter(pk=self.worker.pk).update(deleted_at=timezone.now())
+        payload = {"official": self.worker.pk, "kind": "VACACIONES", "start_date": "2026-07-10",
+                   "end_date": "2026-07-13", "reason": "Cambio rechazado", "edit_revision": revision}
+        self.assertEqual(self.client.get(url, HTTP_X_MODAL_REQUEST="true").status_code, 404)
+        self.assertEqual(self.client.post(url, payload).status_code, 404)
+        self.assertEqual(self.client.post(reverse("absence_archive", args=[absence.pk]), payload).status_code, 404)
+        self.assertEqual(self.client.post(reverse("absence_create"), payload).status_code, 200)
+        absence.refresh_from_db()
+        self.assertEqual(absence.reason, "Ausencia de prueba")
+        self.assertIsNone(absence.deleted_at)
+        self.assertEqual(OfficialAbsence.objects.count(), 1)
+        self.assertFalse(AuditLog.objects.filter(action__in=["Ausencia guardada", "Ausencia archivada"]).exists())
+
+    def test_absence_history_keeps_delegation_scope(self):
+        foreign = self.official("Funcionario archivado ajeno", "Gestor social")
+        foreign.delegation = Delegation.objects.create(delegation_name="Antena", address="Demo", commune="La Serena")
+        foreign.deleted_at = timezone.now()
+        foreign.save()
+        OfficialAbsence.objects.create(official=foreign, registered_by=self.verifier, kind="LICENCIA",
+            start_date=date(2026, 7, 10), end_date=date(2026, 7, 12), reason="Motivo reservado ajeno")
+        local_user = User.objects.create_user("lector-ausencias-local")
+        local = self.official("Consulta territorial")
+        local.user = local_user
+        local.save(update_fields=["user"])
+        role = Role.objects.create(role_name="Consulta de ausencias local", scope="DELEGATION")
+        role.permissions.set(Permission.objects.filter(content_type__app_label="accounts", codename="view_officialabsence"))
+        local.roles.add(role)
+        self.client.force_login(local_user)
+        response = self.client.get(reverse("absence_list"), {"include_archived": "1"})
+        self.assertNotContains(response, "Motivo reservado ajeno")
+        self.assertNotIn(foreign.pk, response.context["officials"].values_list("pk", flat=True))
+        self.assertEqual(self.client.get(reverse("absence_list"), {
+            "include_archived": "1", "official": foreign.pk,
+        }).status_code, 404)

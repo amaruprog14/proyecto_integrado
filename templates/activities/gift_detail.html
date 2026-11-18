@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ record }} · Regalos · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="gifts" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content">
+    <p><a href="{% url 'gift_campaign_list' %}">Regalos y entregas</a> / <a href="{% url 'gift_registration_list' record.campaign_id %}">{{ record.campaign }}</a></p>
+    <h1>{{ record }} · {{ record.child_name }}</h1>
+    <div class="attention-entry-card mt-4">
+        <dl class="row">
+            <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{{ record.get_status_display }}</dd>
+            <dt class="col-sm-4">RUT del menor</dt><dd class="col-sm-8">{{ record.child_rut }}</dd>
+            <dt class="col-sm-4">Adulto responsable</dt><dd class="col-sm-8">{{ record.guardian_name }} · {{ record.guardian_rut }}</dd>
+            <dt class="col-sm-4">Teléfono</dt><dd class="col-sm-8">{{ record.phone }}</dd>
+            <dt class="col-sm-4">Territorio y delegación</dt><dd class="col-sm-8">{{ record.territory.territory_name }} · {{ record.delegation.delegation_name }}</dd>
+            <dt class="col-sm-4">Inscripción</dt><dd class="col-sm-8">{{ record.created_at|date:'d-m-Y H:i' }} · {{ record.registered_by.get_full_name|default:record.registered_by.username }}</dd>
+            {% if visible_activity %}<dt class="col-sm-4">Jornada</dt><dd class="col-sm-8"><a href="{% url 'activity_detail' record.activity_id %}">{{ record.activity.code }} · {{ record.activity.subject }}</a></dd>{% endif %}
+            {% if record.delivered_at %}<dt class="col-sm-4">Entrega confirmada</dt><dd class="col-sm-8">{{ record.delivered_at|date:'d-m-Y H:i' }} · {{ record.delivered_by.get_full_name|default:record.delivered_by.username }}</dd>{% endif %}
+            {% if record.notes %}<dt class="col-sm-4">Observaciones</dt><dd class="col-sm-8">{{ record.notes|linebreaksbr }}</dd>{% endif %}
+            {% if record.cancellation_reason %}<dt class="col-sm-4">Motivo de anulación</dt><dd class="col-sm-8">{{ record.cancellation_reason }}</dd>{% endif %}
+        </dl>
+        <div class="d-flex flex-wrap gap-2">
+            {% if can_edit %}<a class="btn btn-outline-primary" href="{% url 'gift_registration_edit' record.pk %}" data-modal-form>Editar inscripción</a>{% endif %}
+            {% if can_deliver %}<a class="btn btn-primary" href="{% url 'gift_registration_deliver' record.pk %}" data-modal-form>Confirmar entrega</a>{% endif %}
+            {% if can_cancel %}<a class="btn btn-outline-danger" href="{% url 'gift_registration_cancel' record.pk %}" data-modal-form>Anular inscripción</a>{% endif %}
+        </div>
+    </div>
+    <div class="attention-entry-card mt-4"><h2 class="h4">Historial</h2>
+        {% for event in events %}<article class="border-bottom py-3"><strong>{{ event.action }}</strong><p class="text-muted mb-1">{{ event.created_at|date:'d-m-Y H:i' }} · {{ event.actor.get_full_name|default:event.actor.username }}</p>{% if event.observation %}<p class="mb-0">{{ event.observation }}</p>{% endif %}</article>{% empty %}<p>No hay eventos registrados.</p>{% endfor %}
+    </div>
+</section>
+{% endblock %}

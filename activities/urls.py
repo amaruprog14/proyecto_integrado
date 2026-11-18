@@ -21,10 +21,20 @@ from .case_views import CaseActionView, CaseDetailView, CaseListView
 from .eligible_items import ActivityEligibleItemsView
 from .evidence import EvidenceAnnulmentView, EvidenceImageView, EvidenceReviewView, EvidenceUploadView
 from .letters import LetterCaseView, LetterDetailView, LetterFormView, LetterListView
+from .gifts import CampaignList, CampaignEdit, RegistrationList, RegistrationDetail, RegistrationEdit
 from .views import AttentionDetailView, AttentionEntryView, AttentionRequestLookupView
 
 urlpatterns = []
 urlpatterns += [
+    path('regalos/', CampaignList.as_view(), name='gift_campaign_list'),
+    path('regalos/campanas/nueva/', CampaignEdit.as_view(), name='gift_campaign_create'),
+    path('regalos/campanas/<int:pk>/editar/', CampaignEdit.as_view(), name='gift_campaign_edit'),
+    path('regalos/campanas/<int:campaign_id>/', RegistrationList.as_view(), name='gift_registration_list'),
+    path('regalos/campanas/<int:campaign_id>/inscribir/', RegistrationEdit.as_view(), name='gift_registration_create'),
+    path('regalos/inscripciones/<int:pk>/', RegistrationDetail.as_view(), name='gift_registration_detail'),
+    path('regalos/inscripciones/<int:pk>/editar/', RegistrationEdit.as_view(), name='gift_registration_edit'),
+    path('regalos/inscripciones/<int:pk>/entregar/', RegistrationEdit.as_view(operation='deliver'), name='gift_registration_deliver'),
+    path('regalos/inscripciones/<int:pk>/anular/', RegistrationEdit.as_view(operation='cancel'), name='gift_registration_cancel'),
     path("items-elegibles/", ActivityEligibleItemsView.as_view(), name="activity_eligible_items"),
     path('solicitudes/', RedirectView.as_view(
         url=reverse_lazy('activity_maintainer', query={

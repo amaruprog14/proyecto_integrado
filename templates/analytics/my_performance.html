@@ -57,7 +57,7 @@
                     {% elif not result.frozen %}
                         <dt class="col-sm-4">Calculado al</dt><dd class="col-sm-8">{{ today|date:"d-m-Y" }}</dd>
                     {% endif %}
-                    {% if result.version %}
+                    {% if result.items %}
                         <dt class="col-sm-4">Meta esperada al día</dt><dd class="col-sm-8">{{ result.expected_percentage|floatformat:2 }} %</dd>
                         {% if result.score_adjustments or result.cap_applied or result.floor_applied %}
                             <dt class="col-sm-4">Total ponderado base</dt><dd class="col-sm-8" data-performance-base>{{ result.base_total|floatformat:2 }} puntos</dd>
@@ -69,6 +69,7 @@
                         <dd class="col-sm-8"><strong data-performance-total>{{ result.total|floatformat:2 }} puntos</strong> {% include "analytics/traffic_light.html" with light=total_light %}</dd>
                     {% endif %}
                 </dl>
+                {% if result.plan_coverage_notice %}<p class="alert alert-info mt-3 mb-0" role="status" data-plan-coverage-notice>{{ result.plan_coverage_notice }}</p>{% endif %}
                 {% if result.score_adjustments %}
                     <details class="mt-2 mb-3">
                         <summary class="auth-text-link">Ver reclamos y felicitaciones aprobados</summary>
@@ -138,7 +139,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="maintainer-record-count mt-2">Tope computable por ítem: {{ result.max_computable|floatformat:"-2" }} %. Solo suma la evidencia aprobada; {% if result.frozen %}el enlace de cada ítem abre el respaldo guardado al congelar el período.{% else %}el enlace de cada ítem abre esas mismas actividades.{% endif %}</p>
+                    <p class="maintainer-record-count mt-2">{% if result.max_computable is not None %}Tope computable por ítem: {{ result.max_computable|floatformat:"-2" }} %. {% else %}Los topes computables corresponden a las versiones aplicadas en cada tramo. {% endif %}Solo suma la evidencia aprobada; {% if result.frozen %}el enlace de cada ítem abre el respaldo guardado al congelar el período.{% else %}el enlace de cada ítem abre esas mismas actividades.{% endif %}</p>
                     {% if support_url %}<p class="mb-0"><a class="auth-text-link" href="{{ support_url }}" data-support-link>¿Qué respaldó este resultado?</a></p>{% endif %}
                 </section>
             {% endif %}

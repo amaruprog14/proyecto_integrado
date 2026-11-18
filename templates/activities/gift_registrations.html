@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign }} · Regalos · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="gifts" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content">
+    <p><a href="{% url 'gift_campaign_list' %}">Regalos y entregas</a> / {{ campaign.year }}</p>
+    <div class="d-flex justify-content-between align-items-center gap-3 mb-4 flex-wrap">
+        <div><h1>{{ campaign.name }}</h1><p class="text-muted mb-0">{{ campaign.start_date|date:'d-m-Y' }} – {{ campaign.end_date|date:'d-m-Y' }} · {% if campaign.is_open %}Abierta{% else %}Cerrada{% endif %}</p></div>
+        {% if can_add and campaign.is_open %}<a class="btn btn-primary" href="{% url 'gift_registration_create' campaign.pk %}" data-modal-form>+ Inscribir beneficiario</a>{% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-3 mb-4" aria-label="Resumen de inscripciones filtradas">
+        <span>Total {{ total }}</span>{% for label, count in counts %}<span>{{ label }} {{ count }}</span>{% endfor %}
+    </div>
+    <div class="attention-entry-card">
+        <form method="get" class="row g-3 mb-4">
+            <div class="col-md-5"><label for="gift-search" class="form-label">Buscar por RUT o nombre</label><input class="form-control" id="gift-search" name="q" value="{{ filters.q }}" maxlength="150"></div>
+            <div class="col-md-3"><label for="gift-status" class="form-label">Estado</label><select class="form-select" id="gift-status" name="status"><option value="">Todos</option>{% for value, label in status_choices %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+            <div class="col-md-4"><label for="gift-delegation" class="form-label">Delegación</label><select class="form-select" id="gift-delegation" name="delegation"><option value="">Todas las autorizadas</option>{% for delegation in delegations %}<option value="{{ delegation.pk }}"{% if filters.delegation == delegation.pk|stringformat:'s' %} selected{% endif %}>{{ delegation.delegation_name }}</option>{% endfor %}</select></div>
+            <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Buscar</button><a class="btn btn-outline-secondary" href="{% url 'gift_registration_list' campaign.pk %}">Limpiar</a><a class="btn btn-outline-primary" href="?{{ filter_query }}&amp;export=xlsx">Exportar a Excel</a></div>
+        </form>
+        <div class="table-responsive"><table class="table align-middle">
+            <thead><tr><th>Código</th><th>RUT del menor</th><th>Menor</th><th>Adulto responsable</th><th>Territorio</th><th>Delegación</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody>{% for record in page_obj %}<tr><td>{{ record }}</td><td class="text-nowrap">{{ record.child_rut }}</td><td>{{ record.child_name }}</td><td>{{ record.guardian_name }}</td><td>{{ record.territory.territory_name }}</td><td>{{ record.delegation.delegation_name }}</td><td>{{ record.get_status_display }}</td><td><a class="btn btn-outline-secondary text-nowrap" href="{% url 'gift_registration_detail' record.pk %}">Ver detalle</a></td></tr>{% empty %}<tr><td colspan="8">No hay inscripciones que coincidan con los filtros.</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% include "analytics/simple_pagination.html" %}
+    </div>
+</section>
+{% endblock %}

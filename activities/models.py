@@ -6,6 +6,7 @@ from accounts.models import Area, Delegation, Official, ServiceRecipient
 from common.mixins import BaseModel
 from common.codes import AutoCodeMixin
 from configuration.models import AttentionType, Item, SubattentionType
+from .gift_models import GiftCampaign, GiftRegistration, GiftRegistrationEvent
 
 
 class ClientRequest(BaseModel):

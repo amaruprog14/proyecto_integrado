@@ -27,7 +27,7 @@ class Accounts0015RoundTripTests(TransactionTestCase):
         return set(Role.objects.get(role_name=name).permissions.filter(codename__in=self.CODES)
                    .values_list("codename", flat=True))
 
-    def test_grant_revoke_and_grant_again(self):
+    def test_grant_reverse_conservatively_and_grant_again(self):
         apps = self.migrate([self.BEFORE])
         Role = apps.get_model("accounts", "Role")
         Permission = apps.get_model("auth", "Permission")
@@ -39,21 +39,39 @@ class Accounts0015RoundTripTests(TransactionTestCase):
                             ("Funcionario", "DELEGATION"), ("Verificador", "DELEGATION")):
             Role.objects.create(role_name=name, scope=scope, description=self.MARKER)
         Role.objects.get(role_name="Administrador").permissions.add(*absence_permissions)  # ya los tenía
-        Role.objects.create(role_name="Delegado municipal", scope="DELEGATION", description="Rol propio")
+        view = Permission.objects.get(content_type=content_type, codename="view_officialabsence")
+        manage = Permission.objects.get(content_type=content_type, codename="manage_absence")
+        Role.objects.get(role_name="Coordinador del sistema").permissions.add(view)
+        Role.objects.get(role_name="Delegado").permissions.add(manage)
+        custom = Role.objects.create(role_name="Delegado municipal", scope="DELEGATION", description="Rol propio")
+        custom.permissions.add(view)
+        unrelated = Permission.objects.create(content_type=content_type, codename="unrelated_test_permission", name="Permiso ajeno")
+        Role.objects.get(role_name="Delegado").permissions.add(unrelated)
 
         apps = self.migrate([self.TARGET])
         for name in ("Administrador", "Coordinador del sistema", "Delegado"):
             self.assertEqual(self.codes(apps, name), self.CODES, name)
-        for name in ("Funcionario", "Verificador", "Delegado municipal"):
+        for name in ("Funcionario", "Verificador"):
             self.assertEqual(self.codes(apps, name), set(), name)
+        self.assertEqual(self.codes(apps, "Delegado municipal"), {"view_officialabsence"})
+        Role = apps.get_model("accounts", "Role")
+        assigned = {role.pk: set(role.permissions.values_list("pk", flat=True)) for role in Role.objects.all()}
 
         apps = self.migrate([self.BEFORE])
-        self.assertEqual(self.codes(apps, "Administrador"), self.CODES)  # no se le quitan
-        for name in ("Coordinador del sistema", "Delegado", "Funcionario", "Verificador"):
-            self.assertEqual(self.codes(apps, name), set(), name)
+        Role = apps.get_model("accounts", "Role")
+        self.assertEqual({role.pk: set(role.permissions.values_list("pk", flat=True)) for role in Role.objects.all()}, assigned)
 
         apps = self.migrate([self.TARGET])
         for name in ("Coordinador del sistema", "Delegado"):
             self.assertEqual(self.codes(apps, name), self.CODES, name)
         self.assertEqual(apps.get_model("accounts", "Role").objects.get(role_name="Delegado").permissions
                          .filter(codename__in=self.CODES).count(), 2)  # sin duplicados al repetir
+
+        # También se conserva una retirada manual posterior: la inversa no reotorga permisos.
+        Role = apps.get_model("accounts", "Role")
+        coordinator = Role.objects.get(role_name="Coordinador del sistema")
+        coordinator.permissions.remove(view.pk)
+        assigned = {role.pk: set(role.permissions.values_list("pk", flat=True)) for role in Role.objects.all()}
+        apps = self.migrate([self.BEFORE])
+        Role = apps.get_model("accounts", "Role")
+        self.assertEqual({role.pk: set(role.permissions.values_list("pk", flat=True)) for role in Role.objects.all()}, assigned)

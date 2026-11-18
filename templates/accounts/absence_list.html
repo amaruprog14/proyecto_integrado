@@ -6,9 +6,27 @@
 <section class="maintainer-content">
     <h1>Ausencias</h1>
     {% if can_manage %}<a class="btn btn-primary" href="{% url 'absence_create' %}" data-modal-form>Registrar ausencia</a>{% endif %}
-    <form method="get" class="my-3"><label for="absence-official">Funcionario</label><select id="absence-official" name="official" class="form-select"><option value="">Todos los autorizados</option>{% for official in officials %}<option value="{{ official.pk }}"{% if request.GET.official == official.pk|stringformat:'s' %} selected{% endif %}>{{ official }}</option>{% endfor %}</select><button class="btn btn-primary">Filtrar</button></form>
+    <form method="get" class="my-3">
+        <label for="absence-official" class="form-label">Funcionario</label>
+        <select id="absence-official" name="official" class="form-select">
+            <option value="">{% if include_archived %}Todos los autorizados, incluidos archivados{% else %}Todos los autorizados sin archivar{% endif %}</option>
+            {% for official in officials %}<option value="{{ official.pk }}"{% if selected_official == official.pk %} selected{% endif %}>{{ official }}{% if official.deleted_at %} · Archivado{% endif %}</option>{% endfor %}
+        </select>
+        <div class="form-check my-3">
+            <input type="checkbox" class="form-check-input" id="absence-include-archived" name="include_archived" value="1"{% if include_archived %} checked{% endif %}>
+            <label class="form-check-label" for="absence-include-archived">Incluir funcionarios archivados</label>
+        </div>
+        <button class="btn btn-primary" type="submit">Filtrar</button>
+    </form>
+    {% if archived_filter_reset %}<p class="alert alert-info" role="status">Se retiró la selección del funcionario archivado. Para consultar su historial, activa «Incluir funcionarios archivados».</p>{% endif %}
     <table class="table"><thead><tr><th>Funcionario</th><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Motivo</th><th>Acciones</th></tr></thead><tbody>
-    {% for absence in page_obj %}<tr><td>{{ absence.official }}</td><td>{{ absence.get_kind_display }}</td><td>{{ absence.start_date|date:'d-m-Y' }}</td><td>{{ absence.end_date|date:'d-m-Y' }}</td><td>{{ absence.reason }}</td><td>{% if can_manage %}<a href="{% url 'absence_edit' absence.pk %}" data-modal-form>Editar</a> · <a href="{% url 'absence_archive' absence.pk %}" data-modal-form>Archivar</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="6">No hay ausencias registradas.</td></tr>{% endfor %}
+    {% for absence in page_obj %}
+        <tr>
+            <td>{{ absence.official }}{% if absence.official.deleted_at %}<span class="d-block small text-muted">Funcionario archivado</span>{% endif %}</td>
+            <td>{{ absence.get_kind_display }}</td><td>{{ absence.start_date|date:'d-m-Y' }}</td><td>{{ absence.end_date|date:'d-m-Y' }}</td><td>{{ absence.reason }}</td>
+            <td>{% if absence.official.deleted_at %}<span class="text-muted">Solo consulta</span>{% elif can_manage %}<div class="d-flex flex-nowrap gap-2"><a href="{% url 'absence_edit' absence.pk %}" data-modal-form>Editar</a><a href="{% url 'absence_archive' absence.pk %}" data-modal-form>Archivar</a></div>{% endif %}</td>
+        </tr>
+    {% empty %}<tr><td colspan="6">No hay ausencias registradas.</td></tr>{% endfor %}
     </tbody></table>
     {% include "analytics/simple_pagination.html" %}
 </section>

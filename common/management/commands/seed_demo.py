@@ -15,6 +15,7 @@ from accounts.models import (
     ServiceRecipient, Territory,
 )
 from activities.models import Activity, AttentionCase, ClientRequest, ClientRequestEvent, SocialAttention
+from activities.gift_models import GIFT_PERMISSIONS
 from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN, create_revision, publish_version
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementPlan, ScoreAdjustment
 from configuration.models import ActivityType, AttentionType, Item, Period, PeriodMutex, SubattentionType
@@ -44,7 +45,7 @@ MANAGE_ABSENCES = ["accounts.view_officialabsence", "accounts.manage_absence"]
 UPGRADE_PERMISSIONS = [
     "accounts.archive_official", "activities.archive_activity", *MEASUREMENT_PLAN_PERMISSIONS,
     "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE, *MANAGE_AGENDA, *MANAGE_LETTERS,
-    *MANAGE_SCORE_ADJUSTMENTS, *MANAGE_ABSENCES,
+    *MANAGE_SCORE_ADJUSTMENTS, *MANAGE_ABSENCES, *GIFT_PERMISSIONS,
 ]
 DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
 DEMO_REVISION_DATE = date(2026, 10, 15)
@@ -249,8 +250,8 @@ class Command(BaseCommand):
         }
         # Panel de desempeño: funcionarios, lectores y verificadores ven lo suyo; Delegado, Coordinador y
         # Administrador eligen funcionarios dentro de su alcance.
-        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + MANAGE_SCORE_ADJUSTMENTS + MANAGE_ABSENCES))
-        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + REGISTER_SCORE_ADJUSTMENTS + MANAGE_ABSENCES))
+        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + MANAGE_SCORE_ADJUSTMENTS + MANAGE_ABSENCES + GIFT_PERMISSIONS))
+        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + REGISTER_SCORE_ADJUSTMENTS + MANAGE_ABSENCES + GIFT_PERMISSIONS))
         self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"] + VIEW_PERFORMANCE))
         # Grupo funcional pequeño: replica la lectura que ya otorga el rol de consulta.
         # El alcance sigue siendo la delegación principal de cada miembro.
