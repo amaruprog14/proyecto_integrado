@@ -40,6 +40,7 @@ CATALOG_TABLES = {
     "accounts_delegation", "accounts_position", "accounts_area", "accounts_function", "accounts_territory",
     "configuration_item", "configuration_activitytype", "configuration_servicetype",
     "configuration_attentiontype", "configuration_subattentiontype",
+    "activities_giftcampaign",
 }
 # Palabras que reservan un campo aunque sea de un catálogo: credenciales, rutas de archivos privados
 # y datos personales o de contacto.

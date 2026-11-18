@@ -1,3 +1,4 @@
+import json
 from urllib.parse import urlencode
 
 from django.core.exceptions import ValidationError
@@ -16,11 +17,26 @@ from common.edit_concurrency import edit_conflict, edit_is_current, edit_revisio
 from common.maintainer_forms import MaintainerForm
 from common.modal_forms import ModalFormOnlyMixin, add_form_success
 from common.scopes import scope_officials
+from common.text import format_snapshot
 from configuration.period_services import lock_period_registry
 from configuration.services import AuditoriaService
 
 VIEW = "accounts.view_officialabsence"
 MANAGE = "accounts.manage_absence"
+
+
+def absence_snapshot(absence):
+    """Captura el estado antes de que ModelForm.is_valid() modifique la instancia."""
+    return format_snapshot({
+        "Funcionario": f"{absence.official_id} · {absence.official}",
+        "Tipo de ausencia": absence.get_kind_display(),
+        "Inicio": absence.start_date,
+        "Término": absence.end_date,
+        # Una única línea evita que un motivo multilínea se interprete como otros campos
+        # operativos al aplicar la protección de datos de la bitácora.
+        "Motivo": json.dumps(absence.reason, ensure_ascii=False),
+        "Archivado": "Sí" if absence.deleted_at else "No",
+    })
 
 
 class AbsenceForm(MaintainerForm):
@@ -39,20 +55,33 @@ class AbsenceList(ProtectedViewMixin, View):
     permission_required = VIEW
 
     def get(self, request):
-        officials = scope_officials(Official.objects.all(), request.user, VIEW)
+        include_archived = request.GET.get("include_archived") == "1"
+        authorized = scope_officials(Official.objects.all(), request.user, VIEW)
+        officials = authorized if include_archived else authorized.filter(deleted_at__isnull=True)
+        officials = officials.order_by("full_name", "pk")
         rows = OfficialAbsence.objects.filter(official__in=officials, deleted_at__isnull=True).select_related("official")
-        filters = {}
+        filters = {"include_archived": "1"} if include_archived else {}
+        selected_official = None
+        archived_filter_reset = False
         if official_id := request.GET.get("official", ""):
             if not official_id.isascii() or not official_id.isdecimal() or len(official_id) > 19:
                 raise Http404("No se encontró el funcionario solicitado.")
-            official = get_scoped_object_or_404(request, officials, pk=official_id)
-            rows = rows.filter(official=official)
-            filters["official"] = official.pk
+            official = get_scoped_object_or_404(request, authorized, pk=official_id)
+            # Al desmarcar el historial, el selector puede enviar aún su selección archivada.
+            # Se vuelve a la consulta habitual sin ampliar el acceso ni incluir sus ausencias.
+            if official.deleted_at and not include_archived:
+                archived_filter_reset = True
+            else:
+                rows = rows.filter(official=official)
+                selected_official = official.pk
+                filters["official"] = official.pk
         return render(request, "accounts/absence_list.html", {
             "page_obj": Paginator(rows, 25).get_page(request.GET.get("page")),
             # Solo los filtros válidos, sin `page`: la paginación los conserva.
             "filter_query": urlencode(filters),
             "officials": officials, "can_manage": request.user.has_perm(MANAGE),
+            "include_archived": include_archived, "selected_official": selected_official,
+            "archived_filter_reset": archived_filter_reset,
         })
 
 
@@ -65,7 +94,8 @@ class AbsenceEdit(ProtectedViewMixin, ModalFormOnlyMixin, View):
             return OfficialAbsence(registered_by=getattr(request.user, "official", None))
         readable = scope_officials(Official.objects.all(), request.user, VIEW)
         writable = scope_officials(readable, request.user, MANAGE)
-        rows = OfficialAbsence.objects.filter(official__in=writable, deleted_at__isnull=True)
+        rows = OfficialAbsence.objects.filter(official__in=writable, official__deleted_at__isnull=True,
+                                             deleted_at__isnull=True)
         return get_scoped_object_or_404(request, rows.select_for_update() if lock else rows, pk=pk)
 
     def display(self, request, obj, form, revision=None):
@@ -85,7 +115,7 @@ class AbsenceEdit(ProtectedViewMixin, ModalFormOnlyMixin, View):
             # Edición simultánea (#52): si otro usuario guardó antes, no se pisa su cambio.
             if obj.pk and not edit_is_current(request, edit_revision(obj)):
                 return edit_conflict()
-            previous = str(obj) if obj.pk else ""
+            previous = absence_snapshot(obj) if obj.pk else ""
             form = forms.Form(request.POST) if self.archive else AbsenceForm(request.POST, instance=obj, actor=request.user)
             # Quien actúa (no quien registró la ausencia) debe ser un funcionario: queda en la auditoría.
             actor = getattr(request.user, "official", None)
@@ -99,7 +129,7 @@ class AbsenceEdit(ProtectedViewMixin, ModalFormOnlyMixin, View):
                         obj = form.save()
                     AuditoriaService.register_change(actor,
                         "Ausencia archivada" if self.archive else "Ausencia guardada", obj,
-                        previous_value=previous, new_value=f"{obj} · {obj.reason}",
+                        previous_value=previous, new_value=absence_snapshot(obj),
                         origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user)
                 except ValidationError as error:
                     form.add_error(None, error)

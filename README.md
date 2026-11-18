@@ -439,6 +439,56 @@ si la base contiene datos de trabajo; no ejecutar la semilla para resolver un co
 Si la base ya contiene la semilla anterior (`admin_demo`, `funcionario1`, Centro/Norte/Sur/Rural), sus datos permanecen intactos;
 no se migran ni se eliminan automáticamente y el total global puede ser mayor.
 
+## Campañas de regalos y entregas
+
+En **Operación → Regalos y entregas** se gestionan campañas de Navidad, Día del Niño y
+Aniversario. La referencia es la hoja «REGALOS NIÑOS» de la matriz del caso, que pide reconocer
+un RUT ya ingresado por otra delegación. Los datos del adulto responsable, estados y permisos
+se acordaron con el equipo al incorporar este módulo.
+
+1. Crear una campaña indicando celebración, año, fechas del mismo año y delegaciones participantes.
+   Existe una campaña compartida por celebración y año. Un delegado puede crear una campaña
+   para las delegaciones que gestiona; para ampliar la participación a otras delegaciones debe
+   intervenir un administrador o coordinador global. Una campaña con participantes fuera del
+   ámbito del delegado es de consulta para este en su configuración.
+2. Abrir la campaña e inscribir al menor con RUT válido, nombre, RUT y nombre del adulto
+   responsable, teléfono y territorio. Opcionalmente se vincula una actividad vigente de esa
+   misma delegación como jornada; sus evidencias se consultan desde el detalle de Actividades.
+3. Confirmar la entrega desde el detalle de la inscripción. Se guardan fecha, usuario responsable
+   y observación. La confirmación requiere un POST con protección CSRF y revisión vigente.
+4. Una inscripción pendiente puede editarse o anularse con motivo. Las entregadas y anuladas
+   conservan sus datos e historial y quedan de consulta. La anulación conserva la reserva del RUT
+   en esa campaña; un caso que requiera reinscripción debe revisarse con la coordinación.
+5. Consultar los totales de inscritos, entregados y anulados y exportar a Excel con los mismos
+   filtros por nombre/RUT, estado y delegación. Los datos se limitan al ámbito autorizado.
+
+La unicidad por campaña y RUT normalizado se exige también en la base de datos. Dos envíos
+simultáneos se serializan por campaña. Si ya está inscrito, se informa únicamente la delegación
+que lo registró. El mismo menor puede participar en otra campaña. Inscripciones, ediciones y
+entregas requieren una campaña abierta y una fecha actual dentro de sus fechas de vigencia.
+La delegación capturada al inscribir se conserva como propietaria del registro. Reasignar el
+territorio en su catálogo no transfiere las inscripciones ni cambia quién puede consultarlas.
+Una corrección de territorio debe pertenecer a la delegación original. Desactivar o archivar
+un territorio conserva las inscripciones existentes y permite su anulación con motivo.
+Las delegaciones participantes que luego se desactivan o archivan permanecen disponibles en
+la configuración de esa campaña para que el responsable autorizado pueda editarla o cerrarla.
+Las nuevas campañas e inscripciones ofrecen opciones vigentes; la consulta histórica y las
+operaciones sobre registros existentes conservan su ámbito territorial original.
+Cada modificación conserva un historial con actor, fecha, valores anteriores y nuevos y deja
+registro en la bitácora general. El vínculo con una actividad no suma automáticamente entregas
+al puntaje de desempeño. El módulo conserva los datos de inscripción y entrega sin gestionar stock.
+
+Para habilitarlo en una base existente, ejecutar `python manage.py migrate`. Las migraciones
+`activities.0017_gift_campaigns` y `activities.0018_gift_seed_permissions` crean las tablas y
+otorgan los ocho permisos a los roles de semilla Administrador y Coordinador del sistema
+(`ALL`) y Delegado (`DELEGATION`). Los roles propios se configuran desde Roles. Se requieren
+`activities.view_giftcampaign` y `activities.view_giftregistration` para consultar inscripciones;
+crear y editar campañas usa `add_giftcampaign` y `change_giftcampaign`; registrar y editar usa
+`add_giftregistration` y `change_giftregistration`; confirmar y anular usa
+`deliver_giftregistration` y `cancel_giftregistration`. Las operaciones territoriales admiten
+los ámbitos `ALL` y `DELEGATION`. La semilla mantiene estos permisos al repetirse y conserva
+sus 2.000 registros de negocio; las campañas y beneficiarios se registran desde el sitio.
+
 ## Pantallas
 
 | Anexo | Pantalla | Ruta |
@@ -551,9 +601,14 @@ delegación) reciben `view_officialabsence` y `manage_absence`. Funcionario, Usu
 Verificador no los reciben: las ausencias son datos personales y el rol Funcionario tiene alcance de
 delegación, por lo que vería las de sus colegas. Una base ya cargada los recibe al volver a ejecutar
 `seed_demo` (lista `UPGRADE_PERMISSIONS`) o con la migración `accounts/0015_absence_seed_roles`, que
-solo toca los roles creados por la semilla. Revertir esa migración quita los dos permisos al Coordinador y al Delegado
-de la semilla aunque se les hubieran asignado antes a mano (no conserva ese estado previo); al
-Administrador no se los quita.
+solo toca los roles creados por la semilla. La reversión de `accounts/0015` es conservadora:
+conserva las asignaciones de permisos, incluidas las realizadas manualmente antes o después
+de migrar. La retirada de permisos se realiza explícitamente desde Roles. Se aplica el mismo
+criterio a `analytics/0008_score_adjustment_roles`. Volver a aplicar estas migraciones completa
+los permisos previstos para los roles de semilla sin duplicarlos. La conservación de permisos
+corresponde a estas operaciones de datos; una reversión de esquema requiere revisar además
+las migraciones dependientes. Para una instalación que ya las tiene aplicadas, basta disponer
+de estos archivos actualizados para las futuras reversiones.
 
 Los permisos provienen del usuario, de sus grupos y de los **roles SGR vigentes** (activos y no
 archivados) de su funcionario (`accounts.backends.SGRAuthBackend`). Salvo el superusuario, se
@@ -686,6 +741,22 @@ de todos sus campos, salvo los sensibles (contraseñas, tokens, rutas de archivo
 teléfonos, RUT y similares). Fuera de los catálogos sigue rigiendo la lista explícita de campos
 operativos. Los estados de solicitudes ciudadanas y los cambios operativos
 del seguimiento de casos y cartas conservan su trazabilidad.
+
+Las altas, ediciones y archivos de Ausencias guardan una instantánea con funcionario, tipo,
+fechas, motivo y estado de archivado. La edición captura el valor anterior antes de validar
+el formulario y registra el nuevo después de guardar. El motivo se conserva como texto
+reservado; sus saltos de línea quedan escapados para preservar el contenido y la protección
+de datos del detalle general. Los eventos históricos que omitieron el motivo anterior
+requieren un respaldo para recuperarlo.
+
+La consulta de Ausencias muestra inicialmente a los funcionarios sin archivar. La opción
+«Incluir funcionarios archivados» permite consultar su historial dentro del mismo ámbito
+autorizado. El selector y la paginación conservan esta opción y el funcionario elegido.
+Las filas históricas identifican al funcionario archivado y quedan de solo consulta; las
+rutas de edición y archivo también rechazan cambios sobre esas ausencias. Al desactivar
+el historial se retira una selección archivada y se informa en pantalla. Los formularios
+de registro ofrecen únicamente funcionarios sin archivar. El estado Activo, Inactivo o
+Suspendido es independiente del archivo y conserva su comportamiento previo en esta consulta.
 
 ### Comentarios internos y alertas (RF-035, RF-037)
 
@@ -855,6 +926,10 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   Si la meta de un ítem difiere entre tramos, la fila integrada no muestra una meta única (queda
   vacía también al congelar) y el detalle por tramo conserva cada meta. El semáforo de esa fila
   compara contra el esperado de los tramos donde el ítem se evaluó.
+  El resumen personal y su Excel muestran el resultado acumulado aunque el último tramo al
+  corte carezca de plan. Conservan la base, los ajustes y los límites aplicados, e informan la
+  cobertura parcial. El Excel incluye una hoja «Tramos de cargo» con fechas, días, disponibilidad
+  de plan y resultado de cada tramo. En períodos cerrados estos datos salen del congelamiento.
   **Limitación de rendimiento:** con historial de cargo, los compromisos de los ítems porcentuales
   se consultan por funcionario y tramo (el resto de los datos se carga en bloque).
   **Reversión de `analytics/0006`:** antes de achicar las columnas convierte `MAX_PERCENTAGE` en

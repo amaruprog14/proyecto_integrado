@@ -55,7 +55,7 @@ def personal_export(period, today, result):
         ("Días computables", result.computable_days),
         ("Días transcurridos", result.elapsed_days),
     ]
-    if result.version:
+    if result.items:
         metrics.extend([
             ("Meta esperada (%)", result.expected_percentage),
             ("Total ponderado base (puntos)", result.base_total),
@@ -67,6 +67,8 @@ def personal_export(period, today, result):
         ])
     if result.notice:
         metrics.append(("Observación", result.notice))
+    if result.plan_coverage_notice:
+        metrics.append(("Cobertura del plan", result.plan_coverage_notice))
     tables = [
         ("Resultado por ítem",
          ("Ítem", "Tipo de meta", "Meta", "Avance", "Cumplimiento (%)", "Ponderador (%)",
@@ -75,6 +77,16 @@ def personal_export(period, today, result):
            row.goal, row.progress, row.compliance, row.weight, row.weighted,
            row.expected_units, row.difference, row.traffic_light_label, row.notice) for row in result.items)),
     ]
+    if len(result.segments) > 1:
+        tables.append((
+            "Tramos de cargo",
+            ("Cargo", "Inicio", "Término", "Días computables", "Días transcurridos",
+             "Plan publicado", "Resultado del tramo (puntos)", "Meta esperada (%)", "Semáforo", "Observación"),
+            ((segment["position"], date.fromisoformat(segment["start_date"]), date.fromisoformat(segment["end_date"]),
+              segment["days"], segment["elapsed_days"], "Sí" if segment["version_id"] else "Sin plan publicado",
+              Decimal(segment["total"]), Decimal(segment["expected"]) if segment["expected"] is not None else None,
+              light_label(segment["traffic_light"]), segment["notice"]) for segment in result.segments),
+        ))
     if result.score_adjustments:
         tables.append((
             "Ajustes aprobados", ("Tipo", "Fecha", "Puntos autorizados", "Puntos computables", "Observación"),

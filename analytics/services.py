@@ -168,6 +168,14 @@ class PerformanceResult:
     cap_version: MeasurementVersion | None = None
 
     @property
+    def plan_coverage_notice(self):
+        if self.items and self.segments and self.version is None:
+            return ("El último tramo de cargo al corte no tiene un plan publicado. "
+                    "El resultado conserva los aportes de los tramos con plan, "
+                    "ponderados por días computables.")
+        return ""
+
+    @property
     def position(self):
         if self.frozen and self.version:
             return self.version.plan.position
