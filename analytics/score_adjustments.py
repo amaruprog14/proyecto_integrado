@@ -22,6 +22,10 @@ def score_officials(user, permission):
     return scope_officials(Official.objects.all(), user, permission)
 
 
+OWN_REVIEW_MESSAGE = "No puedes validar un registro que ingresaste tú. Debe validarlo otra cuenta autorizada."
+SUBJECT_REVIEW_MESSAGE = ("No puedes validar un reclamo o felicitación sobre ti. "
+                          "Debe validarlo otra cuenta autorizada.")
+
 class ScoreAdjustmentForm(MaintainerForm):
     class Meta:
         model = ScoreAdjustment
@@ -145,11 +149,25 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
     def has_permission(self):
         return super().has_permission() and (self.request.method != "POST" or self.can_review())
 
-    def render_detail(self, record, form=None):
-        if form is None and self.can_review() and record.status == ScoreAdjustment.Status.PENDING:
+    def review_conflict(self, record):
+        """Segregación de funciones, por cuenta de usuario: no valida quien registró ni el
+        funcionario afectado (aunque lo haya registrado otra persona). Devuelve el motivo o None."""
+        user_id = self.request.user.pk
+        if record.recorded_by_id == user_id:
+            return "own"
+        if record.official.user_id is not None and record.official.user_id == user_id:
+            return "subject"
+        return None
+
+    def render_detail(self, record, form=None, status=200):
+        conflict = self.review_conflict(record)
+        if form is None and not conflict and self.can_review() and record.status == ScoreAdjustment.Status.PENDING:
             if record.period.status == Period.Status.OPEN and record.period.deleted_at is None:
                 form = ScoreAdjustmentReviewForm()
-        return render(self.request, "analytics/score_adjustment_detail.html", {"record": record, "form": form})
+        blocked = conflict if record.status == ScoreAdjustment.Status.PENDING and self.can_review() else None
+        return render(self.request, "analytics/score_adjustment_detail.html", {
+            "record": record, "form": form, "own_pending": blocked == "own", "subject_pending": blocked == "subject",
+        }, status=status)
 
     def get(self, request, pk):
         record = get_object_or_404(self.records().select_related(
@@ -158,7 +176,20 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
         return self.render_detail(record)
 
     def post(self, request, pk):
-        record = get_object_or_404(self.records(), pk=pk)
+        record = get_object_or_404(self.records().select_related("official", "period"), pk=pk)
+        if conflict := self.review_conflict(record):
+            # No cambia el estado: el intento queda en la bitácora y se informa el motivo.
+            if conflict == "own":
+                action, reason, message = ("Intento de validar un registro propio",
+                                           "quien registra no puede validar su propio registro", OWN_REVIEW_MESSAGE)
+            else:
+                action, reason, message = ("Intento de validar un registro sobre sí mismo",
+                                           "el funcionario afectado no puede validar su propio reclamo o felicitación",
+                                           SUBJECT_REVIEW_MESSAGE)
+            self.audit(record, action, previous=f"Estado: {record.get_status_display()}",
+                       new=f"Estado: {record.get_status_display()}\nRechazado: {reason}")
+            messages.error(request, message)
+            return self.render_detail(record, status=403)
         form = ScoreAdjustmentReviewForm(request.POST)
         if not form.is_valid():
             return self.render_detail(record, form)

@@ -375,7 +375,7 @@ class IndicatorSupportTests(CalculatorFixture, TestCase):
         self.assertEqual(panel.context["result"].max_final_score, 120)
         # Recorta sin reclamos ni felicitaciones: el panel distingue la base del resultado final.
         self.assertContains(panel, "data-performance-base>150,00 puntos")
-        self.assertContains(panel, "data-performance-cap>120 puntos")
+        self.assertContains(panel, "data-performance-cap>120 puntos (aplicado)")
 
     def test_final_score_cap_is_validated_in_the_plan_form(self, _today):
         version = self.plans["Gestor social"].versions.get()

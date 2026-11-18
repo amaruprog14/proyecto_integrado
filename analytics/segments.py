@@ -30,16 +30,20 @@ def commitments_at_cutoff(official_ids, period, until=None):
     return rows
 
 
-def pending_commitments(official_ids, period, until=None):
-    """Denominador de «Pendientes en tubo»: excluye los cancelados con justificación al corte."""
+def measured_commitments(official_ids, period, until=None):
+    """Denominador común de los ítems del tubo («Soluciones de ingresos al tubo» y «Pendientes en
+    tubo»): los compromisos al corte sin los cancelados con justificación. Un compromiso cancelado
+    después del corte cuenta con el estado que tenía al corte; uno cancelado sin justificación
+    (dato legado) sigue contando."""
     from agenda.models import Commitment
     return commitments_at_cutoff(official_ids, period, until).exclude(
         measured_status=Commitment.Status.CANCELLED, cancellation_reason__gt="")
 
 
+
 def pending_percentages(official_ids, period, until=None):
     from agenda.models import Commitment
-    rows = pending_commitments(official_ids, period, until)
+    rows = measured_commitments(official_ids, period, until)
     counts = rows.order_by().values("responsible_id").annotate(total=Count("pk"),
         pending=Count("pk", filter=~Q(measured_status=Commitment.Status.DONE)))
     return {row["responsible_id"]: Decimal(row["pending"]) / row["total"] * 100 for row in counts}

@@ -1,8 +1,10 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import Permission, User
+from openpyxl import load_workbook
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -272,7 +274,10 @@ class PerformanceAPITests(CalculatorFixture, TestCase):
 
     def assert_reconciles(self, data):
         base, adjustments = Decimal(data["total_base"]), Decimal(data["ajustes_computables"])
-        self.assertEqual(Decimal(data["total_ponderado"]), min(base + adjustments, Decimal(data["tope_resultado_final"])))
+        expected = min(base + adjustments, Decimal(data["tope_resultado_final"]))
+        if data["piso_resultado_final"] is not None:
+            expected = max(expected, Decimal(data["piso_resultado_final"]))
+        self.assertEqual(Decimal(data["total_ponderado"]), expected)
         self.assertEqual(adjustments, sum((Decimal(row["puntos_computables"]) for row in data["ajustes"]), Decimal(0)))
         self.assertEqual(base, sum((Decimal(row["resultado_ponderado"]) for row in data["items"]), Decimal(0)))
 
@@ -325,6 +330,50 @@ class PerformanceAPITests(CalculatorFixture, TestCase):
         data = self.api.get(PERSONAL).json()
         self.assertEqual((data["total_base"], data["tope_resultado_final"], data["total_ponderado"]), ("20.00", "15.00", "15.00"))
         self.assert_reconciles(data)
+
+    def test_final_score_floor_keeps_the_breakdown_reconcilable(self):
+        self.authorize(self.worker)
+        # Base 0 con un reclamo: el resultado final no baja de 0.
+        self.adjustment(ScoreAdjustment.Kind.COMPLAINT, "-20")
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_base"], data["ajustes_computables"], data["piso_resultado_final"], data["total_ponderado"]),
+                         ("0.00", "-20.00", "0.00", "0.00"))
+        self.assert_reconciles(data)
+        # Base 10 con un reclamo de 20: también queda en 0, no en −10.
+        self.record(self.worker, "Visita terreno", 6)  # 6/12 x 20 = 10 puntos base
+        data = self.api.get(PERSONAL).json()
+        self.assertEqual((data["total_base"], data["total_ponderado"]), ("10.00", "0.00"))
+        self.assert_reconciles(data)
+        # Período congelado: el piso queda en el resumen guardado al cierre.
+        self.period.close_period()
+        frozen = self.api.get(PERSONAL).json()
+        self.assertEqual((frozen["total_ponderado"], frozen["piso_resultado_final"]), ("0.00", "0.00"))
+        self.assert_reconciles(frozen)
+        self.client.force_login(self.worker.user)
+        panel = self.client.get(reverse("my_performance"), {"period": self.period.pk})
+        self.assertTrue(panel.context["result"].floor_applied)
+        self.assertContains(panel, "data-performance-floor")
+        export = self.client.get(reverse("my_performance"), {"period": self.period.pk, "export": "xlsx"})
+        sheet = load_workbook(BytesIO(export.content))["Resumen"]
+        values = {row[0]: row[1] for row in sheet.iter_rows(values_only=True) if row and row[0]}
+        self.assertEqual(values["Piso del resultado final (puntos)"], 0)
+        self.assertEqual(values["Resultado final (puntos)"], 0)
+
+    def test_delegation_dashboard_and_api_use_the_floored_totals(self):
+        self.adjustment(ScoreAdjustment.Kind.COMPLAINT, "-20")  # funcionario: base 0 − 20 → 0, no −20
+        self.record(self.delegate, "Visita terreno", 6)  # delegada: base 10, sin ajustes
+        self.authorize(self.delegate)
+        self.client.force_login(self.delegate.user)
+        with patch("analytics.views.timezone.localdate", return_value=TODAY):
+            web = self.client.get(reverse("delegation_performance")).context
+        totals = {row["result"].official.pk: row["result"].total for row in web["rows"] if row["result"].items}
+        self.assertEqual((totals[self.worker.pk], totals[self.delegate.pk]), (0, 10))
+        self.assertEqual(q2(web["average"]), Decimal("5.00"))  # sin piso sería (−20 + 10) / 2 = −5
+        team = self.api.get(self.team_url()).json()
+        self.assertEqual(team["promedio_ponderado"], "5.00")
+        self.assertEqual(team["promedio_ponderado"], str(q2(web["average"])))
+        self.assertEqual(team["semaforos"], {"verde": 0, "ambar": 0, "rojo": 2})
+        self.assertEqual(Decimal(team["meta_esperada_promedio_pct"]), q2(web["expected_average"]))
 
     @override_settings(DEBUG=False, SGR_API_DOCS_ENABLED=False)
     def test_documentation_requires_an_enabled_environment_and_web_session(self):

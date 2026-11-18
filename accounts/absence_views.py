@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.shortcuts import redirect, render
@@ -6,6 +8,7 @@ from django.utils import timezone
 from django.views import View
 from django import forms
 from django.core.paginator import Paginator
+from django.http import Http404
 
 from accounts.models import Official, OfficialAbsence
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
@@ -38,11 +41,17 @@ class AbsenceList(ProtectedViewMixin, View):
     def get(self, request):
         officials = scope_officials(Official.objects.all(), request.user, VIEW)
         rows = OfficialAbsence.objects.filter(official__in=officials, deleted_at__isnull=True).select_related("official")
-        if request.GET.get("official"):
-            official = get_scoped_object_or_404(request, officials, pk=request.GET["official"])
+        filters = {}
+        if official_id := request.GET.get("official", ""):
+            if not official_id.isascii() or not official_id.isdecimal() or len(official_id) > 19:
+                raise Http404("No se encontró el funcionario solicitado.")
+            official = get_scoped_object_or_404(request, officials, pk=official_id)
             rows = rows.filter(official=official)
+            filters["official"] = official.pk
         return render(request, "accounts/absence_list.html", {
             "page_obj": Paginator(rows, 25).get_page(request.GET.get("page")),
+            # Solo los filtros válidos, sin `page`: la paginación los conserva.
+            "filter_query": urlencode(filters),
             "officials": officials, "can_manage": request.user.has_perm(MANAGE),
         })
 
@@ -90,7 +99,8 @@ class AbsenceEdit(ProtectedViewMixin, ModalFormOnlyMixin, View):
                         obj = form.save()
                     AuditoriaService.register_change(actor,
                         "Ausencia archivada" if self.archive else "Ausencia guardada", obj,
-                        previous_value=previous, new_value=f"{obj} · {obj.reason}")
+                        previous_value=previous, new_value=f"{obj} · {obj.reason}",
+                        origin_ip=request.META.get("REMOTE_ADDR") or None, actor=request.user)
                 except ValidationError as error:
                     form.add_error(None, error)
                 else:

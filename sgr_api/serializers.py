@@ -79,7 +79,7 @@ class PersonalPerformanceSerializer(serializers.Serializer):
     fecha_corte = serializers.DateField()
     total_ponderado = serializers.DecimalField(
         source="total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
-        rounding=ROUND_HALF_UP, help_text="Resultado final: min(total_base + ajustes_computables, tope_resultado_final).")
+        rounding=ROUND_HALF_UP, help_text="Resultado final: max(piso_resultado_final, min(total_base + ajustes_computables, tope_resultado_final)).")
     total_base = serializers.DecimalField(
         source="base_total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
         rounding=ROUND_HALF_UP, help_text="Suma de los resultados ponderados de los ítems, sin ajustes.")
@@ -87,6 +87,7 @@ class PersonalPerformanceSerializer(serializers.Serializer):
         source="adjustment_total", max_digits=None, decimal_places=2, allow_null=True, coerce_to_string=True,
         rounding=ROUND_HALF_UP, help_text="Suma de los puntos computables de reclamos y felicitaciones aprobados.")
     tope_resultado_final = decimal_field("max_final")
+    piso_resultado_final = decimal_field("min_final")
     ajustes = ScoreAdjustmentDetailSerializer(many=True, source="adjustments")
     semaforo = serializers.ChoiceField(choices=TrafficLight.choices, allow_null=True)
     items = PerformanceItemSerializer(many=True)

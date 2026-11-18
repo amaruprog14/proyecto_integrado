@@ -35,12 +35,16 @@ OPERATE_AGENDA = VIEW_AGENDA + ["agenda.add_commitment", "agenda.change_commitme
 MANAGE_AGENDA = OPERATE_AGENDA + ["agenda.assign_commitment"]
 REGISTER_SCORE_ADJUSTMENTS = [ScoreAdjustment.VIEW_PERMISSION, ScoreAdjustment.ADD_PERMISSION]
 MANAGE_SCORE_ADJUSTMENTS = [*REGISTER_SCORE_ADJUSTMENTS, ScoreAdjustment.REVIEW_PERMISSION]
+# Ausencias (licencias, vacaciones...): datos personales. Las gestionan el Administrador (ya incluido
+# por sus permisos de cuentas), el Coordinador y el Delegado. El rol Funcionario tiene alcance de
+# delegación: con este permiso vería las ausencias de sus colegas, así que no lo recibe.
+MANAGE_ABSENCES = ["accounts.view_officialabsence", "accounts.manage_absence"]
 # Permisos agregados después de la primera semilla: una base ya cargada los recibe sin abortar,
 # siempre que al rol de demostración solo le falten permisos de esta lista.
 UPGRADE_PERMISSIONS = [
     "accounts.archive_official", "activities.archive_activity", *MEASUREMENT_PLAN_PERMISSIONS,
     "activities.view_evidence", "activities.add_evidence", *TEAM_PERFORMANCE, *MANAGE_AGENDA, *MANAGE_LETTERS,
-    *MANAGE_SCORE_ADJUSTMENTS,
+    *MANAGE_SCORE_ADJUSTMENTS, *MANAGE_ABSENCES,
 ]
 DEMO_PERIODS = ((date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)))
 DEMO_REVISION_DATE = date(2026, 10, 15)
@@ -245,8 +249,8 @@ class Command(BaseCommand):
         }
         # Panel de desempeño: funcionarios, lectores y verificadores ven lo suyo; Delegado, Coordinador y
         # Administrador eligen funcionarios dentro de su alcance.
-        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + MANAGE_SCORE_ADJUSTMENTS))
-        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + REGISTER_SCORE_ADJUSTMENTS))
+        self.role("Coordinador del sistema", "ALL", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + MANAGE_SCORE_ADJUSTMENTS + MANAGE_ABSENCES))
+        self.role("Delegado", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["accounts.view_delegation", "configuration.view_period"] + TEAM_PERFORMANCE + MANAGE_AGENDA + REGISTER_SCORE_ADJUSTMENTS + MANAGE_ABSENCES))
         self.role("Verificador", "DELEGATION", get_permissions(CONSULTA_PERMISSIONS + ["activities.view_evidence", "activities.view_evidencevalidation", "activities.add_evidencevalidation", "activities.change_evidencevalidation"] + VIEW_PERFORMANCE))
         # Grupo funcional pequeño: replica la lectura que ya otorga el rol de consulta.
         # El alcance sigue siendo la delegación principal de cada miembro.

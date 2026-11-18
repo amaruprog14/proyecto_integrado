@@ -319,7 +319,7 @@ class IndicatorSupportSnapshot(models.Model):
     Actividades computadas en los ítems de cantidad; en los porcentuales («Soluciones de ingresos
     al tubo», «Pendientes en tubo») los compromisos del denominador con su estado al corte y si
     cuentan en el numerador. Sale del mismo criterio que la cifra (computable_activities y
-    commitments_at_cutoff), nunca de un recálculo aparte.
+    measured_commitments), nunca de un recálculo aparte.
     """
 
     snapshot = models.ForeignKey(IndicatorSnapshot, on_delete=models.PROTECT, related_name="supports")

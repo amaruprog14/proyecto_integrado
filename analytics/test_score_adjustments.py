@@ -27,6 +27,8 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         cls.external.save(update_fields=["delegation"])
         cls.operator = cls.staff("operador-ajustes", Role.Scope.DELEGATION)
         cls.coordinator = cls.staff("coordinador-ajustes", Role.Scope.ALL, review=True)
+        # Segregación: quien registra no valida lo suyo; otra cuenta con permiso de validación sí.
+        cls.reviewer = cls.staff("validador-ajustes", Role.Scope.ALL, review=True)
 
     @classmethod
     def staff(cls, name, scope, review=False):
@@ -73,7 +75,8 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         self.assertContains(self.review(record), "Este registro ya fue revisado.")
         record.refresh_from_db()
         self.assertEqual((record.points, record.reviewed_by), (Decimal("-20"), self.coordinator))
-        self.assertEqual(Calc.calculate(self.subject, self.period, END).total, -20)
+        result = Calc.calculate(self.subject, self.period, END)
+        self.assertEqual((result.score_adjustment_total, result.total), (-20, 0))  # piso del resultado final
         panel = self.client.get(reverse("my_performance"), {"period": self.period.pk, "official": self.subject.pk})
         self.assertContains(panel, "Ver reclamos y felicitaciones aprobados")
         self.assertContains(panel, "-20,00 puntos")
@@ -94,16 +97,20 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         self.client.force_login(self.coordinator)
         self.assertEqual(self.create(occurred_on=change_date.isoformat()).status_code, 302)
         record = ScoreAdjustment.objects.latest("pk")
+        self.client.force_login(self.reviewer)
         self.assertEqual(self.review(record).status_code, 302)
         record.refresh_from_db()
         self.assertEqual((record.version, record.points), (draft, Decimal("-30")))
+        self.client.force_login(self.coordinator)
         self.assertEqual(self.create().status_code, 302)
         rejected = ScoreAdjustment.objects.latest("pk")
+        self.client.force_login(self.reviewer)
         self.assertContains(self.review(rejected, ScoreAdjustment.Status.REJECTED), "Indica el motivo del rechazo.")
         self.assertEqual(self.review(rejected, ScoreAdjustment.Status.REJECTED, "Sin respaldo verificable").status_code, 302)
         rejected.refresh_from_db()
         self.assertIsNone(rejected.points)
-        self.assertEqual(Calc.calculate(self.subject, self.period, END).total, -30)
+        result = Calc.calculate(self.subject, self.period, END)
+        self.assertEqual((result.score_adjustment_total, result.total), (-30, 0))
 
     def test_three_approved_congratulations_and_final_cap_are_preserved_at_close(self):
         for _ in range(4):
@@ -134,6 +141,79 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         self.period.close_period()
         expected = "La fecha debe pertenecer a un período abierto."
         self.assertContains(self.create(), expected)
+        self.client.force_login(self.reviewer)
         self.assertContains(self.review(record), expected)
         record.refresh_from_db()
         self.assertEqual(record.status, ScoreAdjustment.Status.PENDING)
+
+    @patch("analytics.score_adjustments.timezone.localdate", return_value=END)
+    def test_who_records_cannot_review_own_record(self, _today):
+        self.client.force_login(self.coordinator)  # tiene registrar y validar
+        self.assertEqual(self.create().status_code, 302)
+        own = ScoreAdjustment.objects.get()
+        url = reverse("score_adjustment_detail", args=[own.pk])
+        page = self.client.get(url)
+        self.assertIsNone(page.context["form"])
+        self.assertContains(page, "data-own-record")
+        self.assertNotContains(page, "Guardar decisión")
+        response = self.client.post(url, {"decision": ScoreAdjustment.Status.APPROVED, "note": ""},
+                                    REMOTE_ADDR="192.0.2.10")
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "No puedes validar un registro que ingresaste tú", status_code=403)
+        own.refresh_from_db()
+        self.assertEqual((own.status, own.points, own.reviewed_by), (ScoreAdjustment.Status.PENDING, None, None))
+        attempt = AuditLog.objects.get(action="Intento de validar un registro propio", affected_record_id=own.pk)
+        self.assertEqual((attempt.actor_username, attempt.origin_ip), (self.coordinator.username, "192.0.2.10"))
+        self.assertEqual((attempt.affected_table, attempt.previous_value), (ScoreAdjustment._meta.db_table, "Estado: Pendiente"))
+        self.assertEqual(attempt.new_value.splitlines()[:2], [
+            "Estado: Pendiente", "Rechazado: quien registra no puede validar su propio registro"])
+        self.assertIn(f"Cuenta responsable: {self.coordinator.pk}", attempt.new_value)
+
+        # Otra cuenta con permiso de validación sí puede validarlo.
+        self.client.force_login(self.reviewer)
+        self.assertIsNotNone(self.client.get(url).context["form"])
+        self.assertEqual(self.review(own).status_code, 302)
+        own.refresh_from_db()
+        self.assertEqual((own.status, own.reviewed_by), (ScoreAdjustment.Status.APPROVED, self.reviewer))
+
+        # Un registro ajeno sigue funcionando para quien registró el anterior.
+        self.client.force_login(self.reviewer)
+        self.assertEqual(self.create(kind=ScoreAdjustment.Kind.CONGRATULATION).status_code, 302)
+        foreign = ScoreAdjustment.objects.latest("pk")
+        self.client.force_login(self.coordinator)
+        self.assertEqual(self.review(foreign).status_code, 302)
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.reviewed_by, self.coordinator)
+
+    @patch("analytics.score_adjustments.timezone.localdate", return_value=END)
+    def test_affected_official_cannot_review_a_record_about_themselves(self, _today):
+        affected = self.reviewer.official  # tiene permiso de validación y alcance global
+        affected.position = self.positions["Apoyo administrativo"]
+        affected.save(update_fields=["position"])
+        record = ScoreAdjustment.objects.create(
+            official=affected, period=self.period, occurred_on=START, kind=ScoreAdjustment.Kind.CONGRATULATION,
+            channel=ScoreAdjustment.Channel.EMAIL, reason="Agradecimiento de un vecino",
+            written_support="Correo ficticio", recorded_by=self.operator)  # lo registró otra persona
+        url = reverse("score_adjustment_detail", args=[record.pk])
+        self.client.force_login(self.reviewer)
+        page = self.client.get(url)
+        self.assertIsNone(page.context["form"])
+        self.assertContains(page, "data-subject-record")
+        self.assertNotContains(page, "Guardar decisión")
+        response = self.client.post(url, {"decision": ScoreAdjustment.Status.APPROVED, "note": ""},
+                                    REMOTE_ADDR="192.0.2.20")
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "No puedes validar un reclamo o felicitación sobre ti", status_code=403)
+        record.refresh_from_db()
+        self.assertEqual((record.status, record.points, record.reviewed_by), (ScoreAdjustment.Status.PENDING, None, None))
+        attempt = AuditLog.objects.get(action="Intento de validar un registro sobre sí mismo", affected_record_id=record.pk)
+        self.assertEqual((attempt.actor_username, attempt.origin_ip, attempt.previous_value),
+                         (self.reviewer.username, "192.0.2.20", "Estado: Pendiente"))
+        self.assertIn("Rechazado: el funcionario afectado no puede validar", attempt.new_value)
+        self.assertEqual(Calc.calculate(affected, self.period, END).score_adjustments, [])
+
+        # Otra cuenta autorizada, que no es el afectado ni quien registró, sí puede validarlo.
+        self.client.force_login(self.coordinator)
+        self.assertEqual(self.review(record).status_code, 302)
+        record.refresh_from_db()
+        self.assertEqual((record.status, record.reviewed_by), (ScoreAdjustment.Status.APPROVED, self.coordinator))

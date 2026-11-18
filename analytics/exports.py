@@ -60,6 +60,8 @@ def personal_export(period, today, result):
             ("Meta esperada (%)", result.expected_percentage),
             ("Total ponderado base (puntos)", result.base_total),
             ("Ajustes computables (puntos)", result.score_adjustment_total),
+            ("Tope del resultado final (puntos)", result.max_final_score),
+            ("Piso del resultado final (puntos)", result.min_final_score),
             ("Resultado final (puntos)", result.total),
             ("Semáforo", light_label(result.total_traffic_light)),
         ])
