@@ -135,6 +135,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers: { "X-Modal-Request": "true" },
                 credentials: "same-origin",
             });
+            if (response.status === 423) {
+                showError(await response.text());
+                return;
+            }
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const parsed = parseForm(await response.text(), response.url);
             if (!parsed) throw new Error("No se encontró el formulario solicitado.");
@@ -162,6 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const submitButton = form.querySelector('button[type="submit"]');
         let conflicted = false;
+        let lockedMessage;
         if (submitButton) {
             submitButton.disabled = true;
             submitButton.dataset.originalText = submitButton.textContent.trim();
@@ -179,6 +184,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers,
                 credentials: "same-origin",
             });
+            if (response.status === 423) {
+                conflicted = true;
+                lockedMessage = await response.text();
+                throw new Error(lockedMessage);
+            }
             if (response.status === 409 && (await response.json()).code === "edit_conflict") {
                 conflicted = true;
                 if (modalBody.contains(form)) {
@@ -209,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 alert.className = "alert alert-danger";
                 alert.dataset.modalSaveError = "";
                 alert.setAttribute("role", "alert");
-                alert.textContent = "No se pudo guardar el formulario. Tus cambios siguen disponibles.";
+                alert.textContent = lockedMessage || "No se pudo guardar el formulario. Tus cambios siguen disponibles.";
                 modalBody.prepend(alert);
             }
         } finally {

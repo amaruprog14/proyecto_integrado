@@ -203,6 +203,14 @@ class PortalInvitation(models.Model):
 class Activity(AutoCodeMixin, BaseModel):
     code_prefix = "ACT"
 
+    @classmethod
+    def validate_daily_capacity(cls, official_id, day, exclude_pk=None):
+        """Se invoca dentro de la transacción que mantiene el bloqueo del registro de períodos."""
+        records = cls.objects.filter(official_id=official_id, date=day, deleted_at__isnull=True)
+        if records.exclude(pk=exclude_pk).count() >= 7:
+            raise ValidationError("El funcionario ya tiene siete actividades vigentes en esta fecha.")
+
+
     class ListingStatus(models.TextChoices):
         ACTIVE = "ACTIVE", "Vigente"
         RESOLVED = "RESOLVED", "Resuelta"
@@ -473,6 +481,13 @@ class EvidenceValidation(BaseModel):
 
     def __str__(self):
         return f"Validación {self.pk} - {self.get_status_display()}"
+
+    @classmethod
+    def approved_for_activity(cls, activity_id):
+        return cls.objects.filter(
+            evidence__activity_id=activity_id, evidence__deleted_at__isnull=True,
+            deleted_at__isnull=True, status=cls.Status.APPROVED,
+        )
 
     def process_validation(self, verifier, status, observation=""):
         """Registra la decisión del verificador (aprobar, rechazar o pedir corrección)."""

@@ -68,6 +68,14 @@ function connectEvidenceUpdates(status) {
                 const replacement = (batch ? fresh.querySelector(`#${batch.id}`) : fresh)?.querySelector(selector);
                 if (replacement) replacement.open = section.open;
             }
+            const heading = document.querySelector("[data-activity-approval]");
+            const nextHeading = page.querySelector("[data-activity-approval]");
+            if (heading && nextHeading && heading.dataset.activityApproval !== nextHeading.dataset.activityApproval) {
+                heading.replaceWith(document.importNode(nextHeading, true));
+                const actions = document.querySelector("[data-activity-actions]");
+                const nextActions = page.querySelector("[data-activity-actions]");
+                if (actions && nextActions) actions.replaceWith(document.importNode(nextActions, true));
+            }
             if (!gallery.isEqualNode(fresh)) {
                 gallery.replaceWith(document.importNode(fresh, true));
                 status.textContent = "Evidencias actualizadas.";

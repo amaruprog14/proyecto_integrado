@@ -1,7 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from accounts.backends import SGRAuthBackend
-from accounts.models import Role
+from accounts.models import InitialPassword, Role
 from analytics.queries import TEAM_PERFORMANCE, VIEW_PERFORMANCE
 from common.access import register_denied_access
 from common.scopes import permission_scope
@@ -9,6 +9,8 @@ from common.scopes import permission_scope
 
 def api_account_enabled(user):
     if user is None or not user.is_authenticated or not SGRAuthBackend().user_can_authenticate(user):
+        return False
+    if InitialPassword.pending(user):
         return False
     official = getattr(user, "official", None)
     return user.is_superuser or (official is not None and official.is_enabled)

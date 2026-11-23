@@ -240,7 +240,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         Activity.objects.filter(pk__in=[row.pk for row in foreign[:3]]).update(
             registration_delegation=self.other_delegation,
         )
-        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5")
+        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5", phone="912345678")
         kind = AttentionType.objects.create(name="Consulta territorial", activity_item=self.items["Visita terreno"])
         sub = SubattentionType.objects.create(name="Derivación territorial", attention_type=kind)
         case = AttentionCase.objects.create(recipient=recipient, delegation=self.other_delegation, subject="Visita")
@@ -763,7 +763,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         shared.authorized_delegations.add(self.delegation)
 
         self.record(shared, "Visita terreno", 3, day=date(2026, 7, 10))
-        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5")
+        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5", phone="912345678")
         kind = AttentionType.objects.create(name="Orientación panel", activity_item=self.items["Visita terreno"])
         sub = SubattentionType.objects.create(name="Derivación panel", attention_type=kind)
         case = AttentionCase.objects.create(recipient=recipient, delegation=self.other_delegation, subject="Visita")

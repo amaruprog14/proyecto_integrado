@@ -355,9 +355,9 @@ class IndicatorSupportTests(CalculatorFixture, TestCase):
         line = self.single_plan(goal=10)  # 15/10 → 150 % (tope computable) x 100 = 150 puntos base
         version = line.version
         self.record(self.worker, "Visita terreno", 15)
-        self.assertEqual(Calc.calculate(self.worker, self.period, END).total, 150)  # 150 por defecto
+        self.assertEqual(Calc.calculate(self.worker, self.period, END).total, 120)  # 150 puntos base quedan en 120
 
-        version.max_final_score = Decimal("120")
+        version.max_final_score = Decimal("150")  # Versión publicada antes del máximo individual.
         version.save(update_fields=["max_final_score"])
         live = Calc.calculate(self.worker, self.period, END)
         self.assertEqual((live.base_total, live.max_final_score, live.total), (150, 120, 120))
@@ -377,9 +377,19 @@ class IndicatorSupportTests(CalculatorFixture, TestCase):
         self.assertContains(panel, "data-performance-base>150,00 puntos")
         self.assertContains(panel, "data-performance-cap>120 puntos (aplicado)")
 
+        # Un cierre histórico conserva tanto el resultado como la regla vigente al cerrarlo.
+        summary = {**snapshot.score_summary, "total": "145.00", "max_final": "150.00"}
+        for explicit_cap in (True, False):
+            if not explicit_cap:
+                summary.pop("max_final")
+            snapshot.score_summary = summary
+            snapshot.save(update_fields=["score_summary"])
+            historical = Calc.result_for(self.worker, self.period)
+            self.assertEqual((historical.max_final_score, historical.total), (150, 145))
+
     def test_final_score_cap_is_validated_in_the_plan_form(self, _today):
         version = self.plans["Gestor social"].versions.get()
-        for value, valid in (("0", False), ("1001", False), ("abc", False), ("1", True), ("1000", True), ("120.5", True)):
+        for value, valid in (("0", False), ("1001", False), ("abc", False), ("1", True), ("119.99", True), ("120", True), ("120.01", False)):
             with self.subTest(value=value):
                 data = {**model_to_dict(version, fields=VersionForm.Meta.fields), "max_final_score": value}
                 form = VersionForm(data, instance=version)

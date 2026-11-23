@@ -12,6 +12,9 @@ from common.mixins import BaseModel
 from configuration.models import Item, Period
 
 
+MAX_FINAL_SCORE = Decimal("120.00")
+
+
 class MeasurementPlan(BaseModel):
     period = models.ForeignKey(Period, on_delete=models.PROTECT, related_name="measurement_plans")
     position = models.ForeignKey(Position, on_delete=models.PROTECT, verbose_name="Cargo")
@@ -55,18 +58,20 @@ class MeasurementVersion(BaseModel):
         max_digits=5, decimal_places=2, default=Decimal("20"),
         validators=[MinValueValidator(0), MaxValueValidator(150)], verbose_name="Puntos a descontar por reclamo",
     )
-    # Tope del resultado final (total ponderado + reclamos y felicitaciones). Regla del proyecto,
-    # configurable como los demás parámetros del plan; el tope de la guía B3 es `max_computable` (por ítem).
     max_final_score = models.DecimalField(
-        max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope del resultado final (puntos)",
-        validators=[MinValueValidator(Decimal("1")), MaxValueValidator(Decimal("1000"))],
-        help_text="Máximo del resultado final, ya sumados reclamos y felicitaciones (150 por defecto).",
+        max_digits=6, decimal_places=2, default=MAX_FINAL_SCORE, verbose_name="Tope del resultado final (puntos)",
+        validators=[MinValueValidator(Decimal("1")), MaxValueValidator(MAX_FINAL_SCORE)],
+        help_text="Máximo de 1 a 120 puntos después de aplicar reclamos y felicitaciones.",
     )
 
     class Meta:
         ordering = ["-number"]
         constraints = [models.UniqueConstraint(fields=["plan", "number"], name="measurement_plan_version_number")]
         indexes = [models.Index(fields=["plan", "effective_from"], name="measurement_effective_idx")]
+
+    @property
+    def effective_final_score_cap(self):
+        return min(self.max_final_score, MAX_FINAL_SCORE)
 
     @property
     def is_published(self):

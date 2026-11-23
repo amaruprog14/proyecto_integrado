@@ -63,7 +63,7 @@ class CalculatorFixture:
         # Una a una: en MySQL bulk_create no devuelve las PK que necesitan las evidencias.
         activities = [
             Activity.objects.create(code=f"T-{next(SERIAL)}", official=official, item=self.items[item_name], date=day,
-                                    record_type=Activity.RecordType.FIELD)
+                                    record_type=Activity.RecordType.FIELD, contact_name="Persona ficticia", phone="912345678")
             for _ in range(quantity)
         ]
         evidences = [
@@ -216,6 +216,18 @@ class ExpectedGoalAndTrafficLightTests(CalculatorFixture, TestCase):
 
 
 class ProgressRulesTests(CalculatorFixture, TestCase):
+    def test_approved_activity_requires_contact_name_and_phone(self):
+        worker = self.official("Funcionario ficticio", "Apoyo administrativo")
+        item = "Atención de usuario teléfono y presencial"
+        activity, = self.record(worker, item, 1)
+        for name, phone, expected in (("", "", 0), ("   ", "912345678", 0), ("Persona", "", 0),
+                                      ("Persona", "912345678", 1)):
+            with self.subTest(expected=expected, name=name, phone=phone):
+                Activity.objects.filter(pk=activity.pk).update(contact_name=name, phone=phone)
+                row = self.rows(Calc.calculate(worker, self.period, END))[item]
+                self.assertEqual(row.progress, expected)
+                self.assertEqual(row.weighted > 0, bool(expected))
+
     def setUp(self):
         self.official_ = self.official("Gestora", "Gestor social")
 

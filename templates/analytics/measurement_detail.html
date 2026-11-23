@@ -35,7 +35,7 @@
                 <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><span class="maintainer-status-pill {% if version.is_published %}is-active{% else %}is-inactive{% endif %}">{% if version.is_published %}Publicada{% else %}Borrador{% endif %}</span></dd>
                 <dt class="col-sm-4">Vigente desde</dt><dd class="col-sm-8">{{ version.effective_from|date:"d-m-Y" }}</dd>
                 <dt class="col-sm-4">Tope computable</dt><dd class="col-sm-8">{{ version.max_computable }} %</dd>
-                <dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8">{{ version.max_final_score }} puntos</dd>
+                <dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8">{{ version.max_final_score }} puntos{% if period.status == "OPEN" and version.max_final_score > version.effective_final_score_cap %} (máximo aplicable al resultado actual: {{ version.effective_final_score_cap }} puntos){% endif %}</dd>
                 <dt class="col-sm-4">Umbral naranjo</dt><dd class="col-sm-8">{{ version.amber_threshold }} %</dd>
                 <dt class="col-sm-4">Umbral verde</dt><dd class="col-sm-8">{{ version.green_threshold }} %</dd>
                 <dt class="col-sm-4">Umbral colectivo</dt><dd class="col-sm-8">{{ version.collective_threshold }} %</dd>

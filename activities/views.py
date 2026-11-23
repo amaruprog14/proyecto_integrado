@@ -277,6 +277,7 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                         is_active=True, deleted_at__isnull=True)
                 except Item.DoesNotExist as error:
                     raise ValidationError("Configura un ítem vigente en el Tipo de Atención antes de registrar.") from error
+                Activity.validate_daily_capacity(form.official.pk, attention.date)
                 activity = Activity.objects.create(official=form.official, item=item, date=attention.date,
                     registration_delegation=delegation, record_type=Activity.RecordType.ATTENTION,
                     action_description=attention.description)

@@ -125,6 +125,11 @@ class EvaluationAdminTests(TestCase):
         self.assertEqual(set(created.official.roles.all()), {reader})
         self.assertEqual(permission_scope(created, 'accounts.view_official'), Role.Scope.DELEGATION)
         self.client.force_login(created)
+        change = reverse('password_change')
+        self.assertRedirects(self.client.get(reverse('official_maintainer')), change)
+        fresh = 'Nueva-Clave-QA-649'
+        self.assertEqual(self.client.post(change, {'old_password': self.official_account_payload(reader)['password1'],
+            'new_password1': fresh, 'new_password2': fresh}).status_code, 302)
         self.assertEqual(self.client.get(reverse('official_detail', args=[self.foreign.pk])).status_code, 404)
 
     def test_account_management_permission_with_local_scope_cannot_assign_global_role(self):

@@ -319,6 +319,9 @@ Recorrido de `adminEvalA`: ingresar → crear/editar un funcionario y una activi
 consultar detalles y exportar → archivar con confirmación → consultar/restaurar la actividad →
 intentar una URL o relación de Antena y recibir rechazo sin modificaciones. Las actividades
 vinculadas a atenciones o de períodos cerrados continúan siendo de solo consulta.
+Una actividad manual con al menos una evidencia aprobada vigente queda bloqueada para edición y
+archivado. Si requiere una corrección, un revisor autorizado debe anular con motivo cada
+aprobación vigente. Después vuelven a aplicar los permisos y el estado del período.
 
 Funcionarios permite listar, consultar detalle, crear y editar mediante modal y archivar con
 confirmación. El archivado usa `deleted_at`: conserva actividades e historial, retira el
@@ -656,8 +659,8 @@ diferencia y semáforo, además del total del funcionario.
   una vez. El resultado cambia solo al aprobar o anular evidencia, al registrar o archivar
   actividades o al cambiar la fecha de cálculo.
 - **Fórmulas.** Cumplimiento = avance / meta × 100; computable = mínimo entre cumplimiento y
-  `max_computable` (150 % por defecto); ponderado = ponderador × computable / 100; total = suma de
-  ponderados. Meta esperada = días computables transcurridos / días computables del período × 100.
+  `max_computable` (150 % por defecto); ponderado = ponderador × computable / 100; total base = suma de
+  ponderados antes de los ajustes y del tope individual. Meta esperada = días computables transcurridos / días computables del período × 100.
 - **Semáforo (RN-008).** Compara el cumplimiento sin tope con la meta esperada, ambos en %:
   verde desde `green_threshold` % de lo esperado (100), ámbar desde `amber_threshold` % (60) y rojo
   bajo ese límite. El total usa la misma regla. Se conserva la precisión interna y se redondea a
@@ -673,7 +676,7 @@ diferencia y semáforo, además del total del funcionario.
   con su semáforo y contadores de evidencias pendientes, rechazadas y con corrección solicitada, y de
   compromisos abiertos, vencidos y realizados. Muestra la delegación del funcionario y las otras en
   que está autorizado. Cada ítem enlaza al listado de Actividades filtrado por ese funcionario, ítem,
-  período (hasta hoy si está abierto) y «Solo las que cuentan en la medición»: evidencia aprobada e
+  período (hasta hoy si está abierto) y «Solo las que cuentan en la medición»: nombre y teléfono del solicitante, evidencia aprobada e
   ítem incluido en la versión del plan que rige en su fecha para el cargo con que se registró. Es el
   mismo criterio del avance (`analytics.services.computable_activities`), así que el total del
   listado coincide con el Avance del ítem. El ítem porcentual del tubo no tiene enlace
@@ -909,10 +912,12 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   los valores por cargo y período (+10 y −20 por defecto, o un descuento de 30 puntos si corresponde).
   Computan las tres primeras felicitaciones aprobadas por funcionario y período. El resultado suma
   los ajustes al total ponderado, con el tope del resultado final de la versión del plan
-  (`max_final_score`, 150 puntos por defecto, entre 1 y 1000, editable en el borrador del plan y
-  copiado a cada revisión). Es una regla del proyecto, distinta del tope de cumplimiento por ítem de
-  la guía B3 (`max_computable`, 150 % por defecto); el panel muestra la base y el tope cuando recorta. Con tramos de cargo rige el tope de la última versión aplicada. El tope
-  y el desglose quedan congelados al cerrar; los cierres anteriores a este campo usaron 150.
+  (`max_final_score`, entre 1 y 120 puntos, con 120 por defecto según RC-16). El máximo individual
+  se aplica después de los ajustes. El tope computable por ítem sigue siendo 150 % por defecto.
+  Si existen tramos de cargo, se usa el tope de la última versión aplicada, con un máximo de 120.
+  En períodos abiertos esta regla también se aplica a los planes históricos con un valor mayor.
+  La migración `analytics/0010` ajusta los borradores que superan 120. Una revisión nueva hereda
+  el tope efectivo. Los cierres conservan el total y el tope históricos.
   **Piso del resultado final:** el resultado final no baja de 0 puntos (piso fijo): con base 0 y un
   reclamo de −20, o base 10 y un reclamo de −20, el resultado es 0. El panel, la API
   (`piso_resultado_final`) y la exportación muestran la base, los ajustes y el piso aplicado para
@@ -1015,7 +1020,7 @@ está en el repositorio; las celdas citadas se verificaron el 18-11-2026 sobre l
 | Estado «Cancelado con justificación» y su exclusión del tubo | Propia: RF-018 y AGE-03 solo definen Ingresado, Pendiente, En proceso y Realizado; CAL-C usa Realizado, Pendiente y En proceso | Cerrar compromisos que ya no corresponden sin castigar ni inflar el porcentaje; sale del denominador y del numerador de «Soluciones de ingresos al tubo» y «Pendientes en tubo». Un cancelado sin justificación (dato legado) sigue contando como no realizado | `agenda.models.Commitment.Status.CANCELLED`, `analytics.segments.measured_commitments` |
 | Piso 0 del resultado final | Propia: ni la guía ni la matriz fijan un mínimo | Evitar resultados negativos por reclamos; fijo en el código (no parametrizable aún, a diferencia del tope) | `analytics.services.MIN_FINAL_SCORE`, `PerformanceResult.total`; API `piso_resultado_final` |
 | Máximo de 3 felicitaciones por período | Respaldada en la matriz: «MAX 3» junto a FELICITACIONES en las hojas de cargo (por ejemplo «AP ADM.» D9 y «PLAN y CON» C10); no aparece en la guía. S1 §13.1 pide no fijar ajustes sin regla aprobada, y este 3 está fijo en el código | Limitar el efecto de las felicitaciones; las siguientes se muestran como «Fuera del límite de tres felicitaciones» (API: `excluido_por_limite`) | `analytics.services.MAX_CONGRATULATIONS` |
-| Tope del resultado final configurable (`max_final_score`), distinto de `max_computable` | Parcial: B3 pide un tope de 150 % configurable, que corresponde al cumplimiento por ítem (`max_computable`, CAL-B); la matriz (hoja RECLAMOS B6 y L5 = 1,5) limita a 150 % el sobrecumplimiento de cada colaborador, lo que respalda el tope del total; su configuración por versión es propia | Acotar el total ya sumados reclamos y felicitaciones | `MeasurementVersion.max_final_score` (150 por defecto, 1–1000) |
+| Tope individual del resultado final | E3, RC-16, establece un máximo de 120 % por funcionario. La guía B3 establece el tope computable por ítem. | Aplicar el límite individual al total con ajustes | `MeasurementVersion.max_final_score` (1–120) y `PerformanceResult.total` |
 | Valores +10 por felicitación y −20 por reclamo | Respaldada en parte por la matriz: hoja RECLAMOS J5 = 0,1 (B5: «Cada felicitacion vale un 10%») y J3 = −0,2; pero las hojas de cargo usan −0,3 por reclamo (por ejemplo «AP ADM.» E10 y «PLAN y CON» D11) y −0,2 en «COOR DISERCO» D14 y «G SOC 1» E16. RN-011 exige valores parametrizables y menciona −20 % y −30 % como pendientes de definición oficial; PP B3 dice que no se fijen automáticamente esos −20 % o −30 %, así que el −20 por defecto requiere aprobación | Valores por defecto de cada versión del plan, editables. **Duda abierta:** el sistema los aplica como **puntos** sobre el total; la guía habla de **%** | `MeasurementVersion.congratulation_points` y `complaint_points` |
 | Segregación al validar ajustes | Propia: RF-025 pide motivo, valor, responsable y efecto, y TAB-04 solo exige permiso y motivo; ninguno dice quién valida | Quien registra y el funcionario afectado no pueden aprobar ni rechazar el registro; el intento se audita | `analytics.score_adjustments.ScoreAdjustmentDetail.review_conflict` |
 | Permisos de Ausencias por rol | Propia (guía B5: la tabla de permisos debe aprobarse) | Administrador (por sus permisos de cuentas), Coordinador y Delegado gestionan; Funcionario, Usuario consulta y Verificador no las ven, porque son datos personales y el rol Funcionario tiene alcance de delegación | `seed_demo` (`MANAGE_ABSENCES`), migración `accounts/0015_absence_seed_roles` |
@@ -1088,3 +1093,11 @@ asignatura no se versionan.
   HTTP y WebSocket usen el mismo proceso ASGI; verificar la conexión en la pestaña de red y
   que el host esté permitido. El canal en memoria no comunica procesos distintos.
 
+
+
+### Reglas de registro y primer ingreso de la evaluación
+
+- Cada funcionario puede registrar hasta siete actividades vigentes en una misma fecha, sumando las manuales y las generadas desde Ingreso de atención. Cambiar la fecha, reasignar o restaurar una actividad requiere cupo en el destino.
+- Para aportar puntaje, una actividad manual requiere nombre y teléfono de contacto. En una atención automática se consultan el nombre y el teléfono de la ficha del solicitante. El seguimiento puede continuar aunque falten datos de contacto.
+- Las cuentas nuevas creadas en los mantenedores de Usuarios o Funcionarios deben reemplazar la contraseña inicial para entrar al sistema. Pueden cambiarla desde la pantalla de primer ingreso o mediante recuperación. Esta política comienza con la migración `accounts/0016_initial_password`. Las cuentas anteriores conservan su acceso.
+- Todas las evaluaciones de este semestre admiten HTTP. Una futura habilitación de HTTPS corresponde al despliegue posterior.

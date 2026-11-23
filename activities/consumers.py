@@ -5,6 +5,7 @@ from django.contrib.sessions.models import Session
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
+from accounts.models import InitialPassword
 from common.realtime import can_read, group_name, subscribe, unsubscribe
 
 
@@ -20,7 +21,7 @@ class MaintainerListConsumer(AsyncJsonWebsocketConsumer):
         user = get_user_model().objects.filter(pk=data.get('_auth_user_id')).first()
         if not user or not constant_time_compare(data.get(HASH_SESSION_KEY, ''), user.get_session_auth_hash()):
             return False
-        if not can_read(user, self.module):
+        if InitialPassword.pending(user) or not can_read(user, self.module):
             return False
         modules = [self.module]
         if self.module == 'activity' and can_read(user, 'staff_request'):

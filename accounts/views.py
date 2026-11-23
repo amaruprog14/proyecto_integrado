@@ -61,7 +61,7 @@ from .forms import (
     profile_snapshot,
 )
 from . import login_security
-from .models import Delegation, Official, Role, ServiceRecipient
+from .models import InitialPassword, Delegation, Official, Role, ServiceRecipient
 from .role_forms import (
     active_officials,
     last_global_administrator,
@@ -212,7 +212,12 @@ class RecoveryConfirmView(PasswordResetConfirmView):
         return user
 
     def form_valid(self, form):
-        response = super().form_valid(form)
+        if InitialPassword.pending(self.user) and self.user.check_password(form.cleaned_data["new_password1"]):
+            form.add_error("new_password1", "Elige una contraseña diferente de la inicial.")
+            return self.form_invalid(form)
+        with transaction.atomic():
+            response = super().form_valid(form)
+            InitialPassword.objects.filter(user=self.user).delete()
         AuditoriaService.register_change(
             official=getattr(self.user, 'official', None),
             action='Cambio de contraseña por recuperación',
@@ -251,6 +256,7 @@ class OwnPasswordChangeView(LoginRequiredMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(
+            initial_password=InitialPassword.pending(self.request.user),
             maintainer_title='Cambiar contraseña',
             profile_url=self.get_success_url(),
             client_portal=self.is_client(),
@@ -297,7 +303,12 @@ class OwnPasswordChangeView(LoginRequiredMixin, FormView):
         return super().form_invalid(form)
 
     def form_valid(self, form):
-        user = form.save()
+        if InitialPassword.pending(self.request.user) and self.request.user.check_password(form.cleaned_data["new_password1"]):
+            form.add_error("new_password1", "Elige una contraseña diferente de la inicial.")
+            return self.form_invalid(form)
+        with transaction.atomic():
+            user = form.save()
+            InitialPassword.objects.filter(user=user).delete()
         update_session_auth_hash(self.request, user)
         login_security.reset_failures(self.throttle_key)
         AuditoriaService.register_change(

@@ -109,16 +109,19 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         model = self.spec[0]
         if self.key == "activity":
             permission = self.get_permission_required()[0]
+            activities = activity_queryset(self.request.user, permission, include_archived=True).annotate(
+                has_approved_evidence=Exists(EvidenceValidation.approved_for_activity(OuterRef("pk"))),
+            )
             if self.operation == "activate":
-                return activity_queryset(self.request.user, permission, include_archived=True).filter(deleted_at__isnull=False)
+                return activities.filter(deleted_at__isnull=False)
             history = self.request.GET.get("status") == "INACTIVE" and self.operation == "list"
             if history and not self.request.user.has_perm("activities.archive_activity"):
                 raise PermissionDenied("No tienes autorización para consultar actividades archivadas.")
             if history or self.operation == "detail":
                 permitted = activity_queryset(self.request.user, "activities.archive_activity", include_archived=True)
-                return activity_queryset(self.request.user, permission, include_archived=True).filter(
+                return activities.filter(
                     Q(deleted_at__isnull=True) | Q(pk__in=permitted.values("pk")))
-            return activity_queryset(self.request.user, permission)
+            return activities.filter(deleted_at__isnull=True)
         if self.key == "territory":
             from common.scopes import permission_scope, delegation_ids
             scope = permission_scope(self.request.user, self.get_permission_required()[0])
@@ -201,10 +204,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 qs = qs.filter(record_type=self.request.GET["record_type"])
             evidence = self.request.GET.get("evidence")
             if evidence == "approved":
-                qs = qs.filter(Exists(EvidenceValidation.objects.filter(
-                    evidence__activity=OuterRef("pk"), evidence__deleted_at__isnull=True,
-                    deleted_at__isnull=True, status=EvidenceValidation.Status.APPROVED,
-                )))
+                qs = qs.filter(has_approved_evidence=True)
             elif evidence == "counted":
                 # Mismo criterio que el avance del panel de desempeño (RF-028).
                 from analytics.services import computable_activities
@@ -241,7 +241,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         editable = mutable
         can_archive_row = self.request.user.has_perm(f"{obj._meta.app_label}.change_{obj._meta.model_name}")
         if self.key == "activity":
-            mutable = not hasattr(obj, "social_attentions") and Period.objects.filter(
+            approval_blocks_change = obj.deleted_at is None and obj.has_approved_evidence
+            mutable = not approval_blocks_change and not hasattr(obj, "social_attentions") and Period.objects.filter(
                 start_date__lte=obj.date, end_date__gte=obj.date, status=Period.Status.OPEN, deleted_at__isnull=True).exists()
             editable = mutable and obj.deleted_at is None and activity_queryset(
                 self.request.user, "activities.change_activity").filter(pk=obj.pk).exists()
@@ -282,8 +283,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             try:
                 self.check_mutable(obj)
             except ValidationError as error:
-                messages.error(request, "; ".join(error.messages))
-                return redirect(self.url("list"))
+                return self.mutation_error(error)
             context["form"] = self.spec[1](actor=request.user, instance=obj)
             context["current_status"] = state(obj)[1] if obj else ""
             if isinstance(obj, Activity):
@@ -291,7 +291,8 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             return render(request, "maintainers/form.html", context)
         if self.operation == "detail":
             obj = self.object(pk)
-            context.update(values=snapshot(obj), row=self.row(obj), record_title=str(obj))
+            context.update(values=snapshot(obj), row=self.row(obj), record_title=str(obj),
+                           approval_locked=isinstance(obj, Activity) and obj.deleted_at is None and obj.has_approved_evidence)
             for field in obj._meta.fields:
                 if field.name in ("id", "is_active", "status", "deleted_at"):
                     context["values"].pop(str(field.verbose_name), None)
@@ -412,6 +413,13 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         response["X-List-URL"] = request.path + "?" + query_params(request._list_state).urlencode()
         return response
 
+    def mutation_error(self, error):
+        message = "; ".join(error.messages)
+        if getattr(error, "code", None) == "approved_activity" and is_modal_request(self.request):
+            return HttpResponse(message, status=423, content_type="text/plain; charset=utf-8")
+        messages.error(self.request, message)
+        return redirect(self.url("list"))
+
     def check_mutable(self, obj):
         if obj is None:
             return
@@ -420,6 +428,11 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
         if isinstance(obj, Activity):
             if hasattr(obj, "social_attentions"):
                 raise ValidationError("Esta actividad se administra desde su atención de origen.")
+            if self.operation != "activate" and EvidenceValidation.approved_for_activity(obj.pk).exists():
+                raise ValidationError(
+                    "La actividad tiene evidencia aprobada vigente. Para editarla o archivarla, "
+                    "primero se deben anular sus aprobaciones.", code="approved_activity",
+                )
             if not Period.objects.filter(start_date__lte=obj.date, end_date__gte=obj.date, status=Period.Status.OPEN).exists():
                 raise ValidationError("La actividad pertenece a un período cerrado o sin período abierto.")
         if self.key == "territory":
@@ -452,6 +465,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                         return edit_conflict()
                 previous = snapshot(obj) if obj else {}
                 if self.operation in ("create", "update"):
+                    original_official = obj.official_id if isinstance(obj, Activity) else None
                     original_date = obj.date if isinstance(obj, Activity) else None
                     form = self.spec[1](request.POST, actor=request.user, instance=obj)
                     if not form.is_valid():
@@ -462,12 +476,18 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                             lock_open_period(form.cleaned_data["date"])
                         else:
                             lock_open_period(form.cleaned_data["date"])
+                        official = form.cleaned_data["official"]
+                        day = form.cleaned_data["date"]
+                        if (official.pk, day) != (original_official, original_date):
+                            Activity.validate_daily_capacity(official.pk, day, pk)
                     obj = form.save()
                 elif self.key == "period":
                     obj.close_period()
                 elif self.key == "activity":
                     from django.utils import timezone
                     lock_activity_periods(obj)
+                    if self.operation != "deactivate":
+                        Activity.validate_daily_capacity(obj.official_id, obj.date, obj.pk)
                     obj.deleted_at = timezone.now() if self.operation == "deactivate" else None
                     obj.save(update_fields=["deleted_at", "updated_at"])
                 elif self.key == "group":
@@ -491,8 +511,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             if form:
                 form.add_error(None, error)
                 return render(request, "maintainers/form.html", dict(self.context(), form=form, current_status=state(obj)[1] if obj else ""))
-            messages.error(request, "; ".join(error.messages))
-            return redirect(self.url("list"))
+            return self.mutation_error(error)
         if self.operation in ("create", "update"):
             add_form_success(request, "Registro guardado correctamente.")
         else:

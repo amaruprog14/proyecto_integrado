@@ -248,6 +248,7 @@ class ActivityForm(MaintainerForm):
             self.fields[key].queryset = choices
         for key in ("subject", "action_description", "activity_type"):
             self.fields[key].required = catalog_required
+        self.fields["phone"].help_text = "Para que la actividad puntúe, registra el nombre y el teléfono del contacto."
         self.fields["activity_type"].help_text = "Se muestran los tipos de actividad vigentes del área del funcionario."
         self.fields["service_type"].help_text = "Si el tipo ofrece servicios, elige el que corresponda."
 

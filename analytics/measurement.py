@@ -82,6 +82,7 @@ def publish_version(version):
         raise ValidationError({"effective_from": "La primera versión debe comenzar el primer día del período."})
     if previous and not previous.effective_from < version.effective_from <= period.end_date:
         raise ValidationError({"effective_from": "Elige una fecha posterior a la última vigencia y dentro del período."})
+    version._meta.get_field("max_final_score").clean(version.max_final_score, version)
     if version.amber_threshold >= version.green_threshold:
         raise ValidationError({"amber_threshold": "El umbral naranjo debe ser menor que el verde."})
 
@@ -130,7 +131,7 @@ def create_revision(plan, effective_from):
         max_computable=previous.max_computable, amber_threshold=previous.amber_threshold,
         green_threshold=previous.green_threshold, collective_threshold=previous.collective_threshold,
         congratulation_points=previous.congratulation_points, complaint_points=previous.complaint_points,
-        max_final_score=previous.max_final_score,
+        max_final_score=previous.effective_final_score_cap,
     )
     for line in previous.items.prefetch_related("adjustments"):
         new_line = MeasurementItem.objects.create(

@@ -8,6 +8,8 @@ resultados obtenidos contra los esperados, sus discrepancias y las recomendacion
 este informe (fecha, comando y commit en la [ficha de ejecución](#6-ficha-de-ejecución-del-protocolo)).
 Un caso manual que no se ejecutó figura como **Pendiente de ejecución manual**, nunca como aprobado.
 
+**Seguimiento posterior.** Las cifras de las secciones 1 a 11 corresponden a sus fechas originales. Las correcciones de RC-08 y RC-16 se registran en la [reevaluación del 23 de noviembre](#reevaluacion-rc08-rc16). El [balance acumulado y los casos pendientes](#verificacion-pendientes-local) incorporan las verificaciones locales posteriores. El [corte de la evaluación semestral](#alcance-semestral) aplica la aclaración del equipo sobre HTTP.
+
 ## 1. Alcance y versión
 
 | Dato de control | Valor |
@@ -838,3 +840,140 @@ Resultado verificable de esta práctica en el historial:
 
 Este documento no afirma aprobaciones de revisores en GitHub: los PR se integraron con merge, pero
 su revisión formal en la plataforma no se verificó para este informe.
+
+<a id="reevaluacion-rc08-rc16"></a>
+
+## Reevaluación de RC-08 y RC-16 · 23-11-2026
+
+Versión probada: cambios locales sobre `0fc9ad7`. Entorno de verificación: Django 5.2.17 y MySQL local con base temporal de pruebas. La ejecución del 22-11-2026 documentó 45 de 48 criterios aprobados. Esta reevaluación da seguimiento a dos de los tres fallos de ese corte.
+
+| Criterio y defecto | Procedimiento automatizado | Resultado esperado |
+| --- | --- | --- |
+| RC-08 · D-14 / DEF-11 | Abrir la edición de una actividad manual en período abierto, crear dos aprobaciones e intentar cambiar fecha, ítem, descripción o archivar. Retirar las aprobaciones de una en una. | Con una o más aprobaciones vigentes se ocultan las acciones y el servidor conserva los datos, incluso ante un formulario abierto previamente. Una vez anulada la última aprobación, un editor autorizado vuelve a poder guardar. |
+| RC-16 · D-13 / DEF-10 | Calcular 150 puntos base, comprobar el máximo final, agregar ajustes en otro caso y consultar el panel y la API. Probar un plan publicado anterior, una revisión, un límite inferior y un cierre histórico. | Máximo individual de 120 puntos después de los ajustes. Se respeta un límite inferior del plan y se conserva el valor histórico al consultar un cierre. El cumplimiento por ítem conserva su regla propia (CAL-02 / RN-005). |
+| Migración de RC-16 | Migrar borradores con topes de 200 y 90 y una versión publicada con 150. | Los topes resultantes son 120, 90 y 150 respectivamente. El cálculo en vivo utiliza como máximo 120. La reversión del esquema conserva los topes ajustados de los borradores. |
+
+**Resultado obtenido.** RC-08 y RC-16 aprobados en la reejecución automatizada. La suite completa ejecutó **798 pruebas en 161,810 s** con resultado `OK`, sin fallos, errores ni pruebas omitidas. Se utilizó `python manage.py test --settings=rc_migration` con una configuración temporal que aisló el nombre de la base de pruebas MySQL y las carpetas de archivos. Django eliminó la base temporal al finalizar. Se verificaron el HTML de la vista y las respuestas del servidor, incluida la respuesta HTTP 423 al guardar una edición bloqueada desde el modal. La interacción visual entre dos navegadores quedó pendiente de prueba manual.
+
+**Cómo reproducir las verificaciones en una base de pruebas de MySQL**
+
+```bash
+python manage.py test activities.test_activity_completion.ActivityCompletionTests.test_current_approvals_block_manual_edits_and_archiving activities.test_evidence
+python manage.py test analytics.test_final_score_cap_migration analytics.test_indicator_support analytics.test_score_adjustments analytics.test_measurement_configuration sgr_api.tests
+python manage.py test
+```
+
+La pauta de esta entrega admite HTTP según la aclaración del equipo. AWS-01 conserva su anotación histórica y queda fuera de esta reevaluación. La regla de titularidad de compromisos de la Agenda (RC-10) tiene seguimiento independiente.
+
+<a id="verificacion-pendientes-local"></a>
+
+## Verificación de casos pendientes · 23-11-2026
+
+**Balance para la presentación.** Se verificaron 20 criterios que figuraban como pendientes en el protocolo. Diecisiete cumplieron su resultado esperado y en tres se reprodujo un incumplimiento. Cada criterio se cuenta una sola vez, aunque requiera varias pruebas.
+
+| Corte acumulado sobre los mismos 104 criterios | Aprobados | Fallidos | Pendientes | Evaluados |
+| --- | ---: | ---: | ---: | ---: |
+| Informe del 22 de noviembre | 45 | 3 | 56 | 48 |
+| Tras repetir RC-08 y RC-16 | 47 | 1 | 56 | 48 |
+| Tras verificar otros 20 criterios el 23 de noviembre | **64** | **4** | **36** | **68** |
+
+De los cuatro fallos del acumulado, tres son las reglas locales detalladas más abajo. El cuarto es AWS-01 por HTTPS en el corte histórico. El equipo indicó que la entrega académica admite HTTP. Se conserva el denominador original y se identifica AWS-01 por separado. Esta ejecución no evalúa el despliegue actual.
+
+### Ficha de ejecución y reproducción
+
+- **Versión y entorno.** Copia de trabajo sobre `0fc9ad7`, con los cambios locales de RC-08 y RC-16. Django 5.2.17, datos ficticios, base de pruebas MySQL y carpetas temporales de imágenes. La suite de Django ejecutó **808 pruebas en 162,275 s**, con resultado `OK`, sin errores, fallos ni omisiones. El caso simultáneo EVI-06 se ejecutó en MySQL con dos conexiones. Después se amplió CAT-04 para cambiar también el nombre del tipo principal y se repitió individualmente con resultado `OK`.
+- **Navegador.** Brave con Chromium 158.0.8127.42, controlado por Playwright contra Django/ASGI local. Se utilizaron una base SQLite separada, sesiones ficticias y un buzón de archivos para la recuperación. La interfaz cargó Bootstrap y SweetAlert2. Las cinco comprobaciones de navegador se ejecutaron aparte de la suite. No se evaluó la entrega por un proveedor SMTP ni la compatibilidad con otros navegadores.
+- **Reglas E3.** En otra base de pruebas MySQL se ejecutaron tres comprobaciones de aceptación independientes. Resultado: tres diferencias de comportamiento reproducidas, cero errores de preparación en la ejecución final. Sus pasos y valores observados se indican abajo. Los tres fallos de aceptación son compatibles con una suite de regresión en verde, porque evalúan exigencias adicionales.
+- **Reproducción de la suite.** Desde la raíz, con configuración de QA, usuario habilitado para crear y eliminar la base de pruebas y directorios temporales para los archivos, ejecutar `python manage.py test`. Para repetir el lote directamente relacionado con las nuevas comprobaciones:
+
+```bash
+python manage.py test accounts.test_official_crud accounts.test_user_crud activities.test_activity_completion activities.test_case_follow_up activities.test_evidence agenda.test_commitments agenda.test_internal_comments
+```
+
+### Criterios aprobados en MySQL
+
+| Criterio | Prueba y resultado obtenido | Archivo y método reproducible |
+| --- | --- | --- |
+| ADM-01 | Una delegación creada desde el mantenedor apareció inmediatamente en el filtro del tablero y se pudo asignar a un funcionario nuevo. Se comprobó la delegación guardada. | [Funcionarios](accounts/test_official_crud.py) · `test_new_delegation_is_available_for_filtering_and_assignment` |
+| CAT-04 | Tras renombrar el tipo y la subatención desde sus mantenedores, el detalle de la atención anterior siguió accesible, mostró ambas etiquetas nuevas y conservó ambas relaciones. | [Seguimiento de atenciones](activities/test_case_follow_up.py) · `test_catalog_rename_keeps_the_existing_attention_consultable` |
+| EVI-01 | Al crear y editar desde el mantenedor, el sistema conservó el código generado y guardó el cambio válido de descripción aunque se enviara otro código. | [Registro de actividad](activities/test_activity_completion.py) · `test_registration_code_is_generated_and_survives_edits` |
+| EVI-02 | La carga conservó autor, etapa, fecha, nombre original y formato. El tamaño registrado correspondió al archivo privado de prueba. | [Evidencias](activities/test_evidence.py) · `test_upload_and_review_record_metadata_and_audit` |
+| EVI-03 | La aprobación registró verificador, fecha, decisión y observación. La bitácora identificó al actor y el paso de pendiente a aprobada. | [Evidencias](activities/test_evidence.py) · `test_upload_and_review_record_metadata_and_audit` |
+| EVI-04 | Mediante los formularios HTTP, el autor realizó cargas sucesivas y el verificador rechazó, pidió corrección y luego aprobó. El avance fue 0, 0 y 1. Repetir la aprobación lo mantuvo en 1. | [Evidencias](activities/test_evidence.py) · `test_rejected_and_corrected_uploads_count_only_after_approval` |
+| EVI-06 | Dos verificadores enviaron decisiones incompatibles sobre el mismo lote. Se aceptó una sola decisión por imagen y hubo un único evento de revisión del lote. El segundo intento recibió el aviso de que ya no estaba pendiente. | [Revisión concurrente](activities/test_evidence.py) · `test_two_reviewers_leave_one_decision_and_one_audit_record` |
+| AGE-02 | La Agenda rechazó crear un compromiso sin responsable y no guardó filas. En la misma suite pasaron las validaciones de fecha y territorio que ya cubrían el resto del criterio. | [Compromisos](agenda/test_commitments.py) · `test_creation_requires_a_responsible_official` |
+| AGE-03 | Se comprobaron las 25 combinaciones entre los cinco estados. Cada transición permitida dejó un evento con autor, origen y destino. Las prohibidas y las repeticiones conservaron el estado y el historial. | [Compromisos](agenda/test_commitments.py) · `test_every_status_transition_preserves_consistent_history` |
+| AGE-04 | Dos días antes del vencimiento, la bandeja mostró el motivo y la fecha correcta. Su enlace abrió el compromiso correspondiente. | [Compromisos](agenda/test_commitments.py) · `test_alert_shows_reason_date_and_working_link_before_due_date` |
+| TAB-05 | Una segunda cuenta autorizada de la misma delegación leyó desde el detalle el comentario publicado por la primera. El sistema conservó la autoría original. | [Comentarios internos](agenda/test_internal_comments.py) · `test_another_authorized_official_reads_the_activity_comment` |
+| RC-14 | La cuenta creada desde el mantenedor guardó un hash PBKDF2-SHA256 con sal y el factor de trabajo configurado. La contraseña válida coincidió y otra fue rechazada. | [Creación de usuarios](accounts/test_user_crud.py) · `test_create_user_with_official_profile` |
+
+### Resultados de los recorridos en navegador
+
+Ejecutados en QA local el 23-11-2026. Las filas M-02 a M-06 identifican los escenarios de la ficha 6.2 y no aumentan el total de criterios. Cada recorrido utiliza datos descartables.
+
+| Ficha y criterio | Preparación y pasos para repetir | Resultado observado |
+| --- | --- | --- |
+| M-02 · ACC-03 | 1. Ingresar con un funcionario con acceso a Ingreso de atención. 2. Abrir el formulario y cerrar sesión. 3. Pulsar Atrás y recargar. | El formulario protegido dejó de mostrarse. Al recargar apareció el inicio de sesión. **Aprobado**. |
+| M-03 · ACC-06 | 1. Solicitar recuperación para una cuenta activa con correo de prueba. 2. Abrir el enlace recibido en su buzón y guardar una contraseña nueva. 3. Probar el ingreso con la anterior y con la nueva. | SweetAlert2 mostró «Tu contraseña fue actualizada». La clave anterior no permitió abrir la pantalla protegida y la nueva sí. **Aprobado**. |
+| M-04 · CAT-06 | 1. Abrir Delegaciones con permiso de edición y elegir una delegación activa. 2. Pulsar Desactivar y luego Cancelar en el diálogo. 3. Recargar la lista. | No hubo envío del formulario ni aviso de éxito. La fila conservó sus valores y continuó ofreciendo Desactivar. **Aprobado**. |
+| M-05 · ACT-05 | 1. Preparar dos tipos con subatenciones diferentes. 2. En Ingreso de atención seleccionar el primer tipo y su subatención. 3. Cambiar al segundo tipo. | Se limpió la selección anterior, su opción quedó deshabilitada y se pudo elegir la subatención válida del segundo tipo. **Aprobado**. |
+| M-06 · UX-01 | 1. Abrir Delegaciones con filas ficticias Centro y Sur. 2. Buscar Centro, esperar «Buscando…», borrar y escribir Sur rápidamente. 3. Limpiar la búsqueda y repetir con el navegador sin red. | El último filtro mostró solo Sur, al limpiar volvieron ambas filas y el error de red fue visible. **Aprobado**. |
+
+### Reglas E3 con incumplimiento reproducido
+
+| Regla | Cómo reproducir en un entorno de pruebas | Resultado esperado | Resultado observado el 23-11-2026 |
+| --- | --- | --- | --- |
+| RC-02 · Datos del solicitante | 1. Usar un funcionario de Apoyo administrativo con plan publicado y avance inicial 0. 2. Preparar una actividad del ítem «Atención de usuario teléfono y presencial» con evidencia aprobada, nombre de contacto y teléfono vacíos. 3. Calcular el desempeño del período. | La actividad aporta cero puntos. | El avance subió a 1 y el ítem aportó aproximadamente 0,0833 puntos ponderados. **Fallido**. |
+| RC-03 · Máximo diario | 1. Usar un editor autorizado, un funcionario y un día del período abierto sin actividades. 2. Guardar ocho actividades manuales distintas para ese funcionario y esa fecha. 3. Contar las filas vigentes. | Como máximo se guardan siete. | El octavo envío desde el formulario devolvió HTTP 204 y quedaron ocho actividades. **Fallido**. |
+| RC-12 · Primer ingreso | 1. Crear un funcionario desde Usuarios y asignar la clave inicial. 2. Ingresar desde una sesión nueva. 3. Intentar abrir Mi perfil antes de cambiar la clave. | Se exige cambiar la contraseña inicial antes de usar el sistema. | La sesión llegó a Inicio y abrió el perfil del funcionario sin exigir el cambio. **Fallido**. |
+
+Estos hallazgos actualizan la evidencia de D-15. Para cerrar cada uno se requiere corregir su comportamiento y repetir el caso con el mismo resultado esperado.
+
+### Inventario de los 36 criterios pendientes
+
+| Grupo | Cantidad | Identificadores pendientes |
+| --- | ---: | --- |
+| Plan de pruebas funcional, interfaz y seguridad | 12 | ACC-01, PAR-02, PAR-03, PAR-06, AGE-05, CAL-03, UX-04, UX-05, UX-06, SEG-04, SEG-05, SEG-06 |
+| Integridad y recuperación | 3 | INT-04, INT-05, INT-06 |
+| Rendimiento y carga | 6 | REN-01 a REN-06 |
+| Despliegue | 5 | AWS-02 a AWS-06 |
+| Reglas del cliente | 6 | RC-01, RC-04, RC-05, RC-06, RC-10, RC-11 |
+| Demostraciones con sus evidencias | 4 | CU-DEMO-01, CU-DEMO-02, CU-DEMO-03, REG-DEMO-01 |
+
+Los casos que exigen AWS, otros navegadores, restauración o pruebas de carga conservan sus condiciones originales. Para una próxima sesión local se pueden priorizar los recorridos de demostración CU-DEMO-02 (actividad) y REG-DEMO-01 (regalos) y guardar las capturas previstas en la ficha 6.2.
+
+<a id="alcance-semestral"></a>
+
+## Correcciones de RC-02, RC-03 y RC-12 y alcance HTTP del semestre · 23-11-2026
+
+La evaluación académica requiere acceso por **HTTP durante todo el semestre**. HTTPS queda como mejora futura. En AWS-01, las respuestas HTTP están documentadas en la sección 5.3 y sigue pendiente identificar la versión desplegada. Para este corte, AWS-01 queda **pendiente de confirmar el despliegue**, sin fallo atribuible a HTTPS. En SEG-04, el cifrado del transporte también queda fuera de la exigencia semestral. Las mediciones anteriores conservan su fecha y alcance.
+
+| Regla | Reejecución local con datos ficticios | Evidencia reproducible |
+| --- | --- | --- |
+| RC-02 | Se aprobó la evidencia de una actividad del plan. Sin nombre, con nombre en blanco o sin teléfono aportó cero. Con nombre y teléfono aportó una unidad. En las atenciones automáticas los datos se consultan en la ficha del solicitante. | [Cálculo individual](analytics/test_performance_calculator.py) · `test_approved_activity_requires_contact_name_and_phone`. [Conciliación territorial](analytics/test_performance_panel.py) · `test_territorial_totals_reconcile_with_detail_and_keep_individual_progress`. |
+| RC-03 | Siete altas manuales del mismo funcionario y fecha fueron aceptadas. La octava mostró el límite y se conservaron siete filas. En Ingreso de atención, superar el cupo tampoco dejó una gestión ni un caso adicional. Crear, mover y restaurar usan el cupo del funcionario y fecha de destino dentro del bloqueo transaccional de períodos. | [Actividades](activities/test_activity_completion.py) · `test_daily_limit_rejects_eighth_activity`. [Ingreso de atención](activities/test_case_follow_up.py) · `test_eighth_automatic_activity_rolls_back_attention_and_case`. |
+| RC-12 | Una cuenta nueva fue dirigida al cambio de contraseña al intentar entrar al perfil. Reutilizar la clave inicial mantuvo la restricción. Guardar una diferente permitió acceder. Se comprobó también el rechazo de la solicitud de token con la contraseña inicial y la recuperación mediante un enlace de prueba. | [Alta y primer ingreso](accounts/test_user_crud.py) · `test_create_user_with_official_profile`. [Recuperación](accounts/test_auth_flows.py) · `test_recovery_replaces_initial_password_before_access_is_enabled`. |
+
+La migración `accounts/0016_initial_password` crea el registro de cambio obligatorio para las altas posteriores desde los mantenedores. No asigna contraseñas ni modifica cuentas preexistentes. Estas verificaciones corresponden a bases de pruebas y no acreditan que la nueva versión esté desplegada en AWS.
+
+**Resultado final.** La suite completa de Django sobre MySQL local ejecutó **812 pruebas en 166,981 s**, con resultado `OK`, sin fallos, errores ni omisiones. Se ejecutó `python manage.py test --settings=qa_diagnostic_settings --noinput` con una configuración temporal que aisló la base y los directorios de archivos. Django eliminó la base de pruebas al finalizar. Se comprobó también que los modelos coinciden con las migraciones. Por autorización del equipo se aplicó únicamente `accounts.0016_initial_password` a la base local de desarrollo y se verificó la existencia de su tabla.
+
+**Balance semestral sobre los 104 criterios originales:** 67 aprobados, 0 fallidos y 37 pendientes de verificación. Los tres casos RC pasan de fallidos a aprobados. A los 36 pendientes anteriores se suma la confirmación de la versión desplegada de AWS-01. La ausencia de HTTPS no es un defecto de esta evaluación.
+
+### Revisión de SEG-04 bajo el alcance HTTP semestral · 23-11-2026
+
+**SEG-04 aprobado para la evaluación semestral.** Se repitieron individualmente las seis pruebas identificadas en la fila SEG-04 de la sección 4 (auditoría de edición de cuenta, exportación filtrada de usuarios, rechazo de clave actual incorrecta, auditoría de intentos y bloqueo, auditoría de ingreso y salida, y bloqueo en la emisión de tokens). Django ejecutó las seis en una base temporal SQLite con datos ficticios en 4,282 s, con resultado `OK`. La corrida completa anterior también las incluyó en MySQL. Esta evidencia corresponde a los controles de aplicación. El transporte HTTPS está fuera de la evaluación según la aclaración del equipo. Esta revisión no comprueba la configuración de AWS.
+
+**Balance actualizado:** 68 criterios aprobados, 0 fallidos y 36 pendientes sobre 104. AWS-01 sigue pendiente de identificar la versión desplegada.
+
+### Comprobación pública de AWS-01 por HTTP · 23-11-2026
+
+Desde fuera de la instancia, una petición GET a la raíz de `http://34.201.192.78` devolvió 302 hacia `/accounts/login/`. El destino respondió 200 con HTML, formulario POST y campo de contraseña. Las dos hojas de estilo del mismo sitio enlazadas por esa página, `/static/css/styles.css` y `/static/css/client-portal.css`, respondieron 200 con tipo `text/css` y contenido. Se comprobó la respuesta HTTP sin iniciar sesión. Para completar AWS-01 queda comparar el commit de la copia desplegada con la revisión evaluada. El balance continúa en 68 aprobados y 36 pendientes.
+
+### Cierre de AWS-01 · 23-11-2026
+
+**Aprobado para la evaluación semestral por HTTP.** El equipo ejecutó `git -C /var/www/proyecto_integrado rev-parse HEAD` en EC2 y obtuvo `07064bd1b9b2ac27010c979a0c88c30ccc30b117`. Corresponde al merge del PR #58 y coincide con el commit evaluado en la sección 1. Esta identificación completa la comprobación HTTP descrita arriba.
+
+Las correcciones RC-02, RC-03 y RC-12 se probaron en la copia local y aún están sin commit. El hash de EC2 identifica la revisión del repositorio en disco. Por sí solo no acredita cambios sin commit en el servidor ni la ejecución allí de la suite local.
+
+**Balance acumulado del semestre:** 69 aprobados, 0 fallidos y 35 pendientes sobre 104 criterios.

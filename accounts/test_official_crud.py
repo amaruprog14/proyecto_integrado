@@ -1,3 +1,4 @@
+from datetime import timedelta
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
@@ -9,7 +10,7 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from accounts.models import Area, Delegation, Official, Position, Role
-from configuration.models import AuditLog
+from configuration.models import AuditLog, Period
 
 
 User = get_user_model()
@@ -62,6 +63,22 @@ class OfficialCrudTests(TestCase):
         self.assertEqual(list(official.authorized_delegations.all()), [])
         self.assertEqual(list(official.roles.all()), [self.role])
         self.assertContains(response, "fue creado correctamente")
+
+    def test_new_delegation_is_available_for_filtering_and_assignment(self):
+        today = timezone.localdate()
+        Period.objects.create(start_date=today, end_date=today + timedelta(days=1))
+        response = self.client.post(reverse("delegation_create"), {
+            "delegation_name": "Delegación nueva", "address": "Calle ficticia", "commune": "La Serena", "status": "ACTIVE",
+        })
+        self.assertEqual(response.status_code, 302)
+        new = Delegation.objects.get(delegation_name="Delegación nueva")
+        board = self.client.get(reverse("delegation_performance"), {"delegation": new.pk})
+        self.assertContains(board, f'<option value="{new.pk}" selected>{new.delegation_name}</option>', html=True)
+        form = self.client.get(reverse("official_create"), HTTP_X_MODAL_REQUEST="true").context["form"]
+        self.assertIn(new, form.fields["delegation"].queryset)
+        self.assertEqual(self.client.post(reverse("official_create"),
+                                          self.payload(delegation=new.pk, authorized_delegations=[])).status_code, 302)
+        self.assertEqual(Official.objects.get(national_id="12345678-5").delegation_id, new.pk)
 
     def test_new_official_rut_field_is_empty_and_editable(self):
         response = self.client.get(reverse("official_create"), HTTP_X_MODAL_REQUEST="true")

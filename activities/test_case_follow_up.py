@@ -59,6 +59,37 @@ class CaseFollowUpTests(CaseFixture, TestCase):
     def setUpTestData(cls):
         cls.create_fixture()
 
+    def test_eighth_automatic_activity_rolls_back_attention_and_case(self):
+        for _ in range(7):
+            self.client.post(reverse("attention_entry"), self.attention_data())
+        self.assertEqual(Activity.objects.filter(official=self.official).count(), 7)
+        count_cases = AttentionCase.objects.count()
+        response = self.client.post(reverse("attention_entry"), self.attention_data())
+        self.assertContains(response, "siete actividades")
+        self.assertEqual(SocialAttention.objects.count(), 7)
+        self.assertEqual(AttentionCase.objects.count(), count_cases)
+
+    def test_catalog_rename_keeps_the_existing_attention_consultable(self):
+        self.client.post(reverse("attention_entry"), self.attention_data())
+        record = SocialAttention.objects.get()
+        admin = User.objects.create_superuser("admin-catalogo-qa", email="qa@example.invalid")
+        self.client.force_login(admin)
+        renamed_type = "Atención social actualizada"
+        self.assertEqual(self.client.post(reverse("attention_type_update", args=[self.kind.pk]), {
+            "name": renamed_type, "is_active": "True", "activity_item": self.kind.activity_item_id or "",
+            "service_type": self.kind.service_type_id or "",
+        }).status_code, 302)
+        renamed = "Orientación actualizada"
+        self.assertEqual(self.client.post(reverse("subattention_type_update", args=[self.sub.pk]), {
+            "name": renamed, "attention_type": self.kind.pk, "is_active": "True",
+        }).status_code, 302)
+        self.client.force_login(self.staff)
+        detail = self.client.get(reverse("attention_detail", args=[record.pk]))
+        self.assertContains(detail, f"{self.kind.code} · {renamed_type}")
+        self.assertContains(detail, f"{self.sub.code} · {renamed}")
+        record.refresh_from_db()
+        self.assertEqual((record.attention_type_id, record.subattention_type_id), (self.kind.pk, self.sub.pk))
+
     def test_case_links_to_the_activity_evidence_only_when_authorized(self):
         entry = reverse("attention_entry")
         self.assertRedirects(self.client.post(entry, self.attention_data()), entry)
