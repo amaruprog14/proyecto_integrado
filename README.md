@@ -29,10 +29,23 @@ End (TI3041) – Evaluación Sumativa III.
 | Vista por cargo y actividad reciente | Operativas en Desempeño, con filtros de período y ámbito |
 | Comentarios internos y alertas | Hilos en Actividades y Casos sociales, avisos por revisión de evidencia y seguimiento de desempeño |
 | Agenda colectiva | Registro, asignación, seguimiento, alertas de vencimiento y medición del tubo |
-| Pruebas de estrés | Pendientes de evidencia: no se han inventado métricas; requieren el entorno de prueba acordado, la concurrencia, la duración y los umbrales de aceptación |
+| Pruebas de carga y estrés | Script `scripts/prueba_carga.py` con una línea base en el servidor local; la carga en AWS y el estrés quedan pendientes (ver `TESTING.md`) |
 
 Los mantenedores operativos y el ingreso de atención guardan y consultan registros en la base de datos, validan en
 el servidor y registran cada cambio en el log de auditoría.
+
+## Pruebas
+
+El plan y el informe de pruebas están en [`TESTING.md`](TESTING.md): cómo ejecutarlas, la matriz
+requisito → prueba (incluidas las reglas del cliente de la Guía de Evaluación 3), la ficha de
+ejecución, los indicadores, el registro de defectos, las discrepancias y las recomendaciones. En la
+última ejecución registrada allí (commit `07064bd`, 22-11-2026, MySQL 8.4.7) pasaron las **796**
+pruebas automatizadas, sin omitidas, y `makemigrations --check` no detectó cambios.
+
+```bash
+python manage.py test --noinput
+python manage.py makemigrations --check --dry-run
+```
 
 ## Requisitos previos
 
@@ -993,16 +1006,17 @@ por completo. Están implementadas y probadas, pero deben validarse formalmente 
 conformidad (PP B1: las reglas cuantitativas se aprueban; PP B3 y S1 §13.1: los ajustes no se fijan
 con valores definitivos sin una regla parametrizada y aprobada). «Respaldada» = la fuente la
 contiene; «propia» = decisión del proyecto. La matriz SGR es un archivo de la institución que no
-está en el repositorio: las celdas citadas no se pudieron verificar aquí.
+está en el repositorio; las celdas citadas se verificaron el 18-11-2026 sobre la copia
+`Copia INACAP 3ER COMPAÑIAS MATRIZ SGR TRIMESTRE 2026 REV.xlsx`, salvo la de ausencias.
 
 | Regla | Respaldo | Motivo | Implementación |
 | --- | --- | --- | --- |
 | Descuento de días computables por ausencias (licencia, vacaciones, emergencia, compensatorio) | Parcial: la guía nombra los días computables (RF-005, RN-007) sin decir qué se descuenta; la matriz descuenta esas ausencias (celda no identificada en este repositorio). El no prorrateo de metas es propio | Medir solo los días en que la persona pudo trabajar | `analytics.services.computable_days`, `accounts.measurement_models.OfficialAbsence`; supuesto A1 |
 | Estado «Cancelado con justificación» y su exclusión del tubo | Propia: RF-018 y AGE-03 solo definen Ingresado, Pendiente, En proceso y Realizado; CAL-C usa Realizado, Pendiente y En proceso | Cerrar compromisos que ya no corresponden sin castigar ni inflar el porcentaje; sale del denominador y del numerador de «Soluciones de ingresos al tubo» y «Pendientes en tubo». Un cancelado sin justificación (dato legado) sigue contando como no realizado | `agenda.models.Commitment.Status.CANCELLED`, `analytics.segments.measured_commitments` |
 | Piso 0 del resultado final | Propia: ni la guía ni la matriz fijan un mínimo | Evitar resultados negativos por reclamos; fijo en el código (no parametrizable aún, a diferencia del tope) | `analytics.services.MIN_FINAL_SCORE`, `PerformanceResult.total`; API `piso_resultado_final` |
-| Máximo de 3 felicitaciones por período | Propia: no aparece en la guía; no se verificó en la matriz. S1 §13.1 pide no fijar ajustes sin regla aprobada, y este 3 está fijo en el código | Limitar el efecto de las felicitaciones; las siguientes se muestran como «Fuera del límite de tres felicitaciones» (API: `excluido_por_limite`) | `analytics.services.MAX_CONGRATULATIONS` |
-| Tope del resultado final configurable (`max_final_score`), distinto de `max_computable` | Parcial: B3 pide un tope de 150 % configurable, que corresponde al cumplimiento por ítem (`max_computable`, CAL-B); el tope del total es propio | Acotar el total ya sumados reclamos y felicitaciones | `MeasurementVersion.max_final_score` (150 por defecto, 1–1000) |
-| Valores +10 por felicitación y −20 por reclamo | Respaldada en la matriz según la hoja RECLAMOS (+10 en B5 y −20 en J3; celdas no verificables en este repositorio). RN-011 exige valores parametrizables y menciona −20 % y −30 % como pendientes de definición oficial; PP B3 dice que no se fijen automáticamente esos −20 % o −30 %, así que el −20 por defecto requiere aprobación | Valores por defecto de cada versión del plan, editables. **Duda abierta:** el sistema los aplica como **puntos** sobre el total; la guía habla de **%** | `MeasurementVersion.congratulation_points` y `complaint_points` |
+| Máximo de 3 felicitaciones por período | Respaldada en la matriz: «MAX 3» junto a FELICITACIONES en las hojas de cargo (por ejemplo «AP ADM.» D9 y «PLAN y CON» C10); no aparece en la guía. S1 §13.1 pide no fijar ajustes sin regla aprobada, y este 3 está fijo en el código | Limitar el efecto de las felicitaciones; las siguientes se muestran como «Fuera del límite de tres felicitaciones» (API: `excluido_por_limite`) | `analytics.services.MAX_CONGRATULATIONS` |
+| Tope del resultado final configurable (`max_final_score`), distinto de `max_computable` | Parcial: B3 pide un tope de 150 % configurable, que corresponde al cumplimiento por ítem (`max_computable`, CAL-B); la matriz (hoja RECLAMOS B6 y L5 = 1,5) limita a 150 % el sobrecumplimiento de cada colaborador, lo que respalda el tope del total; su configuración por versión es propia | Acotar el total ya sumados reclamos y felicitaciones | `MeasurementVersion.max_final_score` (150 por defecto, 1–1000) |
+| Valores +10 por felicitación y −20 por reclamo | Respaldada en parte por la matriz: hoja RECLAMOS J5 = 0,1 (B5: «Cada felicitacion vale un 10%») y J3 = −0,2; pero las hojas de cargo usan −0,3 por reclamo (por ejemplo «AP ADM.» E10 y «PLAN y CON» D11) y −0,2 en «COOR DISERCO» D14 y «G SOC 1» E16. RN-011 exige valores parametrizables y menciona −20 % y −30 % como pendientes de definición oficial; PP B3 dice que no se fijen automáticamente esos −20 % o −30 %, así que el −20 por defecto requiere aprobación | Valores por defecto de cada versión del plan, editables. **Duda abierta:** el sistema los aplica como **puntos** sobre el total; la guía habla de **%** | `MeasurementVersion.congratulation_points` y `complaint_points` |
 | Segregación al validar ajustes | Propia: RF-025 pide motivo, valor, responsable y efecto, y TAB-04 solo exige permiso y motivo; ninguno dice quién valida | Quien registra y el funcionario afectado no pueden aprobar ni rechazar el registro; el intento se audita | `analytics.score_adjustments.ScoreAdjustmentDetail.review_conflict` |
 | Permisos de Ausencias por rol | Propia (guía B5: la tabla de permisos debe aprobarse) | Administrador (por sus permisos de cuentas), Coordinador y Delegado gestionan; Funcionario, Usuario consulta y Verificador no las ven, porque son datos personales y el rol Funcionario tiene alcance de delegación | `seed_demo` (`MANAGE_ABSENCES`), migración `accounts/0015_absence_seed_roles` |
 
