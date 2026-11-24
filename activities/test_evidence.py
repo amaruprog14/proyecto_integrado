@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from threading import Barrier
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
 from django.contrib.auth.models import Permission, User
@@ -97,6 +98,19 @@ class EvidenceTests(CaseFixture, TestCase):
         self.client.force_login(User.objects.get(username="lector-foraneo"))
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.post(review, {"status": "APPROVED"}).status_code, 404)
+
+    @patch("common.antivirus.subprocess.run")
+    def test_antivirus_failure_rejects_entire_upload_before_storage(self, run):
+        from subprocess import CompletedProcess
+        with self.settings(CLAMAV_ENABLED=True):
+            for code in (1, 2):
+                run.side_effect = [CompletedProcess([], 0), CompletedProcess([], code)]
+                response = self.upload_images([self.photo(1), self.photo(2)])
+                self.assertEqual(response.status_code, 302)
+                self.assertContains(self.client.get(self.detail), "antivirus")
+                self.assertFalse(EvidenceBatch.objects.exists())
+                self.assertFalse(Evidence.objects.exists())
+                self.assertEqual(list(self.evidence_root.iterdir()), [])
 
     def test_upload_and_review_record_metadata_and_audit(self):
         before_upload = timezone.now()

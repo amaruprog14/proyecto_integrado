@@ -17,6 +17,9 @@
             <dt class="col-sm-4">Motivo</dt><dd class="col-sm-8 text-break">{{ record.reason }}</dd>
             <dt class="col-sm-4">Respaldo escrito</dt><dd class="col-sm-8 text-break">{{ record.written_support|linebreaksbr }}</dd>
             <dt class="col-sm-4">Registrado por</dt><dd class="col-sm-8">{{ record.recorded_by.official.full_name|default:record.recorded_by.get_full_name|default:"Cuenta institucional" }} · {{ record.created_at|date:"d-m-Y H:i" }}</dd>
+            {% if record.delegate_origin_confirmed %}
+                <dt class="col-sm-4">Respaldo formal del delegado</dt><dd class="col-sm-8 text-break">{{ record.delegate_reference }} · Origen confirmado</dd>
+            {% endif %}
             {% if record.reviewed_at %}
                 <dt class="col-sm-4">Revisado por</dt><dd class="col-sm-8">{{ record.reviewed_by.official.full_name|default:record.reviewed_by.get_full_name|default:"Cuenta institucional" }} · {{ record.reviewed_at|date:"d-m-Y H:i" }}</dd>
                 {% if record.review_note %}<dt class="col-sm-4">Motivo de la decisión</dt><dd class="col-sm-8 text-break">{{ record.review_note|linebreaksbr }}</dd>{% endif %}

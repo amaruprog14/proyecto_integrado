@@ -11,7 +11,7 @@ from django.views import View
 
 from accounts.models import Role
 from analytics.measurement import ADD_PLAN, CHANGE_PLAN, PUBLISH_PLAN, VIEW_PLAN, create_revision, publish_version
-from analytics.measurement_forms import MeasurementAdjustmentForm, MeasurementItemForm, NewPlanForm, RevisionForm, VersionForm
+from analytics.measurement_forms import MeasurementAdjustmentForm, MeasurementItemForm, NewPlanForm, PublicationForm, RevisionForm, VersionForm
 from analytics.models import MeasurementAdjustment, MeasurementItem, MeasurementVersion
 from common.access import ProtectedViewMixin
 from common.edit_concurrency import edit_conflict, edit_is_current, edit_revision
@@ -142,6 +142,8 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
         if self.operation == "adjustment":
             adjustment = self.adjustment or MeasurementAdjustment(line=self.line)
             return MeasurementAdjustmentForm(data, instance=adjustment, line=self.line)
+        if self.operation == "publish":
+            return PublicationForm(data)
         return forms.Form(data)
 
     def detail_url(self):
@@ -224,7 +226,7 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
         elif action == "publish":
             if self.version.number == 1:
                 self.version.effective_from = self.period.start_date
-            publish_version(self.version)
+            publish_version(self.version, exception_reason=form.cleaned_data["reason"] if form.cleaned_data["authorize_exception"] else "")
             self.plan.save(update_fields=["updated_at"])
         elif action == "remove_item":
             self.line.delete()
@@ -245,6 +247,7 @@ class MeasurementEdit(MeasurementAccess, ModalFormOnlyMixin, View):
 
         if isinstance(subject, MeasurementVersion):
             return {
+                "Excepción de ponderación": subject.weight_exception,
                 "Cargo": str(subject.plan.position), "Período": str(subject.plan.period),
                 "Versión": str(subject.number), "Estado": "Publicada" if subject.is_published else "Borrador",
                 **{

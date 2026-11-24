@@ -128,6 +128,13 @@ def delegation_export(period, today, delegation, context, records):
             ("Semáforo ámbar", context["colors"]["AMBER"]),
             ("Semáforo rojo", context["colors"]["RED"]),
         ])
+    for group in context.get("collective") or []:
+        label = "Colectivo · " + group["plan"]
+        metrics.extend([(label + " · realizados", group["done"]), (label + " · total", group["total"]),
+                        (label + " · realizado (%)", Decimal(group["percent"])),
+                        (label + " · pendiente (%)", Decimal(group["pending_percent"])),
+                        (label + " · umbral (%)", Decimal(group["threshold"]) if group["threshold"] else None),
+                        (label + " · resultado", group["verdict"])])
     if commitments := context["commitments"]:
         metrics.extend([
             ("Compromisos del período", commitments["total"]),

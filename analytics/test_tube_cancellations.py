@@ -26,6 +26,41 @@ class TubeCancellationTests(CalculatorFixture, TestCase):
     def progress(self, on_date=END):
         return self.rows(Calc.calculate(self.worker, self.period, on_date))[PERCENTAGE_ITEM].progress
 
+    def test_collective_groups_separate_published_plans_and_delegations(self):
+        from analytics.collective import collective_for_panel
+        other = self.official("Otro cargo", "Apoyo administrativo")
+        self.commitment("DONE")
+        self.commitment("PENDING")
+        row = self.commitment("DONE")
+        row.responsible = other
+        row.save(update_fields=["responsible"])
+        self.plans["Apoyo administrativo"].versions.update(collective_threshold=95)
+        results = collective_for_panel(self.period, END, self.delegation)
+        self.assertEqual([(r["total"], r["done"], r["verdict"]) for r in results],
+                         [(1, 1, "Alcanza el umbral"), (2, 1, "Bajo el umbral")])
+        from accounts.models import Delegation
+        destination = Delegation.objects.create(delegation_name="Otra", address="Otra 1", commune="La Serena")
+        row.delegation = destination
+        row.save(update_fields=["delegation"])
+        self.assertEqual(len(collective_for_panel(self.period, END, self.delegation)), 1)
+        self.assertEqual(collective_for_panel(self.period, END, destination)[0]["done"], 1)
+
+    def test_collective_cutoffs_and_frozen_version(self):
+        from analytics.collective import collective_figures, collective_for_panel
+        for done, verdict in [(7999, "Bajo el umbral"), (8000, "Alcanza el umbral"), (8001, "Alcanza el umbral")]:
+            self.assertEqual(collective_figures(done, 10000, Decimal("80"))["verdict"], verdict)
+        for status in ["DONE"] * 8 + ["PENDING", "IN_PROGRESS"]:
+            self.commitment(status)
+        self.commitment("CANCELLED", REASON)
+        def summary():
+            return collective_for_panel(self.period, END, self.delegation)[0]
+        self.assertEqual((summary()["done"], summary()["total"], summary()["verdict"]), (8, 10, "Alcanza el umbral"))
+        self.plans["Gestor social"].versions.update(collective_threshold=81)
+        self.assertEqual(summary()["verdict"], "Bajo el umbral")
+        self.period.close_period()
+        Commitment.objects.update(current_status="DONE")
+        self.assertEqual((summary()["done"], summary()["total"]), (8, 10))
+
     def test_without_cancellations_the_rule_is_unchanged(self):
         for status in ("DONE", "DONE", "DONE", "PENDING"):
             self.commitment(status)

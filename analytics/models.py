@@ -33,6 +33,7 @@ class MeasurementVersion(BaseModel):
     plan = models.ForeignKey(MeasurementPlan, on_delete=models.PROTECT, related_name="versions")
     number = models.PositiveIntegerField(verbose_name="Versión")
     effective_from = models.DateField(verbose_name="Vigente desde")
+    weight_exception = models.CharField("Motivo de ponderación excepcional", max_length=500, blank=True, editable=False)
     published_at = models.DateTimeField(null=True, editable=False)
     max_computable = models.DecimalField(
         max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope computable (%)",
@@ -353,6 +354,7 @@ class IndicatorSupportSnapshot(models.Model):
 
 
 class DelegationActivityFreeze(models.Model):
+    collective_results = models.JSONField(null=True, editable=False)
     period = models.ForeignKey(Period, on_delete=models.PROTECT)
     captured_at = models.DateTimeField()
 
@@ -402,6 +404,8 @@ class ScoreAdjustment(BaseModel):
     kind = models.CharField("Tipo", max_length=20, choices=Kind.choices)
     channel = models.CharField("Medio escrito", max_length=15, choices=Channel.choices)
     reason = models.CharField("Motivo", max_length=500)
+    delegate_reference = models.CharField("Referencia del oficio o correo del delegado", max_length=250, blank=True)
+    delegate_origin_confirmed = models.BooleanField("Origen confirmado por el revisor", default=False)
     written_support = models.TextField("Respaldo escrito", max_length=4000)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")

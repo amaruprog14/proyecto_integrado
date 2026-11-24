@@ -1,6 +1,7 @@
 from io import BytesIO
 from uuid import uuid4
 
+from common.antivirus import scan_upload
 from django import forms
 from django.conf import settings
 from django.contrib import messages
@@ -66,6 +67,7 @@ class EvidenceImagesField(forms.Field):
 
     @staticmethod
     def prepare_image(upload):
+        scan_upload(upload)
         try:
             with Image.open(upload, formats=list(IMAGE_FORMATS)) as source:
                 if source.width * source.height > MAX_IMAGE_PIXELS:

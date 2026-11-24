@@ -313,6 +313,22 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.assertGreater(response.context["measured_count"], 0)
         self.assertEqual(self.client.get(TERRITORIAL_URL).status_code, 404)
 
+    def test_collective_result_matches_excel(self, _today):
+        for status in ("DONE", "PENDING"):
+            Commitment.objects.create(responsible=self.worker, delegation=self.delegation,
+                committed_date=TODAY, creation_date=timezone.make_aware(datetime.combine(TODAY, time.min)),
+                requester="Solicitante ficticio", territory="Centro", current_status=status)
+        self.client.force_login(self.delegate.user)
+        panel = self.client.get(TEAM_URL, {"period": self.period.pk})
+        self.assertContains(panel, "Bajo el umbral")
+        row, = panel.context["collective"]
+        download = self.client.get(TEAM_URL, {"period": self.period.pk, "export": "xlsx"})
+        summary = dict(load_workbook(BytesIO(download.content))["Resumen"].values)
+        prefix = "Colectivo · " + row["plan"] + " · "
+        self.assertEqual((summary[prefix + "realizados"], summary[prefix + "total"],
+                          summary[prefix + "realizado (%)"], summary[prefix + "resultado"]),
+                         (1, 2, 50, row["verdict"]))
+
     def test_delegation_dashboard_queries_do_not_grow_with_team_size(self, _today):
         self.client.force_login(self.delegate.user)
         self.client.get(TEAM_URL)

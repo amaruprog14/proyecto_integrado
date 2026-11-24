@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import Official, Territory
+from accounts.models import Official, Role, Territory
 from activities.models import SocialAttention
 from activities.test_case_follow_up import CaseFixture
 from analytics.services import CalculadorDesempenoService
@@ -40,6 +40,41 @@ class CommitmentWorkflowTests(CaseFixture, TestCase):
             "committed_date": timezone.localdate().isoformat(), "description": "Coordinar la visita.",
             **changes,
         }
+
+    def test_peer_can_consult_but_cannot_update_or_reassign_a_commitment(self):
+        self.other_official.delegation = self.delegation
+        self.other_official.save(update_fields=["delegation"])
+        self.client.post(reverse("commitment_create"), self.data())
+        record = Commitment.objects.get()
+        self.client.force_login(self.other_user)
+        detail = self.client.get(reverse("commitment_detail", args=[record.pk]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotIn("status_form", detail.context)
+        self.assertNotIn("assign_form", detail.context)
+        self.assertEqual(self.client.post(reverse("commitment_status", args=[record.pk]), {
+            "status": "DONE", "observation": "Gestión entre pares",
+        }).status_code, 404)
+        self.assertEqual(self.client.post(reverse("commitment_assign", args=[record.pk]), {
+            "responsible": self.other_official.pk, "reason": "Reasignación entre pares",
+        }).status_code, 404)
+        record.refresh_from_db()
+        self.assertEqual((record.responsible_id, record.current_status), (self.official.pk, Commitment.Status.ENTERED))
+        self.assertFalse(record.status_history.exists())
+
+    def test_delegate_can_manage_a_peers_open_commitment_in_scope(self):
+        self.client.post(reverse("commitment_create"), self.data())
+        record = Commitment.objects.get()
+        role = Role.objects.create(role_name="Delegado", scope=Role.Scope.DELEGATION)
+        self.other_official.roles.add(role)
+        self.other_official.authorized_delegations.add(self.delegation)
+        self.client.force_login(self.other_user)
+        status = reverse("commitment_status", args=[record.pk])
+        assign = reverse("commitment_assign", args=[record.pk])
+        self.assertEqual(self.client.post(status, {"status": "IN_PROGRESS", "observation": "Visita"}).status_code, 302)
+        self.assertEqual(self.client.post(assign, {"responsible": self.other_official.pk, "reason": "Turno"}).status_code, 302)
+        record.refresh_from_db()
+        self.assertEqual((record.responsible_id, record.current_status),
+                         (self.other_official.pk, Commitment.Status.IN_PROGRESS))
 
     def test_case_creation_measurement_scope_and_deadline_alert(self):
         self.client.post(reverse("attention_entry"), self.attention_data())

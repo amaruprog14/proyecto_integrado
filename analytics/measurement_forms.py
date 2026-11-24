@@ -20,6 +20,17 @@ class NewPlanForm(forms.Form):
         ).exclude(pk__in=period.measurement_plans.values("position_id"))
 
 
+class PublicationForm(forms.Form):
+    authorize_exception = forms.BooleanField(required=False, label="Autorizar una suma de ponderadores distinta al 100 %")
+    reason = forms.CharField(required=False, max_length=500, label="Motivo de la ponderación excepcional")
+
+    def clean(self):
+        data = super().clean()
+        if data.get("authorize_exception") and not data.get("reason"):
+            self.add_error("reason", "Indica el motivo para autorizar la excepción.")
+        return data
+
+
 class RevisionForm(forms.Form):
     effective_from = forms.DateField(
         label="Vigente desde", widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),

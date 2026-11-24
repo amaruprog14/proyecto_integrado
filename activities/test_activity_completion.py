@@ -60,6 +60,40 @@ class ActivityFixture(OfficialFixture):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], ALLOWED_HOSTS=['localhost','testserver'])
 class ActivityCompletionTests(ActivityFixture, TestCase):
+    def test_week_lock_by_delegation_allows_next_week(self):
+        from configuration.models import RegistrationWeek
+        from configuration.weeks import week_start
+        self.client.force_login(self.users["editor"])
+        self.period.start_date = self.today - timedelta(days=7)
+        self.period.save()
+        monday = week_start(self.today)
+        week = RegistrationWeek.objects.create(delegation=self.foreign.delegation, monday=monday, closed=True)
+        url = reverse("activity_create")
+        self.assertEqual(self.client.post(url, self.payload(date=monday)).status_code, 302)
+        week.delegation = self.target.delegation
+        week.save()
+        self.assertContains(self.client.post(url, self.payload(date=monday + timedelta(days=6))), "semana de registro está cerrada")
+        self.assertEqual(self.client.post(url, self.payload(date=monday + timedelta(days=7))).status_code, 302)
+
+    def test_manual_preparatory_flag_is_saved(self):
+        self.client.force_login(self.users["editor"])
+        response = self.client.post(reverse("activity_create"), self.payload(is_preparatory="on"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Activity.objects.get(subject="Visita de prueba").is_preparatory)
+
+    def test_optional_manual_contact_rut_is_validated_and_searchable(self):
+        self.client.force_login(self.users["editor"])
+        url = reverse("activity_create")
+        payload = self.payload(contact_name="Contacto de prueba", contact_rut="12.345.678-9")
+        self.assertContains(self.client.post(url, payload), "RUT o RUN chileno válido")
+        self.assertFalse(Activity.objects.filter(contact_name="Contacto de prueba").exists())
+        payload["contact_rut"] = "12.345.678-5"
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+        record = Activity.objects.get(contact_name="Contacto de prueba")
+        self.assertEqual(record.contact_rut, "12345678-5")
+        page = self.client.get(reverse("activity_maintainer"), {"q": "123456785"})
+        self.assertEqual([row.pk for row in page.context["page_obj"]], [record.pk])
+
     def test_daily_limit_rejects_eighth_activity(self):
         self.client.force_login(self.users["editor"])
         day = self.today + timedelta(days=1)

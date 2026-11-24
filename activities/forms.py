@@ -42,6 +42,10 @@ def attention_delegations(official, active_delegation):
 
 
 class SocialAttentionForm(forms.Form):
+    is_preparatory = forms.BooleanField(label="Coordinación preparatoria", required=False,
+        help_text="Marca esta opción si la gestión solo prepara una acción posterior. No suma al avance.",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}))
+
     text_limits = {"recipient_full_name": 100}
     DIRECT = "direct"
     LINKED = "linked"

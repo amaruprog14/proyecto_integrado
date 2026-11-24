@@ -5,6 +5,7 @@
 <section class="maintainer-content" aria-labelledby="agenda-title">
     <header class="maintainer-heading">
         <div><p class="maintainer-breadcrumb">Gestión municipal / Operación</p><h1 id="agenda-title">Agenda colectiva</h1></div>
+        {% if can_manage_weeks %}<a class="btn btn-outline-secondary" href="{% url 'registration_weeks' %}">Semanas de registro</a>{% endif %}
         {% if can_add %}<a class="btn btn-primary maintainer-new-button" href="{% url 'commitment_create' %}">Nuevo compromiso</a>{% endif %}
     </header>
     <form method="get" class="maintainer-tools performance-filters mb-3" aria-label="Filtrar compromisos">

@@ -24,6 +24,7 @@ from .forms import SocialAttentionForm, attention_delegations
 from .invitations import invite_to_portal
 from .models import AttentionCase, ClientRequest, SocialAttention, Activity
 from analytics.measurement import activity_measurement
+from configuration.weeks import check_registration_week
 from configuration.period_services import lock_open_period, lock_period_registry
 from configuration.models import Item
 
@@ -192,6 +193,7 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                 lock_period_registry()
                 effective_date = form.cleaned_data["effective_date"]
                 lock_open_period(effective_date)
+                check_registration_week(effective_date, form.cleaned_data["delegation"].pk)
                 request_id = form.cleaned_data.get("client_request")
                 case = self.target_case
                 if request_id:
@@ -280,7 +282,7 @@ class AttentionEntryView(ProtectedViewMixin, FormView):
                 Activity.validate_daily_capacity(form.official.pk, attention.date)
                 activity = Activity.objects.create(official=form.official, item=item, date=attention.date,
                     registration_delegation=delegation, record_type=Activity.RecordType.ATTENTION,
-                    action_description=attention.description)
+                    is_preparatory=form.cleaned_data["is_preparatory"], action_description=attention.description)
                 attention.activity = activity
                 attention.save()
                 assign_case(case, form.official, request=self.request)

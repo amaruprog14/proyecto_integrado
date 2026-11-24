@@ -16,6 +16,7 @@ from django.db.models import Case, Count, Exists, F, OuterRef, Q, Subquery, When
 from django.db.models.functions import Coalesce, Trim
 from django.utils import timezone
 
+from accounts.models import Official, OfficialPositionPeriod
 from activities.models import Activity, EvidenceValidation
 from analytics.measurement import published_versions_on
 from analytics.models import MAX_FINAL_SCORE, IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion, ScoreAdjustment
@@ -35,13 +36,25 @@ def q2(value):
 
 
 def activities_with_contact(queryset):
+    """Aplica los requisitos de la persona atendida a todas las consultas de avance."""
+    position_at_attention = OfficialPositionPeriod.objects.filter(
+        official_id=OuterRef("pk"), deleted_at__isnull=True,
+        start_date__lte=OuterRef(OuterRef("date")),
+    ).filter(Q(end_date__isnull=True) | Q(end_date__gte=OuterRef(OuterRef("date"))))
+    delegates = Official.objects.filter(national_id=OuterRef("_recipient_rut")).alias(
+        _position_name=Coalesce(
+            Subquery(position_at_attention.order_by("-start_date", "-pk").values("position__position_name")[:1]),
+            F("position__position_name"),
+        ),
+    ).filter(_position_name__iexact="Delegado")
     # Las atenciones automáticas mantienen el contacto en la ficha del solicitante.
-    return queryset.alias(
+    return queryset.filter(is_preparatory=False).alias(
+        _recipient_rut=Coalesce("social_attentions__recipient__national_id", "contact_rut"),
         _contact=Trim(Case(When(social_attentions__isnull=False, then=F("social_attentions__recipient__full_name")),
                            default=F("contact_name"))),
         _phone=Trim(Case(When(social_attentions__isnull=False, then=F("social_attentions__recipient__phone")),
                          default=F("phone"))),
-    ).filter(_contact__gt="", _phone__gt="")
+    ).filter(~Exists(delegates), _contact__gt="", _phone__gt="")
 
 
 def computable_activities(queryset):
@@ -58,7 +71,6 @@ def computable_activities(queryset):
         plan__period__deleted_at__isnull=True, deleted_at__isnull=True, published_at__isnull=False,
         effective_from__lte=OuterRef("date"),
     ).order_by("-effective_from", "-pk").values("pk")[:1]
-    from accounts.models import OfficialPositionPeriod
     historical = OfficialPositionPeriod.objects.filter(official_id=OuterRef("official_id"),
         start_date__lte=OuterRef("date"), deleted_at__isnull=True).filter(
         Q(end_date__isnull=True) | Q(end_date__gte=OuterRef("date"))).order_by("-start_date").values("position_id")[:1]

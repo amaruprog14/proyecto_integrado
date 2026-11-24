@@ -45,7 +45,9 @@ from .views import (
     SubattentionTypeUpdateView,
 )
 
-urlpatterns = []
+from .weeks import WeekView
+
+urlpatterns = [path("semanas/", WeekView.as_view(), name="registration_weeks")]
 urlpatterns += [
     path("bitacora/", AuditList.as_view(), name="audit_list"),
     path("bitacora/<int:pk>/", AuditDetail.as_view(), name="audit_detail"),

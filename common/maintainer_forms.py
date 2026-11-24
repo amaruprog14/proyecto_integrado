@@ -9,6 +9,7 @@ from accounts.role_forms import (
     PermissionCheckboxSelectMultiple, PermissionMultipleChoiceField,
     assignable_permissions, can_grant_privileged_permissions, group_permissions,
 )
+from common.chilean_rut import normalize_chilean_rut
 from accounts.forms import clean_phone, privileged_permission_query
 from common.text import normalize_spaces, clean_description_text
 from common.field_validation import LimitedTextFieldsMixin, clean_catalog_name, configure_text_widgets
@@ -205,8 +206,8 @@ class ActivityForm(MaintainerForm):
     class Meta:
         model = Activity
         fields = (
-            "official", "registration_delegation", "item", "date", "record_type", "subject", "action_description",
-            "contact_name", "phone", "activity_type", "service_type", "attention_type", "subattention_type",
+            "official", "registration_delegation", "item", "date", "record_type", "subject", "action_description", "is_preparatory",
+            "contact_name", "contact_rut", "phone", "activity_type", "service_type", "attention_type", "subattention_type",
         )
 
     def __init__(self, *args, actor=None, **kwargs):
@@ -248,9 +249,16 @@ class ActivityForm(MaintainerForm):
             self.fields[key].queryset = choices
         for key in ("subject", "action_description", "activity_type"):
             self.fields[key].required = catalog_required
+        self.fields["is_preparatory"].widget = forms.CheckboxInput(attrs={"class": "form-check-input"})
+        self.fields["is_preparatory"].help_text = "La coordinación queda registrada y no suma al avance."
+        self.fields["contact_rut"].help_text = "Opcional. Permite identificar si la persona atendida ejercía el cargo de Delegado."
         self.fields["phone"].help_text = "Para que la actividad puntúe, registra el nombre y el teléfono del contacto."
         self.fields["activity_type"].help_text = "Se muestran los tipos de actividad vigentes del área del funcionario."
         self.fields["service_type"].help_text = "Si el tipo ofrece servicios, elige el que corresponda."
+
+    def clean_contact_rut(self):
+        value = self.cleaned_data["contact_rut"]
+        return normalize_chilean_rut(value) if value else ""
 
     def clean_phone(self):
         return clean_phone(self.cleaned_data["phone"])

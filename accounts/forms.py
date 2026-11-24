@@ -1,5 +1,6 @@
 import re
 
+from common.antivirus import scan_upload
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import Permission
@@ -1169,6 +1170,7 @@ class OwnOfficialProfileForm(AccountTextFieldsMixin, forms.ModelForm):
         if self.files.get("photo"):
             if photo.size > 2 * 1024 * 1024:
                 raise ValidationError("La imagen no puede superar los 2 MiB.")
+            scan_upload(photo)
             if photo.image.format not in ("JPEG", "PNG"):
                 raise ValidationError("Selecciona una imagen JPEG o PNG válida.")
         return photo

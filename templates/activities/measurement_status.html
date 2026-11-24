@@ -5,7 +5,8 @@
     {% endif %}
     <dt class="col-sm-4">Medición</dt>
     <dd class="col-sm-8">
-        {% if measurement.excluded %}Fuera de medición
+        {% if measurement.preparatory %}Coordinación preparatoria · No aporta al avance
+        {% elif measurement.excluded %}Fuera de medición
         {% elif measurement.version %}Versión {{ measurement.version.number }} · Vigente desde {{ measurement.version.effective_from|date:"d-m-Y" }}
         {% else %}Sin configuración publicada{% endif %}
     </dd>

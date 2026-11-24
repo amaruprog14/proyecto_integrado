@@ -1,5 +1,7 @@
 # Plan e informe de pruebas del SGR
 
+**Último balance de criterios:** [reglas, seguridad y cierre semanal](#corte-ocho-criterios).
+
 Plan de pruebas e informe de resultados del Sistema de Gestión de Resultados para la **evaluación
 sumativa III**. Reúne qué se prueba, cómo se ejecuta, la trazabilidad requisito → prueba, los
 resultados obtenidos contra los esperados, sus discrepancias y las recomendaciones.
@@ -977,3 +979,78 @@ Desde fuera de la instancia, una petición GET a la raíz de `http://34.201.192.
 Las correcciones RC-02, RC-03 y RC-12 se probaron en la copia local y aún están sin commit. El hash de EC2 identifica la revisión del repositorio en disco. Por sí solo no acredita cambios sin commit en el servidor ni la ejecución allí de la suite local.
 
 **Balance acumulado del semestre:** 69 aprobados, 0 fallidos y 35 pendientes sobre 104 criterios.
+
+<a id="seguimiento-35-local"></a>
+
+### Seguimiento local de los 35 pendientes · 23 y 24-11-2026
+
+**Balance acumulado sobre 104 criterios: 76 aprobados, 4 fallidos y 24 pendientes.** De los 35 pendientes al cierre anterior, siete obtuvieron evidencia suficiente en local y cuatro reprodujeron un incumplimiento. Los cortes anteriores conservan sus resultados históricos. Este conteo corresponde a criterios de aceptación individuales, no a métodos de prueba de Django.
+
+Se usaron datos ficticios, bases de prueba y sesiones locales. La revisión local al cierre fue `91dc1f8`. Las pruebas con navegador usaron Brave y la aplicación ASGI local. Para los ensayos de volumen se usaron sesiones del cliente de pruebas de Django y MySQL. Estos tiempos miden el procesamiento de la aplicación en el equipo de prueba. Las condiciones de red, memoria, proxy y almacenamiento de EC2 requieren mediciones propias. Se mantuvo el alcance académico por HTTP.
+
+#### Siete criterios aprobados en local
+
+| Criterio | Procedimiento y resultado observado | Alcance |
+| --- | --- | --- |
+| PAR-03 · Fórmula porcentual | Enviar un ítem de plan con tipo de meta vacío o desconocido devolvió el formulario con error y conservó el número de ítems. Con los tipos porcentuales de avance y de máximo, el servidor guardó el tipo correspondiente (204). Las pruebas del cálculo incluyen el porcentaje de compromisos realizados, los límites de la regla de máximo y el denominador vacío. | La fórmula está determinada por el tipo de meta. El sistema impide guardar un tipo sin regla. Se verificó esa condición en SQLite. |
+| INT-05 · Recuperación | En MySQL se restauró una copia en una base de prueba nueva. Coincidieron las 68 tablas y la delegación de control. Una fila posterior al corte quedó fuera, como se esperaba. Las imágenes de multimedia y evidencia privada conservaron su SHA y se pudieron abrir. | Antigüedad del punto recuperado en el ensayo: 0,646 s. Tiempo de recuperación medido: 0,483 s. Datos pequeños. Se repitió el ensayo con nombres de base separados del ensayo de volumen. |
+| REN-02 · Tablero multiusuario | Dos sesiones autorizadas (Coordinador y Delegado) alternaron consultas por delegación y funcionario. Se completaron 12 consultas con 5.000 registros y otras 12 con 10.000. Máximos respectivos de 0,059 y 0,068 s, bajo el umbral de 5 s. | MySQL local, datos sintéticos. El volumen de actividades carecía de la distribución de evidencias de una instalación en uso. |
+| REN-03 · Exportación concurrente | Se generó el Excel de 10.000 registros en 44,189 s y se comparó el conjunto exacto de 10.000 identificadores únicos. Durante la exportación, otras dos sesiones completaron ocho consultas al listado. | Se comprobó el solapamiento temporal y la integridad del archivo en MySQL local. |
+| REN-04 · Lecturas y escrituras | Se ejecutaron cuatro etapas con 1, 2, 4 y 8 escritores y un lector autorizado en cada etapa. Se verificaron tres lecturas por etapa y 15 altas acumuladas con asuntos esperados y códigos únicos. Duraciones de 0,147 / 0,119 / 0,141 / 0,205 s. | Carga progresiva funcional en MySQL. Los ensayos de degradación y recuperación siguen abiertos. |
+| CU-DEMO-02 · Actividad | Desde el navegador, un editor creó la actividad ACT-0001 con un ítem del plan publicado, modificó su descripción y conservó su código. Omitir el ítem impidió guardar tanto en alta como en edición. Se comprobó una sola actividad y dos movimientos en la bitácora. | Capturas de [código](evidencias-pruebas/seguimiento-noviembre/actividad-codigo.png), [ítem](evidencias-pruebas/seguimiento-noviembre/actividad-item.png) e [historial](evidencias-pruebas/seguimiento-noviembre/actividad-historial.png). |
+| REG-DEMO-01 · Inscripción duplicada | Desde Las Compañías se registró un menor ficticio. Desde Antena se intentó registrar el mismo RUT para la misma campaña, también con puntos. El sistema indicó la delegación de origen y conservó una inscripción. | Capturas del [rechazo](evidencias-pruebas/seguimiento-noviembre/regalos-duplicado.png) y del [listado](evidencias-pruebas/seguimiento-noviembre/regalos-listado.png). |
+
+#### Cuatro incumplimientos reproducidos en SQLite local
+
+| Criterio | Cómo reproducir con datos ficticios | Resultado esperado | Resultado observado |
+| --- | --- | --- | --- |
+| RC-01 | Registrar una atención social a nombre de una persona identificada con el nombre completo y el RUT de un funcionario con cargo Delegado. Asignar como responsable a un Gestor social con plan y aprobar la evidencia. Consultar el avance. | Excluir esa atención por la condición de la persona atendida. | Aportó una unidad. |
+| RC-06 | Registrar una felicitación cuyo único respaldo escrito dice «Correo de la persona atendida.». Aprobarla como Coordinador y consultar el ajuste. | Cero puntos mientras falte el respaldo formal del delegado exigido por el criterio. | Se aplicaron +10 puntos. |
+| RC-10 | Ingresar como Funcionario de ámbito de delegación con permisos de asignación y cambio. Abrir un compromiso de otro funcionario de la misma delegación y marcarlo Realizado. | Permitir la consulta y rechazar la modificación ajena según el criterio. | El nuevo estado quedó guardado. El resultado corresponde a esta combinación de permisos. |
+| RC-11 | En Actividades, buscar una actividad generada desde una atención social. Repetir por código, nombre completo y RUT de la persona atendida. | Encontrar la actividad por los identificadores exigidos. | Se encontró por código. Las búsquedas por nombre y RUT omitieron el registro. |
+
+#### Evidencia parcial y trabajo restante
+
+| Criterios pendientes (24) | Comprobación pendiente o límite encontrado |
+| --- | --- |
+| PAR-02, PAR-06, AGE-05, CAL-03, RC-04, RC-05 | Contrastar las excepciones y umbrales del plan, la validación de compromisos, el cálculo y las coordinaciones preparatorias con sus reglas originales. En RC-04 se aceptó el 24 de noviembre una actividad del día 16 en un período abierto. Para evaluar el caso exacto falta definir cómo identificar una semana formalmente cerrada. |
+| UX-04, UX-05, UX-06 | Comparar con la referencia gráfica institucional y completar la matriz de Chrome y Edge en escritorio y móvil. Para UX-05 se recorrieron con Tab el acceso y Actividades en Brave. El contraste mínimo de los textos medidos sobre fondo sólido fue 5,74:1 y 5,31:1 respectivamente. En Actividades varios enlaces y fechas no mostraron contorno ni sombra en la inspección. Falta confirmar visualmente otros indicadores de foco y repetir Mi desempeño con un perfil autorizado: en ese recorrido se mostró «Acceso restringido». |
+| SEG-05, SEG-06 | Cerrar la evidencia de la política de archivos y tratamiento de datos indicada en los criterios originales. |
+| INT-04, INT-06 | Completar la verificación integral de integridad y la medición de disponibilidad ante un fallo controlado. La restauración pequeña de INT-05 cubre otro escenario. |
+| REN-01, REN-05, REN-06 | Para REN-01 se midieron diez consultas por vista y tamaño con el cliente Django en SQLite. Con 5.000 filas, p95 de Mi desempeño y Actividades de 0,023 y 0,043 s. Con 10.000 filas, 0,014 y 0,070 s. MySQL local no aceptó la conexión durante esa repetición. Falta la medición HTTP bajo carga de M-12. Para REN-05 y REN-06 falta medir degradación y posterior recuperación. |
+| ACC-01, AWS-02, AWS-03, AWS-04, AWS-05, AWS-06, CU-DEMO-01, CU-DEMO-03 | Completar la matriz de roles y las fichas de ingreso y validación de evidencia. Los escenarios AWS requieren evidencia propia de los roles desplegados, persistencia tras reinicio, recorrido hasta Excel, configuración de red e instalación y reversión. |
+
+No se corrigió la aplicación durante este seguimiento. Para cerrar cada fallo, se deberá repetir su procedimiento con los mismos datos de control tras la corrección y registrar el resultado en un nuevo corte.
+
+<a id="reevaluacion-cuatro-reglas"></a>
+
+### Reevaluación de RC-01, RC-06, RC-10 y RC-11 · 24-11-2026
+
+**Balance acumulado: 80 aprobados, 0 fallidos y 24 pendientes sobre 104 criterios.** Esta reevaluación local actualiza los cuatro fallos del corte anterior. Las fichas originales conservan el resultado observado antes de la corrección.
+
+| Criterio | Regla comprobada | Pruebas de regresión |
+| --- | --- | --- |
+| RC-01 · Persona atendida | Se consulta el cargo identificado por el RUT en la fecha de la actividad. Si existe un tramo de cargo aplicable se usa ese tramo y, en su ausencia, el cargo de la ficha del funcionario. Se excluye al Delegado identificado tanto en atención social como en actividad manual. Una actividad manual sin RUT puede computar aunque su contacto se llame igual que un delegado. Los resultados congelados mantienen su respaldo histórico. | [Cálculo de desempeño](analytics/test_performance_calculator.py), `test_delegate_recipient_is_excluded_by_identity_and_position_on_activity_date` y `test_manual_activity_excludes_delegate_by_rut_and_keeps_namesakes`. |
+| RC-06 · Felicitación | El revisor debe ingresar la referencia al oficio o correo del delegado y confirmar su origen. Si omite uno o ambos datos, la felicitación sigue pendiente y aporta cero. Con los dos datos, la referencia queda en la ficha junto a la identidad del revisor y se aplica el valor del plan. Se conservan las aprobaciones previas. | [Ajustes al puntaje](analytics/test_score_adjustments.py), `test_ordinary_written_support_alone_cannot_award_congratulation_points` y `test_three_approved_congratulations_and_final_cap_are_preserved_at_close`. |
+| RC-10 · Compromisos de la delegación | Un funcionario pudo consultar el detalle ajeno de su delegación. El detalle ocultó las acciones y el servidor rechazó los intentos de cambiar estado y reasignar. El responsable y el estado permanecieron intactos. Un Delegado habilitado pudo cambiar de estado y reasignar dentro de su ámbito. Siguen rigiendo las transiciones de estado del compromiso. | [Agenda colectiva](agenda/test_commitments.py), `test_peer_can_consult_but_cannot_update_or_reassign_a_commitment`, `test_delegate_can_manage_a_peers_open_commitment_in_scope` y `test_every_status_transition_preserves_consistent_history`. |
+| RC-11 · Búsqueda en Actividades | Se localizó una actividad de atención social por su código, nombre del solicitante y RUT con puntos, sin puntos y sin guion. En el alta manual se rechazó el dígito verificador inválido. Con un RUT válido el formulario guardó el valor normalizado y el listado encontró la actividad. | [Atención social](activities/test_case_follow_up.py), `test_activity_search_by_applicant_and_code`, y [actividad manual](activities/test_activity_completion.py), `test_optional_manual_contact_rut_is_validated_and_searchable`. |
+
+**Ejecución.** Se ejecutó `python manage.py test` con configuraciones temporales locales, bases exclusivas de pruebas y archivos aislados. En MySQL, **819 pruebas en 163,718 s**, resultado `OK`, sin omisiones. En SQLite, **819 pruebas en 128,333 s**, resultado `OK (skipped=5)`. La primera configuración temporal de SQLite omitía el origen `localhost` de los ensayos WebSocket; se corrigió la configuración de prueba antes de repetir la suite. Django eliminó las bases temporales al terminar. `makemigrations --check --dry-run` confirmó que los modelos y las migraciones coinciden. Esta ejecución corresponde al entorno local.
+
+<a id="corte-ocho-criterios"></a>
+
+### Reglas de medición, semanas y archivos · 24-11-2026
+
+**Balance documental verificable: 87 aprobados, 0 fallidos y 17 pendientes sobre 104.** Se cierran siete de los ocho criterios tratados en este corte en el alcance local o documental indicado. SEG-05 queda parcial hasta una prueba con ClamAV real habilitado. Los otros 16 corresponden a las siete sesiones que el equipo informa cumplidas. Sus resultados y comprobantes individuales todavía deben incorporarse al informe para incorporarlos al balance. Si se documentan los 16 como satisfactorios, el balance pasaría a 103 aprobados y uno pendiente.
+
+| Criterio | Prueba y resultado |
+| --- | --- |
+| PAR-02 | Se mantuvo el rechazo ordinario de 99 % y 101 %. En `analytics.test_measurement_configuration.MeasurementConfigurationTests.test_exception_requires_explicit_authorization_and_audits_reason` un plan con suma 90 % permaneció en borrador ante un motivo sin autorización o autorización sin motivo. Con ambos datos el publicador lo publicó y se comprobó la justificación en la versión y en su evento de auditoría. |
+| PAR-06 y CAL-03 | En `analytics.test_tube_cancellations`, 79,99 % quedó bajo el umbral de 80 %, mientras 80 % y 80,01 % lo alcanzaron. En el lote de ocho realizados y dos abiertos, añadir un cancelado justificado mantuvo el denominador en diez. Cambiar el umbral a 81 % cambió el resultado. Se verificaron separación por plan y delegación y conservación de la cifra tras congelar. El tablero y el Excel coincidieron en la prueba `test_collective_result_matches_excel`. |
+| AGE-05 | El equipo define **Realizado** como validación operativa. En `agenda.test_commitments.CommitmentWorkflowTests.test_case_creation_measurement_scope_and_deadline_alert`, un compromiso pasó de cero a 100 % realizado y reenviar el cierre conservó una sola transición. La prueba de transiciones de ese módulo verifica autor y estado anterior y nuevo. |
+| RC-04 | Se ensayó el cierre explícito de lunes a domingo, el rechazo de una atención sin cambios parciales, la prohibición para un funcionario ordinario y la reapertura motivada con bitácora. En Actividades se comprobó que el cierre de otra delegación permite el alta y que la semana siguiente permanece abierta. Pruebas `test_closed_week_blocks_entry_until_authorized_reopening` y `test_week_lock_by_delegation_allows_next_week`. |
+| RC-05 | Se marcó la coordinación preparatoria desde el alta manual y desde Ingreso de atención. En `test_preparatory_coordination_remains_registered_without_scoring`, dos actividades válidas del mismo ítem con evidencia aprobada aportaron una unidad cuando una era preparatoria. Se conservaron los dos registros. |
+| SEG-06 | Alcance de política de privacidad: se documentó el acuerdo de custodia, respaldo por 30 días, conservación de originales, autorización previa, verificación y registro para su eventual eliminación. Las pruebas de datos ficticios, acceso y exportación restringida se mantienen en la suite. La ejecución de la rotación en producción requiere evidencia de operación. Véase [política de archivos](README.md#política-de-archivos-y-datos-personales-para-la-evaluación). |
+| SEG-05 · Parcial | Con el cliente simulado se verificaron archivo limpio, detección, error del cliente, ejecutable ausente y tiempo agotado. Una carga de dos fotografías con fallo en la segunda dejó cero lotes, cero imágenes y cero archivos. Pruebas en `common.test_antivirus` y `activities.test_evidence.EvidenceTests.test_antivirus_failure_rejects_entire_upload_before_storage`. Queda comprobar cliente, servicio y firmas reales en un entorno habilitado. La integración queda desactivada por defecto. |
+
+**Ejecución local.** Suite de 827 pruebas en MySQL, 167,057 s, todas satisfactorias. SQLite, 827 pruebas en 133,330 s, resultado satisfactorio con cinco omisiones. Después se probaron tres casos adicionales en MySQL (lote antivirus, alcance semanal y separación de planes) y un cuarto en SQLite (coincidencia con Excel). Se usaron bases temporales. Se aplicaron únicamente las cuatro migraciones autorizadas en MySQL de desarrollo y se comprobó su estructura. Esta ejecución no valida la configuración operativa de AWS.

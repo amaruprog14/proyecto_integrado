@@ -310,6 +310,21 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
                               end_date=self.period.end_date.isoformat())
         self.assertContains(response, "Las fechas quedan fijas")
 
+    def test_exception_requires_explicit_authorization_and_audits_reason(self):
+        plan, version = self.new_plan()
+        self.add_item(version, self.item, "90")
+        args = (self.period.pk, plan.pk, version.pk)
+        for data in ({"reason": "Acuerdo de prueba"}, {"authorize_exception": "on"}):
+            self.assertEqual(self.write("measurement_version_publish", *args, **data).status_code, 200)
+            version.refresh_from_db()
+            self.assertFalse(version.is_published)
+        self.assertEqual(self.write("measurement_version_publish", *args,
+                                   authorize_exception="on", reason="Acuerdo de prueba").status_code, 204)
+        version.refresh_from_db()
+        self.assertEqual(version.weight_exception, "Acuerdo de prueba")
+        self.assertTrue(AuditLog.objects.filter(actor_username=self.admin.username,
+                                               new_value__contains="Acuerdo de prueba").exists())
+
     def test_publication_requires_weights_to_add_exactly_one_hundred(self):
         # RN-001: 40/59 (99 %) y 40/61 (101 %) se rechazan; 40/60 (100 %) se publica.
         _, version = self.new_plan()

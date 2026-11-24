@@ -806,7 +806,7 @@ solicitante, área de apoyo cuando corresponda y registro de origen. El listado 
 comparten filtros de delegación, territorio, responsable, estado y rango de fechas.
 
 El estado inicial es **Ingresado**. Un funcionario autorizado puede avanzar la gestión o dejarla
-pendiente con una observación. **Realizado** es el cierre operativo y registra fecha, autor y
+pendiente con una observación. El Funcionario puede consultar los compromisos de su delegación y solo modificar los propios. El Delegado con los permisos correspondientes puede cambiar el estado o reasignar compromisos abiertos dentro de sus delegaciones autorizadas. **Realizado** es el cierre operativo y registra fecha, autor y
 observación. Los roles de supervisión pueden reasignar compromisos aún abiertos con motivo
 auditable. El cálculo del tubo usa compromisos realizados sobre el total del funcionario por fecha
 comprometida. Un compromiso se puede terminar después del cierre del período asociado y conserva
@@ -907,7 +907,7 @@ sin migrar ni borrar datos para no perder información; no deben recibir usos nu
   POST se rechaza sin cambiar el estado y queda en la bitácora («Intento de validar un registro
   propio»). Tampoco lo valida el funcionario afectado, aunque lo haya registrado otra persona: se
   rechaza igual y queda como «Intento de validar un registro sobre sí mismo». Debe validarlo otra
-  cuenta autorizada. Al aprobar se conserva el puntaje de la versión
+  cuenta autorizada. Para aprobar una felicitación, el revisor registra la referencia del oficio o correo del delegado y confirma su origen. La ficha conserva la referencia, el revisor y la fecha. Las aprobaciones históricas conservan su puntaje. Al aprobar se conserva el puntaje de la versión
   publicada vigente para el cargo en la fecha del hecho. En un borrador del plan se pueden configurar
   los valores por cargo y período (+10 y −20 por defecto, o un descuento de 30 puntos si corresponde).
   Computan las tres primeras felicitaciones aprobadas por funcionario y período. El resultado suma
@@ -1098,6 +1098,25 @@ asignatura no se versionan.
 ### Reglas de registro y primer ingreso de la evaluación
 
 - Cada funcionario puede registrar hasta siete actividades vigentes en una misma fecha, sumando las manuales y las generadas desde Ingreso de atención. Cambiar la fecha, reasignar o restaurar una actividad requiere cupo en el destino.
-- Para aportar puntaje, una actividad manual requiere nombre y teléfono de contacto. En una atención automática se consultan el nombre y el teléfono de la ficha del solicitante. El seguimiento puede continuar aunque falten datos de contacto.
+- Para aportar puntaje, una actividad manual requiere nombre y teléfono de contacto. En una atención automática se consultan el nombre y el teléfono de la ficha del solicitante. El seguimiento puede continuar aunque falten datos de contacto. Si el RUT de la persona atendida corresponde al cargo Delegado en la fecha de la actividad, esta se excluye del avance. Se utiliza el RUT de la ficha en atenciones sociales y el RUT opcional del contacto en registros manuales. Un nombre coincidente por sí solo no determina una exclusión. En Actividades se puede buscar por código, nombre del contacto o RUT con o sin puntos.
 - Las cuentas nuevas creadas en los mantenedores de Usuarios o Funcionarios deben reemplazar la contraseña inicial para entrar al sistema. Pueden cambiarla desde la pantalla de primer ingreso o mediante recuperación. Esta política comienza con la migración `accounts/0016_initial_password`. Las cuentas anteriores conservan su acceso.
 - Todas las evaluaciones de este semestre admiten HTTP. Una futura habilitación de HTTPS corresponde al despliegue posterior.
+
+### Reglas de cierre y de medición acordadas para la evaluación
+
+- **Configuración de medición → Publicar versión.** La regla ordinaria exige 100 % de ponderación tanto para el cargo como para cada ajuste individual. Quien tiene permiso de publicación puede autorizar expresamente una excepción e indicar su motivo. La versión publicada y la bitácora conservan la justificación. La excepción afecta únicamente la suma de ponderadores de esa versión. Las revisiones se autorizan nuevamente.
+- **Agenda colectiva.** Pasar a **Realizado** constituye la validación operativa del compromiso. La transición conserva quién la hizo, cuándo y su observación. Repetir el cierre no agrega otra unidad. En **Semanas de registro**, Administrador y Coordinador del sistema pueden cerrar o reabrir, con motivo, la semana de lunes a domingo de una delegación. El cierre bloquea altas de atención y altas, cambios, archivado y restauración de actividades de esa semana. Reabrir una semana respeta cualquier cierre trimestral vigente.
+- **Actividades e Ingreso de atención.** Marcar **Coordinación preparatoria** conserva la gestión y su evidencia. Solo la acción realizada puede sumar al avance. Los registros previos conservan su clasificación al migrar.
+- **Desempeño → Tablero de delegación.** El cumplimiento colectivo divide los compromisos realizados por los computables al corte y muestra el porcentaje pendiente. La delegación es la inscrita en el compromiso o, en registros antiguos sin ese dato, la principal del responsable. Se aplica el umbral de la versión publicada que corresponde al cargo del responsable en la fecha comprometida. La igualdad alcanza la meta. Los planes distintos tienen resultados separados y los compromisos sin plan figuran sin evaluación de umbral. El Excel utiliza el mismo resumen. Los cierres nuevos conservan una copia de esas cifras; los anteriores pueden carecer de ese respaldo.
+
+### Política de archivos y datos personales para la evaluación
+
+| Objeto | Custodia, acceso y conservación | Disposición autorizada |
+| --- | --- | --- |
+| Evidencias de actividad y fotografías de perfil | Usar cuentas y datos ficticios en pruebas. Limitar el acceso a quienes intervienen en el proceso. Mantener la raíz de evidencias fuera de directorios públicos. Conservar los archivos originales registrados hasta contar con una decisión institucional escrita. | Anular una aprobación o archivar una actividad conserva la evidencia y su historial. El equipo no ha fijado un vencimiento automático de originales. |
+| Respaldos con datos personales | El responsable de operación registra fecha, ubicación restringida, generación y resultado de comprobación. El plazo acordado es de **30 días**. Mantener copias protegidas y comprobar su recuperación por separado. | Antes de retirar una copia vencida, verificar que existe otra recuperable y que la generación no está retenida por un incidente. Registrar autorización, identificador, fecha y resultado de eliminación en cada destino. La rotación del servidor debe comprobarse en el despliegue. |
+| Exportaciones y material de prueba | Exportar solo los registros necesarios dentro del ámbito autorizado. Evitar adjuntar imágenes, RUT completos, correos o teléfonos a incidencias y presentaciones. Quien descargue un archivo custodiará también su copia fuera del SGR. | Una vez cumplido el propósito, gestionar su eliminación en el destino autorizado. Ante una solicitud de supresión de originales, remitirla al responsable institucional antes de ejecutar acciones. |
+
+**Procedimiento ante una disposición institucional de originales.** Identificar titular, alcance, archivos y respaldos relacionados por sus identificadores internos. Revisar las obligaciones de conservación, las aprobaciones y los resultados congelados. Obtener autorización escrita con responsable y fecha. Ejecutar la disposición únicamente en los destinos y con el mecanismo aprobado para el medio de almacenamiento. Verificar el resultado, registrar las copias sujetas al ciclo de respaldo y aplicar la decisión también ante una restauración posterior. Durante la evaluación rige la conservación de originales.
+
+**Antivirus configurable.** Para habilitarlo en un entorno preparado, configurar `CLAMAV_ENABLED=true` y `CLAMAV_CLIENT` con la ruta del cliente local `clamdscan` autorizado. Operación debe disponer de un servicio clamd accesible y firmas actualizadas. El SGR entrega por entrada estándar el archivo recibido antes de guardarlo; un resultado positivo, error del cliente o tiempo de espera agotado rechaza la carga. En evidencias se rechaza el lote completo. Las imágenes admitidas se validan y procesan además con los límites propios del formulario. La opción está desactivada por defecto. Registrar en el despliegue la versión y fecha de firmas y probar una imagen limpia y la indisponibilidad del servicio en un entorno aislado. El código de salida simulado en las pruebas de Django solo verifica cómo responde la aplicación.

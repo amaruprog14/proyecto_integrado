@@ -9,6 +9,7 @@ from django.shortcuts import render, redirect
 from django.urls import path, reverse
 from django.utils.functional import cached_property
 from django.views import View
+from common.chilean_rut import searchable_rut
 from common.pagination import ClampedPaginationMixin
 from common.list_state import ordered, query_params
 from accounts.models import Function, Position, Area, GroupProfile, Official, Role, Territory
@@ -23,6 +24,7 @@ from common.maintainer_forms import (FunctionForm, PositionForm, AreaForm, Group
     ActivityTypeForm, ServiceTypeForm, TerritoryForm, protect_last_group_administrator)
 from configuration.models import ActivityType, Item, Period, ServiceType
 from configuration.services import AuditoriaService
+from configuration.weeks import check_registration_week
 from configuration.period_services import lock_open_period, lock_activity_periods, lock_period_registry
 from activities.models import Activity, AttentionCase, ClientRequest, EvidenceValidation
 from activities.listing import export_objects, filtered_requests, listing_objects, ordered_records, request_row
@@ -173,7 +175,10 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
             for field in self.spec[4]:
                 match |= Q(**{field + "__icontains": query})
             if self.key == "activity":
-                match |= Q(subject__icontains=query) | Q(action_description__icontains=query)
+                match |= (Q(subject__icontains=query) | Q(action_description__icontains=query)
+                          | Q(contact_name__icontains=query) | Q(social_attentions__recipient__full_name__icontains=query))
+                if rut := searchable_rut(query):
+                    match |= Q(social_attentions__recipient__national_id__iexact=rut) | Q(contact_rut__iexact=rut)
             qs = qs.filter(match)
         status = self.request.GET.get("status")
         if self.key == "period" and status in ("OPEN", "CLOSED"):
@@ -319,7 +324,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                 from activities.evidence import evidence_context
                 from agenda.comments import comments_context
 
-                fields = ("subject", "contact_name", "phone", "activity_type", "service_type", "attention_type", "subattention_type")
+                fields = ("subject", "contact_name", "contact_rut", "phone", "activity_type", "service_type", "attention_type", "subattention_type")
                 for name in fields:
                     if not getattr(obj, name):
                         context["values"].pop(str(Activity._meta.get_field(name).verbose_name), None)
@@ -465,6 +470,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                         return edit_conflict()
                 previous = snapshot(obj) if obj else {}
                 if self.operation in ("create", "update"):
+                    original_delegation = (obj.registration_delegation_id or obj.official.delegation_id) if isinstance(obj, Activity) else None
                     original_official = obj.official_id if isinstance(obj, Activity) else None
                     original_date = obj.date if isinstance(obj, Activity) else None
                     form = self.spec[1](request.POST, actor=request.user, instance=obj)
@@ -472,12 +478,15 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                         return render(request, "maintainers/form.html", dict(self.context(), form=form, current_status=state(obj)[1] if obj else ""))
                     if self.key == "activity":
                         if obj:
+                            check_registration_week(original_date, original_delegation)
                             lock_open_period(original_date)
                             lock_open_period(form.cleaned_data["date"])
                         else:
                             lock_open_period(form.cleaned_data["date"])
                         official = form.cleaned_data["official"]
                         day = form.cleaned_data["date"]
+                        delegation = form.cleaned_data.get("registration_delegation") or official.delegation
+                        check_registration_week(day, delegation.pk if delegation else None)
                         if (official.pk, day) != (original_official, original_date):
                             Activity.validate_daily_capacity(official.pk, day, pk)
                     obj = form.save()
@@ -485,6 +494,7 @@ class MaintainerView(ClampedPaginationMixin, ProtectedViewMixin, View):
                     obj.close_period()
                 elif self.key == "activity":
                     from django.utils import timezone
+                    check_registration_week(obj.date, obj.registration_delegation_id or obj.official.delegation_id)
                     lock_activity_periods(obj)
                     if self.operation != "deactivate":
                         Activity.validate_daily_capacity(obj.official_id, obj.date, obj.pk)

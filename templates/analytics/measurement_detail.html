@@ -33,6 +33,7 @@
             <h2 class="h5" id="reglas-title">Vigencia y umbrales</h2>
             <dl class="row mb-0">
                 <dt class="col-sm-4">Estado</dt><dd class="col-sm-8"><span class="maintainer-status-pill {% if version.is_published %}is-active{% else %}is-inactive{% endif %}">{% if version.is_published %}Publicada{% else %}Borrador{% endif %}</span></dd>
+                {% if version.weight_exception %}<dt class="col-sm-4">Ponderación excepcional</dt><dd class="col-sm-8">{{ version.weight_exception }}</dd>{% endif %}
                 <dt class="col-sm-4">Vigente desde</dt><dd class="col-sm-8">{{ version.effective_from|date:"d-m-Y" }}</dd>
                 <dt class="col-sm-4">Tope computable</dt><dd class="col-sm-8">{{ version.max_computable }} %</dd>
                 <dt class="col-sm-4">Tope del resultado final</dt><dd class="col-sm-8">{{ version.max_final_score }} puntos{% if period.status == "OPEN" and version.max_final_score > version.effective_final_score_cap %} (máximo aplicable al resultado actual: {{ version.effective_final_score_cap }} puntos){% endif %}</dd>

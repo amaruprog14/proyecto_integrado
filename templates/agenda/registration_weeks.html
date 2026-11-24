@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Semanas de registro · SGR{% endblock %}
+{% block sidebar %}{% include "includes/maintainer_sidebar.html" with active="commitment_list" %}{% endblock %}
+{% block content %}
+<section class="maintainer-content">
+    <p><a href="{% url 'commitment_list' %}">Agenda colectiva</a></p>
+    <h1>Semanas de registro</h1>
+    <form method="post" class="attention-entry-card">{% csrf_token %}
+        {{ form.as_p }}
+        <button class="btn btn-primary" type="submit">Guardar cambio</button>
+    </form>
+    <section class="attention-entry-card"><h2>Semanas cerradas</h2>
+        <ul>{% for week in weeks %}<li>{{ week.delegation }} · Desde {{ week.monday|date:"d-m-Y" }}</li>
+        {% empty %}<li>Sin semanas cerradas.</li>{% endfor %}</ul>
+    </section>
+</section>
+{% endblock %}

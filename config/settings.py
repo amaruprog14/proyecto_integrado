@@ -222,3 +222,6 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25'))
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ('1', 'true', 'yes')
+
+CLAMAV_ENABLED = os.getenv("CLAMAV_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+CLAMAV_CLIENT = os.getenv("CLAMAV_CLIENT", "clamdscan")

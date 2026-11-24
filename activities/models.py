@@ -243,6 +243,8 @@ class Activity(AutoCodeMixin, BaseModel):
     date = models.DateField(verbose_name="Fecha")
     record_type = models.CharField(max_length=50, choices=RecordType.choices, verbose_name="Tipo de registro")
     subject = models.CharField(max_length=200, blank=True, verbose_name="Actividad, solicitud o problema atendido")
+    is_preparatory = models.BooleanField("Coordinación preparatoria", default=False)
+    contact_rut = models.CharField("RUT del contacto", max_length=20, blank=True)
     contact_name = models.CharField(max_length=150, blank=True, verbose_name="Nombre o referencia de contacto")
     phone = models.CharField(max_length=30, blank=True, verbose_name="Teléfono de contacto")
     action_description = models.TextField(blank=True, verbose_name="Descripción de la acción")

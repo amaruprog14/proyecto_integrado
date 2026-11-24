@@ -18,6 +18,7 @@ from django.views.generic import FormView, TemplateView, View
 
 from accounts.forms import OwnOfficialProfileForm, profile_snapshot
 from accounts.models import Delegation, Role, ServiceRecipient, Territory
+from common.chilean_rut import searchable_rut
 from common.pagination import ClampedPaginationMixin
 from common.access import ProtectedViewMixin, get_scoped_object_or_404
 from common.exports import xlsx_response
@@ -327,6 +328,8 @@ def search_staff_requests(queryset, query):
         return queryset
     match = (Q(recipient__full_name__icontains=query) | Q(subject__icontains=query)
              | Q(delegation__delegation_name__icontains=query))
+    if rut := searchable_rut(query):
+        match |= Q(recipient__national_id__iexact=rut)
     if query.upper().startswith("SOL-") and query[4:].isascii() and query[4:].isdigit():
         folio = positive(query[4:], 0)
         if folio:

@@ -8,14 +8,14 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from accounts.models import Delegation, Function, Official, Position
-from activities.models import Activity, Evidence, EvidenceValidation
+from accounts.models import Delegation, Function, Official, OfficialPositionPeriod, Position, ServiceRecipient
+from activities.models import Activity, AttentionCase, Evidence, EvidenceValidation, SocialAttention
 from agenda.models import Commitment, CommitmentStatusHistory
 from analytics.measurement import create_revision, publish_version
 from analytics.models import IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementPlan
 from analytics.services import CalculadorDesempenoService as Calc, computable_days, q2, traffic_light
 from common.sgr_seed_data import PERCENTAGE_ITEM, POSITION_PLANS
-from configuration.models import Item, Period
+from configuration.models import AttentionType, Item, Period, SubattentionType
 
 START, END = date(2026, 7, 1), date(2026, 9, 30)
 SERIAL = count(1)
@@ -216,6 +216,50 @@ class ExpectedGoalAndTrafficLightTests(CalculatorFixture, TestCase):
 
 
 class ProgressRulesTests(CalculatorFixture, TestCase):
+    def test_preparatory_coordination_remains_registered_without_scoring(self):
+        official = self.official("Responsable", "Gestor social")
+        name = "Visita terreno"
+        preparation, visit = self.record(official, name, 2)
+        preparation.is_preparatory = True
+        preparation.save(update_fields=["is_preparatory"])
+        self.assertEqual(list(Calc.approved_activities(official, self.period)), [visit])
+        self.assertEqual(self.rows(Calc.calculate(official, self.period, END))[name].progress, 1)
+        self.assertTrue(Activity.objects.filter(pk=preparation.pk, deleted_at__isnull=True).exists())
+
+    def test_manual_activity_excludes_delegate_by_rut_and_keeps_namesakes(self):
+        delegate = self.official("Persona ficticia")
+        delegate.position = Position.objects.create(position_name="Delegado")
+        delegate.national_id = "12345678-5"
+        delegate.save()
+        worker = self.official("Responsable", "Gestor social")
+        name = "Visita terreno"
+        identified, namesake = self.record(worker, name, 2)
+        identified.contact_rut = delegate.national_id
+        identified.save(update_fields=["contact_rut"])
+        namesake.contact_name = delegate.full_name
+        namesake.save(update_fields=["contact_name"])
+        self.assertEqual(list(Calc.approved_activities(worker, self.period)), [namesake])
+        self.assertEqual(self.rows(Calc.calculate(worker, self.period, END))[name].progress, 1)
+
+    def test_delegate_recipient_is_excluded_by_identity_and_position_on_activity_date(self):
+        recipient_official = self.official("Persona de prueba", "Apoyo administrativo")
+        recipient = ServiceRecipient.objects.create(full_name="Nombre alternativo", phone="912345678",
+                                                    national_id=recipient_official.national_id)
+        delegate = Position.objects.create(position_name="Delegado")
+        OfficialPositionPeriod.objects.create(official=recipient_official, position=delegate, start_date=START,
+                                              end_date=date(2026, 8, 1))
+        worker = self.official("Responsable", "Gestor social")
+        name = "Visita terreno"
+        kind = AttentionType.objects.create(name="Visita", activity_item=self.items[name])
+        sub = SubattentionType.objects.create(name="Visita de campo", attention_type=kind)
+        case = AttentionCase.objects.create(recipient=recipient, delegation=self.delegation, subject="Visita")
+        for day in (date(2026, 8, 1), date(2026, 8, 2)):
+            activity, = self.record(worker, name, 1, day=day)
+            SocialAttention.objects.create(case=case, activity=activity, recipient=recipient, attention_type=kind,
+                                           subattention_type=sub, delegation=self.delegation, responsible=worker, date=day)
+        self.assertEqual(self.rows(Calc.calculate(worker, self.period, END))[name].progress, 1)
+        self.assertEqual(Calc.calculate_current_progress(worker, self.items[name], self.period), 1)
+
     def test_approved_activity_requires_contact_name_and_phone(self):
         worker = self.official("Funcionario ficticio", "Apoyo administrativo")
         item = "Atención de usuario teléfono y presencial"

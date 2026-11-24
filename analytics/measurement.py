@@ -61,6 +61,7 @@ def activity_measurement(activity):
         "position": position,
         "inferred": not activity.registration_position_captured and position is not None,
         "version": version,
+        "preparatory": activity.is_preparatory,
         "excluded": version is not None and line is None,
         "goal": adjustment.goal if adjustment and adjustment.goal is not None else line.goal if line else None,
         "weight": adjustment.weight if adjustment and adjustment.weight is not None else line.weight if line else None,
@@ -68,7 +69,7 @@ def activity_measurement(activity):
     }
 
 
-def publish_version(version):
+def publish_version(version, *, exception_reason=""):
     """El llamador mantiene bloqueado el registro de períodos durante la publicación."""
     if version.is_published:
         raise ValidationError("Esta versión ya está publicada.")
@@ -110,16 +111,20 @@ def publish_version(version):
                 errors.append(f"{official}: el ajuste requiere un funcionario activo de este cargo.")
             if adjustment.weight is not None:
                 differences[official.pk] += adjustment.weight - line.weight
+    weight_errors = []
     if total != 100:
-        errors.append(f"Los ponderadores del cargo suman {total:.2f} %. Deben sumar 100 %.")
-    errors.extend(
+        weight_errors.append(f"Los ponderadores del cargo suman {total:.2f} %. Deben sumar 100 %.")
+    weight_errors.extend(
         f"Los ponderadores de {officials[pk]} suman {total + difference:.2f} %. Deben sumar 100 %."
         for pk, difference in differences.items() if total + difference != 100
     )
+    if not exception_reason.strip():
+        errors.extend(weight_errors)
     if errors:
         raise ValidationError(errors)
+    version.weight_exception = exception_reason.strip() if weight_errors else ""
     version.published_at = timezone.now()
-    version.save(update_fields=["effective_from", "published_at", "updated_at"])
+    version.save(update_fields=["effective_from", "published_at", "weight_exception", "updated_at"])
 
 
 def create_revision(plan, effective_from):
