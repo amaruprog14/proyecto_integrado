@@ -53,8 +53,26 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         }
         return self.client.post(reverse("score_adjustment_create"), values)
 
-    def review(self, record, decision=ScoreAdjustment.Status.APPROVED, note=""):
-        return self.client.post(reverse("score_adjustment_detail", args=[record.pk]), {"decision": decision, "note": note})
+    def review(self, record, decision=ScoreAdjustment.Status.APPROVED, note="", **support):
+        return self.client.post(reverse("score_adjustment_detail", args=[record.pk]), {"decision": decision, "note": note, **support})
+
+    @patch("analytics.score_adjustments.timezone.localdate", return_value=END)
+    def test_ordinary_written_support_alone_cannot_award_congratulation_points(self, _today):
+        self.client.force_login(self.operator)
+        self.create(kind=ScoreAdjustment.Kind.CONGRATULATION, written_support="Correo de la persona atendida.")
+        self.client.force_login(self.coordinator)
+        record = ScoreAdjustment.objects.get()
+        for support in ({}, {"delegate_reference": "Oficio 71"}, {"delegate_origin_confirmed": True}):
+            with self.subTest(support=support):
+                self.assertEqual(self.review(record, **support).status_code, 200)
+                record.refresh_from_db()
+                self.assertEqual(record.status, ScoreAdjustment.Status.PENDING)
+                self.assertEqual(Calc.calculate(self.subject, self.period, END).score_adjustment_total, 0)
+        self.assertEqual(self.review(record, delegate_reference="Oficio 71", delegate_origin_confirmed=True).status_code, 302)
+        record.refresh_from_db()
+        self.assertTrue(record.delegate_origin_confirmed)
+        self.assertEqual(record.delegate_reference, "Oficio 71")
+        self.assertEqual(Calc.calculate(self.subject, self.period, END).score_adjustment_total, 10)
 
     @patch("analytics.score_adjustments.timezone.localdate", return_value=END)
     def test_register_within_scope_and_only_approval_changes_result(self, _today):
@@ -123,14 +141,14 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
             )
         self.record(self.subject, "Informe de inventarios", 1)
         result = Calc.calculate(self.subject, self.period, END)
-        self.assertEqual((result.base_total, result.score_adjustment_total, result.total), (25, 150, 150))
+        self.assertEqual((result.base_total, result.score_adjustment_total, result.total), (25, 150, 120))
         self.assertTrue(result.score_adjustments[-1]["excluded"])
         self.period.close_period()
         self.period.refresh_from_db()
         ScoreAdjustment.objects.filter(official=self.subject).update(points=1)
         frozen = Calc.result_for(self.subject, self.period)
         self.assertTrue(frozen.frozen)
-        self.assertEqual((frozen.base_total, frozen.score_adjustment_total, frozen.total), (25, 150, 150))
+        self.assertEqual((frozen.base_total, frozen.score_adjustment_total, frozen.total), (25, 150, 120))
         self.assertEqual(frozen.score_adjustments, result.score_adjustments)
 
     @patch("analytics.score_adjustments.timezone.localdate", return_value=END)
@@ -181,7 +199,7 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
         self.assertEqual(self.create(kind=ScoreAdjustment.Kind.CONGRATULATION).status_code, 302)
         foreign = ScoreAdjustment.objects.latest("pk")
         self.client.force_login(self.coordinator)
-        self.assertEqual(self.review(foreign).status_code, 302)
+        self.assertEqual(self.review(foreign, delegate_reference="Oficio 52", delegate_origin_confirmed=True).status_code, 302)
         foreign.refresh_from_db()
         self.assertEqual(foreign.reviewed_by, self.coordinator)
 
@@ -214,6 +232,6 @@ class ScoreAdjustmentTests(CalculatorFixture, TestCase):
 
         # Otra cuenta autorizada, que no es el afectado ni quien registró, sí puede validarlo.
         self.client.force_login(self.coordinator)
-        self.assertEqual(self.review(record).status_code, 302)
+        self.assertEqual(self.review(record, delegate_reference="Oficio 81", delegate_origin_confirmed=True).status_code, 302)
         record.refresh_from_db()
         self.assertEqual((record.status, record.reviewed_by), (ScoreAdjustment.Status.APPROVED, self.coordinator))

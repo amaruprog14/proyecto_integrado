@@ -21,7 +21,9 @@ def computable_territory(queryset, period, until):
 
 
 def freeze_territorial_activities(period, now):
-    freeze = DelegationActivityFreeze.objects.create(period=period, captured_at=now)
+    from analytics.collective import collective_by_delegation
+    freeze = DelegationActivityFreeze.objects.create(period=period, captured_at=now,
+        collective_results=collective_by_delegation(period, period.end_date))
     rows = computable_territory(Activity.objects.all(), period, period.end_date).filter(
         Q(social_attentions__delegation__isnull=False) | Q(registration_delegation__isnull=False),
     ).order_by("pk").values(

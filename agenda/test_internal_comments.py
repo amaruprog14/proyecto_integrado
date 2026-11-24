@@ -42,6 +42,21 @@ class InternalCommentTests(CaseFixture, TestCase):
         self.assertEqual((saved.author, saved.activity), (self.official, activity))
         self.assertContains(self.client.get(detail), "&lt;script&gt;Comentario&lt;/script&gt;")
 
+    def test_another_authorized_official_reads_the_activity_comment(self):
+        activity = self.attention.activity
+        reader = User.objects.create_user("lectora-interna")
+        Official.objects.create(user=reader, full_name="Lectora ficticia", delegation=self.delegation,
+                                national_id="LECTORA-TEST", email="lectora@example.test")
+        reader.user_permissions.add(Permission.objects.get(content_type__app_label="activities", codename="view_activity"))
+        detail = reverse("activity_detail", args=[activity.pk])
+        self.assertRedirects(self.client.post(reverse("activity_internal_comment", args=[activity.pk]),
+                                              {"text": "Coordinar visita de seguimiento."}), detail + "#internal-comments")
+        second_session = Client()
+        second_session.force_login(reader)
+        response = second_session.get(detail)
+        self.assertContains(response, "Coordinar visita de seguimiento.")
+        self.assertEqual(response.context["internal_comments"].get().author, self.official)
+
     def test_case_conversation_is_staff_only_and_scoped(self):
         recipient = self.attention.recipient
         resident = User.objects.create_user("vecina-comentarios")

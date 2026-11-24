@@ -12,6 +12,9 @@ from common.mixins import BaseModel
 from configuration.models import Item, Period
 
 
+MAX_FINAL_SCORE = Decimal("120.00")
+
+
 class MeasurementPlan(BaseModel):
     period = models.ForeignKey(Period, on_delete=models.PROTECT, related_name="measurement_plans")
     position = models.ForeignKey(Position, on_delete=models.PROTECT, verbose_name="Cargo")
@@ -30,6 +33,7 @@ class MeasurementVersion(BaseModel):
     plan = models.ForeignKey(MeasurementPlan, on_delete=models.PROTECT, related_name="versions")
     number = models.PositiveIntegerField(verbose_name="Versión")
     effective_from = models.DateField(verbose_name="Vigente desde")
+    weight_exception = models.CharField("Motivo de ponderación excepcional", max_length=500, blank=True, editable=False)
     published_at = models.DateTimeField(null=True, editable=False)
     max_computable = models.DecimalField(
         max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope computable (%)",
@@ -55,18 +59,20 @@ class MeasurementVersion(BaseModel):
         max_digits=5, decimal_places=2, default=Decimal("20"),
         validators=[MinValueValidator(0), MaxValueValidator(150)], verbose_name="Puntos a descontar por reclamo",
     )
-    # Tope del resultado final (total ponderado + reclamos y felicitaciones). Regla del proyecto,
-    # configurable como los demás parámetros del plan; el tope de la guía B3 es `max_computable` (por ítem).
     max_final_score = models.DecimalField(
-        max_digits=6, decimal_places=2, default=Decimal("150"), verbose_name="Tope del resultado final (puntos)",
-        validators=[MinValueValidator(Decimal("1")), MaxValueValidator(Decimal("1000"))],
-        help_text="Máximo del resultado final, ya sumados reclamos y felicitaciones (150 por defecto).",
+        max_digits=6, decimal_places=2, default=MAX_FINAL_SCORE, verbose_name="Tope del resultado final (puntos)",
+        validators=[MinValueValidator(Decimal("1")), MaxValueValidator(MAX_FINAL_SCORE)],
+        help_text="Máximo de 1 a 120 puntos después de aplicar reclamos y felicitaciones.",
     )
 
     class Meta:
         ordering = ["-number"]
         constraints = [models.UniqueConstraint(fields=["plan", "number"], name="measurement_plan_version_number")]
         indexes = [models.Index(fields=["plan", "effective_from"], name="measurement_effective_idx")]
+
+    @property
+    def effective_final_score_cap(self):
+        return min(self.max_final_score, MAX_FINAL_SCORE)
 
     @property
     def is_published(self):
@@ -348,6 +354,7 @@ class IndicatorSupportSnapshot(models.Model):
 
 
 class DelegationActivityFreeze(models.Model):
+    collective_results = models.JSONField(null=True, editable=False)
     period = models.ForeignKey(Period, on_delete=models.PROTECT)
     captured_at = models.DateTimeField()
 
@@ -397,6 +404,8 @@ class ScoreAdjustment(BaseModel):
     kind = models.CharField("Tipo", max_length=20, choices=Kind.choices)
     channel = models.CharField("Medio escrito", max_length=15, choices=Channel.choices)
     reason = models.CharField("Motivo", max_length=500)
+    delegate_reference = models.CharField("Referencia del oficio o correo del delegado", max_length=250, blank=True)
+    delegate_origin_confirmed = models.BooleanField("Origen confirmado por el revisor", default=False)
     written_support = models.TextField("Respaldo escrito", max_length=4000)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")

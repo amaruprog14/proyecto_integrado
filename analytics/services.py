@@ -13,17 +13,16 @@ from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Case, Count, Exists, F, OuterRef, Q, Subquery, When
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Trim
 from django.utils import timezone
 
+from accounts.models import Official, OfficialPositionPeriod
 from activities.models import Activity, EvidenceValidation
 from analytics.measurement import published_versions_on
-from analytics.models import IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion, ScoreAdjustment
+from analytics.models import MAX_FINAL_SCORE, IndicatorSnapshot, MeasurementAdjustment, MeasurementItem, MeasurementVersion, ScoreAdjustment
 
 HUNDRED = Decimal("100")
 CENT = Decimal("0.01")
-# Tope por defecto del resultado final; cada versión del plan puede configurar el suyo.
-MAX_FINAL_SCORE = Decimal("150")
 # Piso fijo del resultado final: los reclamos no lo dejan bajo 0 puntos.
 MIN_FINAL_SCORE = Decimal("0")
 MAX_CONGRATULATIONS = 3
@@ -36,6 +35,28 @@ def q2(value):
     return None if value is None else Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
+def activities_with_contact(queryset):
+    """Aplica los requisitos de la persona atendida a todas las consultas de avance."""
+    position_at_attention = OfficialPositionPeriod.objects.filter(
+        official_id=OuterRef("pk"), deleted_at__isnull=True,
+        start_date__lte=OuterRef(OuterRef("date")),
+    ).filter(Q(end_date__isnull=True) | Q(end_date__gte=OuterRef(OuterRef("date"))))
+    delegates = Official.objects.filter(national_id=OuterRef("_recipient_rut")).alias(
+        _position_name=Coalesce(
+            Subquery(position_at_attention.order_by("-start_date", "-pk").values("position__position_name")[:1]),
+            F("position__position_name"),
+        ),
+    ).filter(_position_name__iexact="Delegado")
+    # Las atenciones automáticas mantienen el contacto en la ficha del solicitante.
+    return queryset.filter(is_preparatory=False).alias(
+        _recipient_rut=Coalesce("social_attentions__recipient__national_id", "contact_rut"),
+        _contact=Trim(Case(When(social_attentions__isnull=False, then=F("social_attentions__recipient__full_name")),
+                           default=F("contact_name"))),
+        _phone=Trim(Case(When(social_attentions__isnull=False, then=F("social_attentions__recipient__phone")),
+                         default=F("phone"))),
+    ).filter(~Exists(delegates), _contact__gt="", _phone__gt="")
+
+
 def computable_activities(queryset):
     """Único criterio de «actividad que cuenta» (RN-003, RN-009): evidencia aprobada vigente y un
     ítem que está en la versión publicada que rige en su fecha para el cargo con que se registró.
@@ -43,21 +64,17 @@ def computable_activities(queryset):
     Lo usan el avance del calculador, el aviso de actividades ocultas del panel y el filtro
     «Solo las que cuentan en la medición» del listado de actividades, para que sus totales cuadren.
     """
-    approved = EvidenceValidation.objects.filter(
-        evidence__activity=OuterRef("pk"), evidence__deleted_at__isnull=True,
-        deleted_at__isnull=True, status=EvidenceValidation.Status.APPROVED,
-    )
+    approved = EvidenceValidation.approved_for_activity(OuterRef("pk"))
     ruling = MeasurementVersion.objects.filter(
         plan__position_id=OuterRef("_measure_position"), plan__deleted_at__isnull=True,
         plan__period__start_date__lte=OuterRef("date"), plan__period__end_date__gte=OuterRef("date"),
         plan__period__deleted_at__isnull=True, deleted_at__isnull=True, published_at__isnull=False,
         effective_from__lte=OuterRef("date"),
     ).order_by("-effective_from", "-pk").values("pk")[:1]
-    from accounts.models import OfficialPositionPeriod
     historical = OfficialPositionPeriod.objects.filter(official_id=OuterRef("official_id"),
         start_date__lte=OuterRef("date"), deleted_at__isnull=True).filter(
         Q(end_date__isnull=True) | Q(end_date__gte=OuterRef("date"))).order_by("-start_date").values("position_id")[:1]
-    return queryset.alias(
+    return activities_with_contact(queryset).alias(
         _measure_position=Coalesce(Subquery(historical), Case(When(registration_position_captured=True, then=F("registration_position_id")),
                                default=F("official__position_id"))),
     ).alias(_ruling_version=Subquery(ruling)).filter(
@@ -227,9 +244,9 @@ class PerformanceResult:
         if self.frozen:
             if not self.frozen_score_summary:
                 return None
-            return Decimal(self.frozen_score_summary.get("max_final", MAX_FINAL_SCORE))
+            return Decimal(self.frozen_score_summary.get("max_final", "150"))
         version = self.cap_version or self.version
-        return version.max_final_score if version else MAX_FINAL_SCORE
+        return version.effective_final_score_cap if version else MAX_FINAL_SCORE
 
     @property
     def activity_count(self):
@@ -254,11 +271,8 @@ class CalculadorDesempenoService:
     def approved_activities(official, period, until=None):
         """Actividades vigentes del período con evidencia aprobada, hasta `until` si se indica."""
         end = period.end_date if until is None else min(until, period.end_date)
-        approved = EvidenceValidation.objects.filter(
-            evidence__activity=OuterRef("pk"), evidence__deleted_at__isnull=True,
-            deleted_at__isnull=True, status=EvidenceValidation.Status.APPROVED,
-        )
-        return Activity.objects.filter(
+        approved = EvidenceValidation.approved_for_activity(OuterRef("pk"))
+        return activities_with_contact(Activity.objects.all()).filter(
             official=official, date__range=(period.start_date, end), deleted_at__isnull=True,
         ).filter(Exists(approved))
 

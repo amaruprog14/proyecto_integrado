@@ -43,6 +43,14 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         self.assertEqual(response.status_code, 302, getattr(response, 'context', None))
         return User.objects.get(username='cliente.nuevo')
 
+    def complete_first_login(self, user):
+        self.client.force_login(user)
+        url = reverse('password_change')
+        self.assertRedirects(self.client.get(reverse('client_profile')), url)
+        fresh = 'Clave-Personal-QA-481'
+        self.assertRedirects(self.client.post(url, {'old_password': self.payload()['password1'],
+            'new_password1': fresh, 'new_password2': fresh}), reverse('client_profile'))
+
     def test_stale_client_profile_edit_gets_conflict(self):
         user = self.create_client()
         url = reverse('user_update', args=[user.pk])
@@ -158,7 +166,7 @@ class ClientAccountsAndTerritoriesTests(TestCase):
 
     def test_profile_location_readonly_and_automatic_request_snapshot(self):
         user = self.create_client()
-        self.client.force_login(user)
+        self.complete_first_login(user)
         from configuration.models import SubattentionType
         sub = SubattentionType.objects.filter(is_active=True, attention_type__is_active=True).first()
         data = dict(attention_type=sub.attention_type_id, subattention_type=sub.pk, subject='Orientación',
@@ -188,7 +196,7 @@ class ClientAccountsAndTerritoriesTests(TestCase):
         recipient.territory = None
         recipient.address = ''
         recipient.save()
-        self.client.force_login(user)
+        self.complete_first_login(user)
         self.assertEqual(self.client.get(reverse('client_requests')).status_code, 200)
         self.assertEqual(self.client.get(reverse('client_profile')).status_code, 200)
         self.assertContains(self.client.get(reverse('client_request_create')), 'Un administrador debe completar')

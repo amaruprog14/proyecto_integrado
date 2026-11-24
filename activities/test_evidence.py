@@ -1,11 +1,16 @@
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from threading import Barrier
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
 from django.contrib.auth.models import Permission, User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.db import connections
+from django.test import Client, TestCase, TransactionTestCase, skipUnlessDBFeature
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 
 from accounts.models import Official
@@ -43,6 +48,8 @@ class EvidenceTests(CaseFixture, TestCase):
         entry = reverse("attention_entry")
         self.assertRedirects(self.client.post(entry, self.attention_data()), entry)
         self.attention = SocialAttention.objects.get()
+        self.attention.recipient.phone = "912345678"
+        self.attention.recipient.save(update_fields=["phone"])
         self.activity = self.attention.activity
         self.detail = reverse("activity_detail", args=[self.activity.pk])
         self.upload = reverse("activity_evidence_upload", args=[self.activity.pk])
@@ -91,6 +98,67 @@ class EvidenceTests(CaseFixture, TestCase):
         self.client.force_login(User.objects.get(username="lector-foraneo"))
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.post(review, {"status": "APPROVED"}).status_code, 404)
+
+    @patch("common.antivirus.subprocess.run")
+    def test_antivirus_failure_rejects_entire_upload_before_storage(self, run):
+        from subprocess import CompletedProcess
+        with self.settings(CLAMAV_ENABLED=True):
+            for code in (1, 2):
+                run.side_effect = [CompletedProcess([], 0), CompletedProcess([], code)]
+                response = self.upload_images([self.photo(1), self.photo(2)])
+                self.assertEqual(response.status_code, 302)
+                self.assertContains(self.client.get(self.detail), "antivirus")
+                self.assertFalse(EvidenceBatch.objects.exists())
+                self.assertFalse(Evidence.objects.exists())
+                self.assertEqual(list(self.evidence_root.iterdir()), [])
+
+    def test_upload_and_review_record_metadata_and_audit(self):
+        before_upload = timezone.now()
+        photo = self.photo()
+        self.assertRedirects(self.upload_images([photo]), self.detail + "#activity-evidence-title")
+        batch = EvidenceBatch.objects.get(activity=self.activity)
+        image = batch.images.get()
+        self.assertEqual((batch.author, batch.stage), (self.official, EvidenceBatch.Stage.INITIAL))
+        self.assertLessEqual(before_upload, image.upload_date)
+        self.assertLessEqual(image.upload_date, timezone.now())
+        size = (self.evidence_root / image.file_url).stat().st_size
+        self.assertGreater(size, 0)
+        self.assertEqual((image.original_name, image.file_format, image.size_kb),
+                         ("foto-1.png", "png", (size + 1023) // 1024))
+
+        reviewer = User.objects.get(username="verificador")
+        self.client.force_login(reviewer)
+        before_review = timezone.now()
+        response = self.client.post(self.evidence_url("review", batch),
+                                    {"status": "APPROVED", "observation": "Foto verificada."})
+        self.assertRedirects(response, self.detail + "#activity-evidence-title")
+        decision = image.validations.get()
+        entry = AuditLog.objects.get(affected_record_id=batch.pk, action="Evidencia revisada")
+        self.assertEqual((decision.verifier, decision.status), (reviewer.official, "APPROVED"))
+        self.assertEqual((entry.official, entry.actor_username), (reviewer.official, reviewer.username))
+        self.assertEqual((entry.previous_value, entry.new_value), ("PENDING", "APPROVED · Foto verificada."))
+        for stamp in (decision.validated_at, entry.date):
+            self.assertLessEqual(before_review, stamp)
+            self.assertLessEqual(stamp, timezone.now())
+
+    def test_rejected_and_corrected_uploads_count_only_after_approval(self):
+        reviewer = User.objects.get(username="verificador")
+        period = Period.objects.get()
+        progress = CalculadorDesempenoService.calculate_current_progress
+        for index, status in enumerate(("REJECTED", "CORRECTION_REQUESTED", "APPROVED"), start=1):
+            self.client.force_login(self.staff)
+            self.assertRedirects(self.upload_images([self.photo(index)]), self.detail + "#activity-evidence-title")
+            batch = EvidenceBatch.objects.get(images__original_name=f"foto-{index}.png")
+            self.client.force_login(reviewer)
+            review = self.evidence_url("review", batch)
+            self.assertContains(self.client.get(self.detail), review)
+            self.assertRedirects(self.client.post(review, {"status": status, "observation": "Revisión de la foto."}),
+                                 self.detail + "#activity-evidence-title")
+            self.assertEqual(batch.images.get().validations.get().status, status)
+            self.assertEqual(progress(self.official, self.activity.item, period), int(status == "APPROVED"))
+        self.client.post(review, {"status": "APPROVED"})
+        self.assertEqual(EvidenceValidation.objects.count(), 3)
+        self.assertEqual(progress(self.official, self.activity.item, period), 1)
 
     def test_invalid_upload_is_atomic_and_closed_period_refuses_writes(self):
         for images in ([self.photo(), SimpleUploadedFile("invalido.png", b"texto")], [],
@@ -226,3 +294,49 @@ class EvidenceTests(CaseFixture, TestCase):
         self.assertContains(self.client.get(inbox, {"estado": "todas"}), "Resuelta")
         reviewer.user_permissions.clear()
         self.assertNotContains(self.client.get(inbox, {"estado": "todas"}), alert.reason)
+
+
+@skipUnlessDBFeature("has_select_for_update")
+class EvidenceConcurrentReviewTests(CaseFixture, TransactionTestCase):
+    def setUp(self):
+        self.create_fixture()
+        super().setUp()
+
+    def test_two_reviewers_leave_one_decision_and_one_audit_record(self):
+        self.client.post(reverse("attention_entry"), self.attention_data())
+        activity = SocialAttention.objects.get().activity
+        batch = EvidenceBatch.objects.create(activity=activity, author=self.official, stage="INITIAL")
+        for index in range(2):
+            Evidence.objects.create(activity=activity, batch=batch, original_name=f"foto-{index}.png", file_url=f"qa-{index}.png")
+        clients = []
+        for username in ("revision-uno", "revision-dos"):
+            user = User.objects.create_user(username)
+            Official.objects.create(user=user, full_name=username, national_id=username, delegation=self.delegation,
+                                    email=f"{username}@example.invalid")
+            user.user_permissions.add(*Permission.objects.filter(content_type__app_label="activities",
+                codename__in=("view_activity", "view_evidence", "add_evidencevalidation")))
+            client = Client()
+            client.force_login(user)
+            clients.append(client)
+        barrier = Barrier(2)
+        url = reverse("activity_evidence_review", args=[activity.pk, batch.pk])
+
+        def review(client, status):
+            try:
+                barrier.wait(timeout=10)
+                return client.post(url, {"status": status, "observation": "Revisión de prueba."}, follow=True)
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(review, clients, ("APPROVED", "REJECTED")))
+        self.assertEqual(sorted(response.status_code for response in responses), [200, 200])
+        self.assertEqual(sum("ya no está pendiente de revisión" in r.content.decode() for r in responses), 1)
+        decisions = EvidenceValidation.objects.filter(evidence__batch=batch)
+        self.assertEqual(set(decisions.values_list("evidence_id", flat=True)), set(batch.images.values_list("pk", flat=True)))
+        self.assertEqual(decisions.count(), 2)
+        self.assertEqual(decisions.values("status", "verifier_id").order_by().distinct().count(), 1)
+        audit = AuditLog.objects.get(action="Evidencia revisada", affected_record_id=batch.pk)
+        winner = decisions.first()
+        self.assertEqual(audit.official_id, winner.verifier_id)
+        self.assertIn(winner.status, audit.new_value)

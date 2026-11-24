@@ -9,6 +9,7 @@ paginación, exportación Excel sin datos sensibles y el ámbito por delegación
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import identify_hasher
 from django.contrib.auth.models import Permission
 from django import forms
 from django.test import TestCase
@@ -119,6 +120,12 @@ class UserCrudAdminTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         user = User.objects.get(username="nuevo.funcionario")
+        hasher = identify_hasher(user.password)
+        self.assertEqual(hasher.algorithm, "pbkdf2_sha256")
+        decoded = hasher.decode(user.password)
+        self.assertTrue(decoded["salt"])
+        self.assertGreaterEqual(decoded["iterations"], hasher.iterations)
+        self.assertFalse(user.check_password("valor-incorrecto"))
         self.assertTrue(user.check_password(PASSWORD))
         self.assertNotEqual(user.password, PASSWORD)
         self.assertTrue(user.is_active)
@@ -130,6 +137,18 @@ class UserCrudAdminTests(TestCase):
         self.assertEqual(list(official.authorized_delegations.all()), [])
         self.assertEqual(list(official.roles.all()), [role])
         self.assertContains(response, "fue creado correctamente")
+        self.client.logout()
+        token = reverse("sgr_api:token")
+        self.assertEqual(self.client.post(token, {"username": user.username, "password": PASSWORD}).status_code, 401)
+        self.assertTrue(self.client.login(username=user.username, password=PASSWORD))
+        change = reverse("password_change")
+        self.assertRedirects(self.client.get(reverse("my_profile")), change)
+        self.client.post(change, {"old_password": PASSWORD, "new_password1": PASSWORD, "new_password2": PASSWORD})
+        self.assertRedirects(self.client.get(reverse("my_profile")), change)
+        fresh = "Nueva-Clave-Ficticia-391"
+        self.assertRedirects(self.client.post(change, {"old_password": PASSWORD, "new_password1": fresh,
+                                                       "new_password2": fresh}), reverse("my_profile"))
+        self.assertEqual(self.client.get(reverse("my_profile")).status_code, 200)
 
     def test_create_user_rejects_an_arbitrary_official_identifier(self):
         response = self.client.post(

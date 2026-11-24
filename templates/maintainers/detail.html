@@ -5,11 +5,12 @@
 {% block content %}
     <div class="maintainer-layout">
         <section class="maintainer-content" aria-labelledby="maintainer-title">
-            <header class="maintainer-heading">
+            <header class="maintainer-heading"{% if key == "activity" %} data-activity-approval="{{ approval_locked|yesno:'locked,unlocked' }}"{% endif %}>
                 <div>
                     <p class="maintainer-breadcrumb">Gestión municipal <span aria-hidden="true">/</span> <a class="auth-text-link" href="{{ list_url }}">{{ maintainer_title }}</a> <span aria-hidden="true">/</span> Detalle</p>
                     <h1 id="maintainer-title">{{ record_title }}</h1>
                 </div>
+                {% if approval_locked %}<span class="text-muted">Actividad con evidencia aprobada. La edición y el archivado están bloqueados.</span>{% endif %}
                 {% if can_change and row.editable %}<a class="btn btn-primary maintainer-new-button" href="{{ row.edit }}" data-modal-form>Editar {{ entity_label }}</a>{% endif %}
             </header>
             <section class="attention-entry-card" aria-label="Datos de {{ entity_label }}">
@@ -35,7 +36,7 @@
                 {% include "activities/evidence.html" %}
             {% endif %}
             {% if show_internal_comments %}{% include "agenda/internal_comments.html" %}{% endif %}
-            <div class="attention-entry-actions">
+            <div class="attention-entry-actions"{% if key == "activity" %} data-activity-actions{% endif %}>
                 <a class="btn attention-entry-cancel" href="{{ list_url }}">Volver al listado</a>
                 {% if commitment_create_url %}<a class="btn attention-entry-cancel" href="{{ commitment_create_url }}">Crear compromiso</a>{% endif %}
                 {% if measurement_url %}<a class="btn btn-primary maintainer-new-button" href="{{ measurement_url }}">Configuración de medición</a>{% endif %}
@@ -52,5 +53,5 @@
 {% endblock %}
 {% block extra_scripts %}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
-    {% if show_evidence %}<script src="{% static 'js/evidence-viewer.js' %}?v=20261117-live" defer></script>{% endif %}
+    {% if show_evidence %}<script src="{% static 'js/evidence-viewer.js' %}?v=20261123-approval" defer></script>{% endif %}
 {% endblock %}

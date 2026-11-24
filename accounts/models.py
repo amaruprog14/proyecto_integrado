@@ -13,6 +13,14 @@ from common.mixins import BaseModel
 from .measurement_models import OfficialAbsence, OfficialPositionPeriod
 
 
+class InitialPassword(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, primary_key=True, on_delete=models.CASCADE)
+
+    @classmethod
+    def pending(cls, user):
+        return user.is_authenticated and cls.objects.filter(user_id=user.pk).exists()
+
+
 class Position(BaseModel):
     """Tabla maestra: cargos formales dentro de la organización."""
 

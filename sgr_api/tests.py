@@ -286,7 +286,7 @@ class PerformanceAPITests(CalculatorFixture, TestCase):
         data = self.api.get(PERSONAL).json()
         self.assertEqual((data["total_ponderado"], data["total_base"], data["ajustes_computables"], data["ajustes"]),
                          ("0.00", "0.00", "0.00", []))
-        self.assertEqual(data["tope_resultado_final"], "150.00")
+        self.assertEqual(data["tope_resultado_final"], "120.00")
         self.assert_reconciles(data)
 
         # Una felicitación aprobada: el total es 10 aunque los ítems sumen 0, y ahora se explica.

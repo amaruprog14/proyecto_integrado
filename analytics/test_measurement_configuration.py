@@ -70,7 +70,7 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         self.assertEqual(self.write(
             "measurement_version_edit", self.period.pk, plan.pk, version.pk,
             max_computable="150", amber_threshold="60", green_threshold="100",
-            collective_threshold="80", congratulation_points="10", complaint_points="30", max_final_score="120",
+            collective_threshold="80", congratulation_points="10", complaint_points="30", max_final_score="110",
         ).status_code, 204)
         event = AuditLog.objects.get(action="Edición de reglas de medición", affected_record_id=version.pk)
         self.assertEqual(event.actor_username, self.admin.username)
@@ -79,10 +79,10 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         response = self.management.get(reverse("audit_detail", args=[event.pk]))
         self.assertContains(response, "Puntos a descontar por reclamo: 20")
         self.assertContains(response, "Puntos a descontar por reclamo: 30")
-        self.assertContains(response, "Tope del resultado final (puntos): 150")
+        self.assertContains(response, "Tope del resultado final (puntos): 110")
         self.assertContains(response, "Tope del resultado final (puntos): 120")
         version.refresh_from_db()
-        self.assertEqual(version.max_final_score, 120)
+        self.assertEqual(version.max_final_score, 110)
 
     def test_stale_rules_do_not_overwrite_another_edit(self):
         plan, version = self.new_plan()
@@ -94,7 +94,7 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
         stale_revision = revision_from_form(other_client, url)
         values = dict(max_computable="150", amber_threshold="60", green_threshold="100",
                       collective_threshold="80", congratulation_points="10", complaint_points="20",
-                      max_final_score="150")
+                      max_final_score="120")
         response = self.management.post(url, {
             **values, "complaint_points": "30", "edit_revision": first_revision,
         }, HTTP_X_MODAL_REQUEST="true")
@@ -309,6 +309,21 @@ class MeasurementConfigurationTests(CaseFixture, TestCase):
                               start_date=(timezone.localdate() - timedelta(days=2)).isoformat(),
                               end_date=self.period.end_date.isoformat())
         self.assertContains(response, "Las fechas quedan fijas")
+
+    def test_exception_requires_explicit_authorization_and_audits_reason(self):
+        plan, version = self.new_plan()
+        self.add_item(version, self.item, "90")
+        args = (self.period.pk, plan.pk, version.pk)
+        for data in ({"reason": "Acuerdo de prueba"}, {"authorize_exception": "on"}):
+            self.assertEqual(self.write("measurement_version_publish", *args, **data).status_code, 200)
+            version.refresh_from_db()
+            self.assertFalse(version.is_published)
+        self.assertEqual(self.write("measurement_version_publish", *args,
+                                   authorize_exception="on", reason="Acuerdo de prueba").status_code, 204)
+        version.refresh_from_db()
+        self.assertEqual(version.weight_exception, "Acuerdo de prueba")
+        self.assertTrue(AuditLog.objects.filter(actor_username=self.admin.username,
+                                               new_value__contains="Acuerdo de prueba").exists())
 
     def test_publication_requires_weights_to_add_exactly_one_hundred(self):
         # RN-001: 40/59 (99 %) y 40/61 (101 %) se rechazan; 40/60 (100 %) se publica.

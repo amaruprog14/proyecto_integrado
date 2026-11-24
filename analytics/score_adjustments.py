@@ -57,8 +57,25 @@ class ScoreAdjustmentReviewForm(forms.Form):
         help_text="Obligatorio si rechazas el registro.",
     )
 
+    delegate_reference = forms.CharField(label="Referencia del oficio o correo del delegado", max_length=250,
+                                         required=False, widget=forms.TextInput(attrs={"class": "form-control"}),
+                                         help_text="Para aprobar, indica el folio del oficio o la referencia del correo.")
+    delegate_origin_confirmed = forms.BooleanField(label="Confirmo que el respaldo formal proviene del delegado",
+                                                   required=False)
+
+    def __init__(self, *args, record, **kwargs):
+        super().__init__(*args, **kwargs)
+        if record.kind != ScoreAdjustment.Kind.CONGRATULATION:
+            del self.fields["delegate_reference"]
+            del self.fields["delegate_origin_confirmed"]
+
     def clean(self):
         data = super().clean()
+        if data.get("decision") == ScoreAdjustment.Status.APPROVED and "delegate_reference" in self.fields:
+            if not data.get("delegate_reference"):
+                self.add_error("delegate_reference", "Indica la referencia del oficio o correo del delegado.")
+            if not data.get("delegate_origin_confirmed"):
+                self.add_error("delegate_origin_confirmed", "Verifica el origen del respaldo antes de aprobar.")
         if data.get("decision") == ScoreAdjustment.Status.REJECTED and not data.get("note"):
             self.add_error("note", "Indica el motivo del rechazo.")
         return data
@@ -163,7 +180,7 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
         conflict = self.review_conflict(record)
         if form is None and not conflict and self.can_review() and record.status == ScoreAdjustment.Status.PENDING:
             if record.period.status == Period.Status.OPEN and record.period.deleted_at is None:
-                form = ScoreAdjustmentReviewForm()
+                form = ScoreAdjustmentReviewForm(record=record)
         blocked = conflict if record.status == ScoreAdjustment.Status.PENDING and self.can_review() else None
         return render(self.request, "analytics/score_adjustment_detail.html", {
             "record": record, "form": form, "own_pending": blocked == "own", "subject_pending": blocked == "subject",
@@ -190,7 +207,7 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
                        new=f"Estado: {record.get_status_display()}\nRechazado: {reason}")
             messages.error(request, message)
             return self.render_detail(record, status=403)
-        form = ScoreAdjustmentReviewForm(request.POST)
+        form = ScoreAdjustmentReviewForm(request.POST, record=record)
         if not form.is_valid():
             return self.render_detail(record, form)
         try:
@@ -215,6 +232,9 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
             version = version_for(position_id, record.occurred_on, period)
             if version is None:
                 raise ValidationError("Para aprobar necesitas un plan publicado para el cargo en la fecha del registro.")
+            if record.kind == ScoreAdjustment.Kind.CONGRATULATION:
+                record.delegate_reference = data["delegate_reference"]
+                record.delegate_origin_confirmed = data["delegate_origin_confirmed"]
             record.version = version
             record.points = (version.congratulation_points if record.kind == ScoreAdjustment.Kind.CONGRATULATION
                              else -version.complaint_points)
@@ -222,6 +242,7 @@ class ScoreAdjustmentDetail(ScoreAdjustmentAccess, View):
         record.review_note = data["note"]
         record.reviewed_by = self.request.user
         record.reviewed_at = timezone.now()
-        record.save(update_fields=["status", "review_note", "reviewed_at", "reviewed_by", "version", "points", "updated_at"])
+        record.save(update_fields=["status", "review_note", "reviewed_at", "reviewed_by", "version", "points", "delegate_reference",
+                                   "delegate_origin_confirmed", "updated_at"])
         self.audit(record, "Validación de reclamo o felicitación", previous="Pendiente",
                    new=f"Estado: {record.get_status_display()}\nPuntos autorizados: {record.points or 0:+f}")

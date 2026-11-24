@@ -240,7 +240,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         Activity.objects.filter(pk__in=[row.pk for row in foreign[:3]]).update(
             registration_delegation=self.other_delegation,
         )
-        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5")
+        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5", phone="912345678")
         kind = AttentionType.objects.create(name="Consulta territorial", activity_item=self.items["Visita terreno"])
         sub = SubattentionType.objects.create(name="Derivación territorial", attention_type=kind)
         case = AttentionCase.objects.create(recipient=recipient, delegation=self.other_delegation, subject="Visita")
@@ -312,6 +312,22 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         self.assertIsNone(response.context["territorial_activity_count"])
         self.assertGreater(response.context["measured_count"], 0)
         self.assertEqual(self.client.get(TERRITORIAL_URL).status_code, 404)
+
+    def test_collective_result_matches_excel(self, _today):
+        for status in ("DONE", "PENDING"):
+            Commitment.objects.create(responsible=self.worker, delegation=self.delegation,
+                committed_date=TODAY, creation_date=timezone.make_aware(datetime.combine(TODAY, time.min)),
+                requester="Solicitante ficticio", territory="Centro", current_status=status)
+        self.client.force_login(self.delegate.user)
+        panel = self.client.get(TEAM_URL, {"period": self.period.pk})
+        self.assertContains(panel, "Bajo el umbral")
+        row, = panel.context["collective"]
+        download = self.client.get(TEAM_URL, {"period": self.period.pk, "export": "xlsx"})
+        summary = dict(load_workbook(BytesIO(download.content))["Resumen"].values)
+        prefix = "Colectivo · " + row["plan"] + " · "
+        self.assertEqual((summary[prefix + "realizados"], summary[prefix + "total"],
+                          summary[prefix + "realizado (%)"], summary[prefix + "resultado"]),
+                         (1, 2, 50, row["verdict"]))
 
     def test_delegation_dashboard_queries_do_not_grow_with_team_size(self, _today):
         self.client.force_login(self.delegate.user)
@@ -763,7 +779,7 @@ class PerformancePanelTests(CalculatorFixture, TestCase):
         shared.authorized_delegations.add(self.delegation)
 
         self.record(shared, "Visita terreno", 3, day=date(2026, 7, 10))
-        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5")
+        recipient = ServiceRecipient.objects.create(full_name="Persona ficticia", national_id="12345678-5", phone="912345678")
         kind = AttentionType.objects.create(name="Orientación panel", activity_item=self.items["Visita terreno"])
         sub = SubattentionType.objects.create(name="Derivación panel", attention_type=kind)
         case = AttentionCase.objects.create(recipient=recipient, delegation=self.other_delegation, subject="Visita")

@@ -36,7 +36,7 @@ que al actualizar el servicio los clientes de la API deben volver a autenticarse
 | --- | --- |
 | `total_base` | Suma de `resultado_ponderado` de los ítems, sin reclamos ni felicitaciones. |
 | `ajustes_computables` | Suma de `puntos_computables` de los reclamos y felicitaciones aprobados. |
-| `tope_resultado_final` | Tope del resultado final configurado en la versión del plan (`150.00` por defecto). |
+| `tope_resultado_final` | Tope efectivo del resultado individual. En períodos abiertos es el menor entre el tope del plan y `120.00`. En cierres se informa el valor histórico. |
 | `piso_resultado_final` | Piso fijo del resultado final: `0.00`. Los reclamos no dejan el resultado bajo 0. |
 | `ajustes` | Detalle de cada ajuste aprobado: `tipo` (Felicitación o Reclamo), `fecha` del hecho, `puntos_autorizados`, `puntos_computables` y `excluido_por_limite`. |
 

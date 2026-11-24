@@ -31,3 +31,11 @@ def normalize_chilean_rut(value):
 
 def validate_chilean_rut(value):
     normalize_chilean_rut(value)
+
+
+def searchable_rut(query):
+    """Devuelve el RUT canónico si la búsqueda identifica una persona."""
+    try:
+        return normalize_chilean_rut(query)
+    except ValidationError:
+        return None

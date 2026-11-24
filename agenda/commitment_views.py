@@ -21,6 +21,7 @@ from common.maintainers import activity_queryset
 from configuration.period_services import lock_period_registry
 from configuration.models import AuditLog
 from configuration.services import AuditoriaService
+from configuration.weeks import can_manage_weeks
 
 from .commitments import ADD, ASSIGN, CHANGE, VIEW, deadline_labels, scoped_commitments, scoped_delegations, validate_commitment_date
 from .comments import comments_context
@@ -54,6 +55,7 @@ def add_percentages(row):
     row["done_pct"] = 100 * row["done"] / row["total"] if row["total"] else None
     row["open_pct"] = 100 - row["done_pct"] if row["total"] else None
     return row
+
 
 
 class CommitmentListView(ProtectedViewMixin, View):
@@ -100,7 +102,7 @@ class CommitmentListView(ProtectedViewMixin, View):
         page_params = params.copy()
         page_params.pop("page", None)
         return render(request, "agenda/commitment_list.html", {
-            "page_obj": page, "summary": summary, "by_responsible": by_responsible,
+            "page_obj": page, "summary": summary, "by_responsible": by_responsible, "can_manage_weeks": can_manage_weeks(request.user),
             "delegations": delegation_options, "responsibles": responsible_options, "territories": territory_options,
             "statuses": Commitment.Status.choices, "can_add": request.user.has_perm(ADD),
             "querystring": page_params.urlencode(),

@@ -499,6 +499,18 @@ class PasswordRecoveryFlowTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(PASSWORD))
 
+    def test_recovery_replaces_initial_password_before_access_is_enabled(self):
+        from accounts.models import InitialPassword
+
+        InitialPassword.objects.create(user=self.user)
+        self.start_valid_reset()
+        self.assertContains(self.set_password(PASSWORD), "diferente de la inicial")
+        self.assertTrue(InitialPassword.pending(self.user))
+        self.set_password(NEW_PASSWORD)
+        self.assertFalse(InitialPassword.pending(self.user))
+        self.assertTrue(self.client.login(username=self.user.username, password=NEW_PASSWORD))
+        self.assertEqual(self.client.get(reverse("my_profile")).status_code, 200)
+
     def test_valid_password_replaces_the_old_one_and_is_audited(self):
         self.start_valid_reset()
 

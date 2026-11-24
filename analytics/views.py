@@ -287,8 +287,9 @@ class DelegationPerformanceView(TeamPerformanceView):
                 done=Count("pk", filter=Q(current_status=Commitment.Status.DONE)),
                 overdue=Count("pk", filter=~Q(current_status__in=Commitment.CLOSED_STATUSES) & Q(committed_date__lt=today)),
             )
+        from analytics.collective import collective_for_panel
         context.update(
-            rows=rows, commitments=commitments, closed=closed,
+            collective=collective_for_panel(period, today, delegation), rows=rows, commitments=commitments, closed=closed,
             **summarize_team(results),
         )
         if request.GET.get("export") == "xlsx":

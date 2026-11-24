@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from .forms import OfficialUserForm
-from .models import ServiceRecipient, Official, Territory
+from .models import InitialPassword, ServiceRecipient, Official, Territory
 from common.field_validation import clean_address, configure_text_widgets
 
 
@@ -115,7 +115,10 @@ class ClientAccountForm(OfficialUserForm):
             user.is_staff = user.is_superuser = False
             if data.get('password1'):
                 user.set_password(data['password1'])
+            creating = user._state.adding
             user.save()
+            if creating:
+                InitialPassword.objects.create(user=user)
             recipient = self.recipient or ServiceRecipient(user=user)
             if not self.recipient or not (self.keeps_original_text("first_name") and self.keeps_original_text("last_name")):
                 recipient.full_name = f"{user.first_name} {user.last_name}".strip()

@@ -137,6 +137,7 @@
                     {% endfor %}
                 </div>
                 {% include 'activities/attention_field.html' with field=form.effective_date %}
+                {% include 'activities/attention_field.html' with field=form.is_preparatory %}
                 {% include 'activities/attention_field.html' with field=form.result full_width=True %}
                 {% if form.invite_to_portal %}
                     <fieldset class="attention-entry-field-full" id="attention-portal-invitation">

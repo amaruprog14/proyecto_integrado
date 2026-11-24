@@ -281,3 +281,12 @@ class AuditLog(BaseModel):
 class PeriodMutex(models.Model):
     """Fila única para serializar definición, cierre e ingreso en períodos."""
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+
+
+class RegistrationWeek(models.Model):
+    delegation = models.ForeignKey("accounts.Delegation", on_delete=models.PROTECT)
+    monday = models.DateField("Inicio de la semana")
+    closed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["delegation", "monday"], name="unique_registration_week")]

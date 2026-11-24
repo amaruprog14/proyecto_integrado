@@ -81,6 +81,14 @@
                 {% endif %}
             </section>
 
+            <section class="attention-entry-card mb-3">
+                <h2 class="h5">Cumplimiento colectivo de compromisos</h2>
+                {% for group in collective %}<p><strong>{{ group.plan }}</strong> · {{ group.done }} de {{ group.total }} realizados
+                ({{ group.percent }} %) · {{ group.pending_percent }} % pendientes.
+                {% if group.threshold %}Umbral {{ group.threshold }} %. {% endif %}{{ group.verdict }}.</p>
+                {% empty %}<p>{% if collective == None %}Este cierre histórico carece de respaldo colectivo.{% else %}Sin compromisos computables.{% endif %}</p>{% endfor %}
+            </section>
+
             {% if rows %}
                 <section class="attention-entry-card mb-3" aria-labelledby="team-officials">
                     <h2 class="h5" id="team-officials">Resultados por funcionario</h2>

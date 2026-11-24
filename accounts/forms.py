@@ -1,5 +1,6 @@
 import re
 
+from common.antivirus import scan_upload
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import Permission
@@ -10,7 +11,7 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 
-from accounts.models import Area, Delegation, Official, Position, Role
+from accounts.models import InitialPassword, Area, Delegation, Official, Position, Role
 from common.chilean_rut import normalize_chilean_rut
 from common.field_validation import (
     ACCOUNT_TEXT_LIMITS, DEFAULT_COMMUNE, PHONE_PATTERN, LimitedTextFieldsMixin,
@@ -765,7 +766,10 @@ class OfficialUserForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.Form):
             user.is_active = status == Official.Status.ACTIVE
             if cleaned.get("password1"):
                 user.set_password(cleaned["password1"])
+            creating = user._state.adding
             user.save()
+            if creating:
+                InitialPassword.objects.create(user=user)
 
             if has_official:
                 official = official or Official()
@@ -1063,6 +1067,7 @@ class OfficialForm(RoleAssignmentMixin, AccountTextFieldsMixin, forms.ModelForm)
                 )
                 user.set_password(self.cleaned_data["password1"])
                 user.save()
+                InitialPassword.objects.create(user=user)
                 official.user = user
                 official.save(update_fields=["user", "updated_at"])
             super()._save_m2m()
@@ -1165,6 +1170,7 @@ class OwnOfficialProfileForm(AccountTextFieldsMixin, forms.ModelForm):
         if self.files.get("photo"):
             if photo.size > 2 * 1024 * 1024:
                 raise ValidationError("La imagen no puede superar los 2 MiB.")
+            scan_upload(photo)
             if photo.image.format not in ("JPEG", "PNG"):
                 raise ValidationError("Selecciona una imagen JPEG o PNG válida.")
         return photo

@@ -25,8 +25,14 @@ def scoped_commitments(user, permission=VIEW):
         return records
     if scope == Role.Scope.DELEGATION:
         ids = delegation_ids(user)
-        return records.filter(Q(delegation_id__in=ids) |
-                              Q(delegation_id__isnull=True, responsible__delegation_id__in=ids))
+        records = records.filter(Q(delegation_id__in=ids) |
+                                 Q(delegation_id__isnull=True, responsible__delegation_id__in=ids))
+        if permission in (CHANGE, ASSIGN):
+            delegate = user.official.roles.filter(role_name__iexact="Delegado", scope=Role.Scope.DELEGATION,
+                                                  is_active=True, deleted_at__isnull=True).exists()
+            if not delegate:
+                return records.filter(responsible__user=user)
+        return records
     if scope == Role.Scope.OWN:
         return records.filter(responsible__user=user)
     return records.none()
