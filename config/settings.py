@@ -67,10 +67,16 @@ INSTALLED_APPS = [
     'sgr_api',
 ]
 
+_API_AUTH = ['rest_framework_simplejwt.authentication.JWTAuthentication']
+_API_RENDER = ['rest_framework.renderers.JSONRenderer']
+if DEBUG or SGR_API_DOCS_ENABLED:
+    _API_AUTH.append('rest_framework.authentication.SessionAuthentication')
+    _API_RENDER.append('rest_framework.renderers.BrowsableAPIRenderer')
+
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ('rest_framework_simplejwt.authentication.JWTAuthentication',),
+    'DEFAULT_AUTHENTICATION_CLASSES': tuple(_API_AUTH),
     'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.IsAuthenticated',),
-    'DEFAULT_RENDERER_CLASSES': ('rest_framework.renderers.JSONRenderer',),
+    'DEFAULT_RENDERER_CLASSES': tuple(_API_RENDER),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
